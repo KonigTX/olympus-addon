@@ -7319,6 +7319,16 @@ test("1.5.1 a Forever family's ruleset is its name and its region its realms' (m
 		eq(table.concat({ D.GroupInfo("ForeverPvP") }, "/"), "pvp/NA", "a met PvP sub-realm the table does not name: its region by its code")
 		eq(select(1, D.GroupInfo("ForeverRP")), "rp"); eq(select(2, D.GroupInfo("ForeverRP")), nil, "no realm of that family met: the region waits")
 		eq(table.concat({ D.GroupInfo("Whitemane") }, "/"), "pvp/NA", "a plain group as before")
+		eq(table.concat({ D.GroupInfo("CAMWOWUS2Realm3PvE") }, "/"), "pve/NA", "a plain Forever realm the table does not name: its family's (1.5.2)")
+		eq(table.concat({ D.GroupInfo("CAMWOWUS1Realm2PvP+CAMWOWUS1Realm8PvP") }, "/"), "pvp/NA", "a group learned before 1.4.6: its family's")
+		-- (1.5.2) Such a row counts as its family's server, once, the newest of them.
+		local savedCounted = ns.db.groupCensus
+		ns.db.groupCensus = { ["Alliance|CAMWOWUS2Realm3PvE"] = { group = "CAMWOWUS2Realm3PvE", faction = "Alliance", characters = 500, people = 500, guilds = 2, observed = ns.Now() - 10 },
+			["Alliance|ForeverPvE"] = { group = "ForeverPvE", faction = "Alliance", characters = 900, people = 900, guilds = 3, observed = ns.Now() } }
+		local rows, pve = D.Groups({ total = 0, guilds = {} }).rows, {}
+		for _, r in ipairs(rows) do if r.group == "ForeverPvE" or r.group == "CAMWOWUS2Realm3PvE" then pve[#pve + 1] = r end end
+		eq(#pve, 1, "one PvE server"); eq(pve[1].group, "ForeverPvE"); eq(pve[1].characters, 900, "the newest"); eq(pve[1].kind, "pve")
+		ns.db.groupCensus = savedCounted
 		-- Nothing met of a family but the signed table names one of its realms (another character's group).
 		ns.db = { links = {} }
 		ns.realm, ns.group = "CAMWOWUS1Realm8PvP", "ForeverPvP"
@@ -7340,7 +7350,9 @@ test("1.5.1 opening a Forever family's store takes a plain realm's of its own fa
 	local ok, err = pcall(function()
 		local pve = { guilds = { ["olympus prime"] = { guild = "OLYMPUS PRIME", total = 900, t = 10, heardOn = "CAMWOWUS2Realm1PvE" } }, seen = {} }
 		local pvp = { guilds = { ["olympus dads"] = { guild = "Olympus Dads", total = 40, t = 10, heardOn = "CAMWOWUS1Realm8PvP" },
-			["olympus v"] = { guild = "OLYMPUS V", total = 700, t = 9, heardOn = "CAMWOWUS2Realm3PvE" } }, seen = {} }
+			["olympus v"] = { guild = "OLYMPUS V", total = 700, t = 9, heardOn = "CAMWOWUS2Realm3PvE" } }, seen = {},
+			censusGlobal = { ["olympus prime"] = { name = "OLYMPUS PRIME", total = 900, online = 1, avg10 = 100, observed = 10, by = "Someone-CAMWOWUS2Realm1PvE" },
+				["olympus x"] = { name = "OLYMPUS X", total = 300, online = 1, avg10 = 100, observed = 10, by = "Other-CAMWOWUS1Realm2PvP" } } }
 		local old = { guilds = { ["olympus ii"] = { guild = "OLYMPUS II", total = 50, t = 8, heardOn = "CAMWOWUS1Realm2PvP" } }, seen = {} }
 		ns.db.realms, ns.db.links = { ForeverPvE = pve, ForeverPvP = pvp, CAMWOWUS1Realm2PvP = old, Whitemane = { guilds = {}, seen = {} } }, {}
 		ns.realm, ns.group = "CAMWOWUS1Realm8PvP", "ForeverPvP"
@@ -7352,6 +7364,7 @@ test("1.5.1 opening a Forever family's store takes a plain realm's of its own fa
 		eq(ns.rdb.guilds["olympus v"], nil, "a PvE report merged before 1.5.1 is dropped")
 		eq(ns.rdb.guilds["olympus dads"].total, 40, "our own stay")
 		eq(ns.rdb.guilds["olympus ii"].total, 50, "a plain PvP realm's store (before 1.4.6) comes in"); eq(ns.db.realms.CAMWOWUS1Realm2PvP, nil)
+		eq(ns.rdb.censusGlobal["olympus prime"], nil, "a counts-only row said from a PvE realm is dropped"); eq(ns.rdb.censusGlobal["olympus x"].total, 300, "one said from a PvP realm stays")
 		assert(ns.db.realms.Whitemane, "an unrelated realm's store stays")
 	end)
 	ns.db.realms, ns.db.links, ns.rdb, ns.realm, ns.group, ns.faction = saved.realms, saved.links, saved.rdb, saved.realm, saved.group, saved.faction
