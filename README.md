@@ -116,6 +116,8 @@ request that you can edit ("Hi! I'd love to join Olympus. Does <Olympus II> have
 one more?"). No answer? **Try someone else** picks a member you have not asked yet. Replies
 are highlighted. It is rate limited, so nobody gets spammed. The game lists 50 players per
 `/who`: when there are more, each new click searches a range of levels and adds to the list.
+The editable request uses Olympus's own confirmation window in both input modes, keeping the
+game's guild invitation and Discord settings free of its popup state.
 
 **Where to go** (1.1): a search also asks one member's addon (an addon whisper, not a chat line)
 where recruits should go, and its census answers: the guild the King opened **the gates** of
