@@ -23,6 +23,10 @@ test("Forever sub-realms: a guildmate stamped with another sub-realm of our fami
 		eq(ns.Channels.VerifiedLevel(officer, "OLYMPUS GODS"), ns.Channels.LevelOf("OLYMPUS GODS", 1), "his guild chat is not forged")
 		eq(ns.Roster.RankOf("Hater Fistinator-CAMWOWUS1Realm8PvP"), nil, "the PvP family is another family")
 		eq(ns.Roster.RankOf("Hater Fistinator-Stormrage"), nil, "a realm outside Forever")
+
+		-- His chat line shows his plain name, as the game's own chat does, not "Name-<his sub-realm>".
+		local line = ns.Channels.FormatLine("A", officer, "OLYMPUS GODS", "WA", "inv", true)
+		assert(line:find("Hater Fistinator]", 1, true) and not line:find("CAMWOW", 1, true), line)
 	end)
 	GetNumGuildMembers, GetGuildRosterInfo, GetGuildInfo = saved.total, saved.info, saved.guild
 	ns.realm, ns.group, ns.me, ns.splitNames = saved.realm, saved.group, saved.me, saved.split
