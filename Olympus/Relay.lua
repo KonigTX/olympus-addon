@@ -540,13 +540,27 @@ local function DripSet(name, word, whispers)
 end
 
 -- The whispers that carry a whole set to a reporter, cut into batches the queue accepts.
-local function SetBatches(flag, origin, set)
-	local whispers = {}
+-- The set goes as the one word it carries, wrapped once and cut once, so every whisper is full.
+-- Wrapped piece by piece, a full piece and its RM label overflowed one whisper and each piece went
+-- as two (an 8-piece census snapshot as 16 whispers to every reporter). A reporter takes either
+-- form the same way: it puts the RM together, then the word inside it.
+local function SetWhispers(flag, origin, set)
+	local parts = {}
+	for i, body in ipairs(set) do parts[i] = body:match("^C%w+:%d+:%d+:(.*)$") end
+	local whispers = Envelope("RM", "RM~" .. flag .. "~" .. origin .. "~" .. table.concat(parts))
+	if #parts == #set and #whispers <= ns.Codec.MAX_CHUNKS then return whispers end
+	-- (Too long to travel as one word: the pieces as they came, each wrapped on its own.)
+	whispers = {}
 	for _, body in ipairs(set) do
 		for _, e in ipairs(Envelope("RM", "RM~" .. flag .. "~" .. origin .. "~" .. body)) do
 			whispers[#whispers + 1] = e
 		end
 	end
+	return whispers
+end
+
+local function SetBatches(flag, origin, set)
+	local whispers = SetWhispers(flag, origin, set)
 	local batches, size = {}, ns.Codec.MAX_CHUNKS
 	for first = 1, #whispers, size do
 		local batch = {}
