@@ -211,14 +211,17 @@ test("1.3.4 launch identities: the code's Horde King, his realm not known, is no
 		eq(ns.rdb.kingRealmHorde, nil, "no realm learned from a namesake")
 		eq(ns.KingUnpinned(), false, "nor its guild master")
 	end)
-	-- Before a launch list reaches a realm group, as before 1.3.4 (his name anywhere, until his realm
-	-- is learned); a list of before 1.3.4 is no launch list.
+	-- (1.5.4) Until a launch list reached a realm group his name counted anywhere: on Forever, where
+	-- no list is held yet, a Horde player of that name was the King by code. The code's pin is the
+	-- beta's now, like the Alliance's ("the Horde apart", below): a namesake on a launch realm is
+	-- nobody's King, list or none, and a list of before 1.3.4 changes nothing.
 	WithWorld("Launchrealm", "Horde", nil, function()
-		eq(ns.IsKingCharacter(ns.KING_CHARACTER.Horde .. "-Launchrealm"), true)
+		eq(ns.IsKingCharacter(ns.KING_CHARACTER.Horde .. "-Launchrealm"), false, "no list: nobody by code off the beta's group")
 	end)
 	WithWorld("Realm", "Horde", OLD, function()
 		eq(ns.LaunchListHeld(), false)
-		eq(ns.IsKingCharacter(ns.KING_CHARACTER.Horde .. "-Launchrealm"), true)
+		eq(ns.IsKingCharacter(ns.KING_CHARACTER.Horde .. "-Launchrealm"), false, "a namesake on another realm group")
+		eq(ns.IsKingCharacter(ns.KING_CHARACTER.Horde .. "-Realm"), true, "on his own group, as before")
 	end)
 end)
 
@@ -556,4 +559,108 @@ test("1.5.4 the signed King's crown: on a launch realm group his position reache
 	ns.splitNames, ns.Now = saved.split, saved.now
 	ns.King.Reset()
 	if not ok then error(err, 0) end
+end)
+
+---------------------------------------------------------------------------
+-- 1.5.4: the Horde apart (the dev, 2026-11-08: "só para diferenciar, para não cruzar os dados").
+-- The code's Horde King, his realm not known, counted anywhere until a launch list reached a realm
+-- group: on Forever, where most clients hold no list yet, a Horde player taking his name was the
+-- King by code there, a verifier (Verify.Trusted), a trusted relay (Relay.IsRelay), a trusted census
+-- relay (Church.IsLedgerRelay, by Church.IsKing: ns.IsKingCharacter) and beyond moderation
+-- (Moderation.Rank). And a Horde client's relays were Alliance names (the council's, both sides'
+-- author characters, the code's Treasurer, the launch pins): a whisper across factions never
+-- arrives, so each sat DEAD_FOR and the word fell back to the channel, which Forever never delivers.
+---------------------------------------------------------------------------
+-- Verify.lua into a namespace of its own (the harness's ns holds none), as tests/run.lua loads it.
+local function WithVerify(fn)
+	local vns = setmetatable({ On = function() end, RegisterEvent = function() end, Comm = { Handle = function() end } }, { __index = ns })
+	assert(loadfile(h.ADDON_DIR .. "Verify.lua"))("Olympus", vns)
+	fn(vns.Verify)
+end
+-- Relay.lua the same way, its handlers going nowhere; its names come from the harness's Core.
+local function WithRelay(fn)
+	local cns = setmetatable({ On = function() end, RegisterEvent = function() end, After = function() end, Every = function() end,
+		Comm = setmetatable({ Handle = function() end, RelayPieces = function() end }, { __index = ns.Comm }) }, { __index = ns })
+	assert(loadfile(h.ADDON_DIR .. "Relay.lua"))("Olympus", cns)
+	cns.splitNames = true
+	fn(cns.Relay, cns)
+end
+
+test("1.5.4 the Horde apart: the code's Horde King is the beta's: on Forever with no list held nobody is King by code (no verifier, relay or moderation rank by that name); on the beta's group as before, his realm learned from his own message alone", function()
+	local pin = ns.KING_CHARACTER.Horde
+	WithWorld("CAMWOWUS1Realm1PvE", "Horde", nil, function()
+		eq(ns.LaunchListHeld(), false)
+		eq(ns.KingCharacter(), nil, "no King by code off the beta's group")
+		eq(ns.IsKingCharacter(pin .. "-CAMWOWUS1Realm1PvE"), false)
+		eq(ns.IsKingCharacter(pin), false, "a name without a realm is of this Forever family")
+		eq(ns.KingUnpinned(), true, "no King named and no list here: as the Alliance with none")
+		WithVerify(function(V) eq(V.Trusted(pin .. "-CAMWOWUS1Realm1PvE"), false, "no verifier") end)
+		eq(ns.Moderation.Rank(pin .. "-CAMWOWUS1Realm1PvE"), 0, "no moderation rank"); eq(ns.Moderation.IsKing(pin), false)
+		WithRelay(function(R, cns)
+			cns.me = "Grom Example-CAMWOWUS1Realm1PvE"
+			eq(R.IsRelay(pin), false, "no relay")
+		end)
+		ns.LearnKingRealm(pin .. "-CAMWOWUS1Realm1PvE")
+		eq(ns.rdb.kingRealmHorde, nil, "nothing learned from a namesake's message")
+		-- A realm a version before 1.5.4 learned from a namesake here: not his either.
+		ns.rdb.kingRealmHorde = "CAMWOWUS1Realm1PvE"
+		eq(ns.KingCharacter(), nil); eq(ns.KingRealm(), ns.KING_REALM)
+		eq(ns.IsKingCharacter(pin .. "-CAMWOWUS1Realm1PvE"), false)
+	end)
+	-- The beta's group (the harness pins the code's King on "Realm"): as before.
+	WithWorld("Realm", "Horde", nil, function()
+		eq(ns.KingCharacter(), pin); eq(ns.IsKingCharacter(pin .. "-Realm"), true); eq(ns.IsKingCharacter(pin), true)
+		eq(ns.IsKingCharacter(pin .. "-CAMWOWUS1Realm1PvE"), false, "a namesake on Forever")
+		WithVerify(function(V) eq(V.Trusted(pin .. "-Realm"), true, "the verifier he was") end)
+		eq(ns.Moderation.Rank(pin .. "-Realm"), 3)
+		WithRelay(function(R, cns)
+			cns.me = "Grom Example-Realm"
+			eq(R.IsRelay(pin), true, "the relay he was")
+		end)
+		ns.LearnKingRealm(pin .. "-Realm")
+		eq(ns.rdb.kingRealmHorde, "Realm", "his realm, learned from his own message"); eq(ns.KingRealm(), "Realm")
+		eq((ns.KingFullName()), pin .. "-Realm")
+	end)
+end)
+
+test("1.5.4 the Horde apart: a Horde client's relays are the signed list's Horde names alone, an Alliance client's as before; the Horde King the list names is the name on its lines where the census gives no leader", function()
+	WithWorld("Launchrealm", "Alliance", LAUNCH_A, function()
+		ns.rdb.council = { names = { ["alliance councillor"] = "Alliance Councillor" }, realm = "Launchrealm" }
+		WithRelay(function(R)
+			eq(table.concat(R.Names(true), ","), "Alliance Councillor,Crown Owl,Ledger Post,Ledger Wren,Quill Horde,Quill Maker",
+				"the Alliance as before: the council, both sides' author characters, its King, its Treasurer and his mail character")
+			ns.faction = "Horde"
+			eq(table.concat(R.Names(true), ","), "Quill Horde,Tusk Crown",
+				"the Horde: its signed King and the author's Horde character; no councillor, no Alliance author, no code Treasurer")
+			eq(R.IsRelay("Tusk Crown"), true); eq(R.IsRelay("Quill Horde-Launchrealm"), true)
+			eq(R.IsRelay("Crown Owl"), false); eq(R.IsRelay("Alliance Councillor"), false)
+			eq(R.IsRelay("Quill Maker"), false); eq(R.IsRelay("Ledger Wren"), false)
+		end)
+		-- The author's characters by side, his privileges still both sides'.
+		eq(table.concat((ns.AuthorCharactersOf("Horde")), ","), "Quill Horde-Launchrealm")
+		eq(table.concat((ns.AuthorCharactersOf("Alliance")), ","), "Quill Maker-Launchrealm")
+		eq(ns.Workshop.IsAuthorName(AUTHOR), true, "the Alliance author's character is his on the Horde too")
+		-- The Horde King's name on the lines: the census leader given, else the list's.
+		eq(ns.KingName(), "Tusk Crown"); eq(ns.KingName("Grom Example-Launchrealm"), "Grom Example")
+		ns.faction = "Alliance"
+		eq(ns.KingName(), ns.KING_NAME); eq(ns.KingName("Grom Example-Launchrealm"), ns.KING_NAME, "the Alliance: the army's name for him")
+	end)
+	-- A list naming no Horde King and no author: nothing the code could give the Horde; "?" on the lines.
+	WithWorld("Launchrealm", "Horde", LAUNCH_B, function()
+		WithRelay(function(R) eq(#R.Names(true), 0, "the Treasurer is signed for the Alliance alone: nobody") end)
+		eq(#(ns.AuthorCharactersOf("Horde")), 0, "no author signed for either side: none by code for the Horde")
+		eq((ns.AuthorCharactersOf("Alliance"))[1], ns.AUTHOR .. "-" .. ns.AUTHOR_REALM, "the code's for the Alliance, the beta's (no author here, as before)")
+		eq(ns.KingName(), "?")
+	end)
+	-- No list, on Forever: the launch pins and the code's Treasurer and author are the Alliance's.
+	WithWorld("CAMWOWUS1Realm1PvE", "Horde", nil, function()
+		WithRelay(function(R)
+			eq(#R.Names(true), 0, "nothing by code on the Horde")
+			ns.faction = "Alliance"
+			local names = table.concat(R.Names(true), ",")
+			assert(names:find("Developus Olympicus", 1, true) and names:find("Asmongold Thereal", 1, true), "the Alliance's launch pins: " .. names)
+			assert(names:find(ns.TREASURER, 1, true) and names:find(ns.AUTHOR, 1, true), "the code's Treasurer and author, as before: " .. names)
+		end)
+		eq(#(ns.AuthorCharactersOf("Horde")), 0); eq((ns.AuthorCharactersOf("Alliance"))[1], ns.AUTHOR .. "-" .. ns.AUTHOR_REALM)
+	end)
 end)

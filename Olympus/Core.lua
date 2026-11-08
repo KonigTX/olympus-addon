@@ -1047,6 +1047,19 @@ function ns.AuthorCharacters()
 	end
 	return m.out, false
 end
+-- (1.5.4) The author's characters of one side alone, "Alliance" or "Horde", for what can only reach
+-- that side's characters (Relay.Names on the Horde: a whisper to an Alliance name never arrives
+-- there): the signed list's ^author^<side>^ entries where it names any author (either side's); else
+-- the code's, an Alliance character (ns.AUTHOR, the beta's), so the Horde gets none by code. The
+-- second result: true when signed. His privileges stay ns.AuthorCharacters's, both sides' (a name is
+-- one per realm group whatever its side).
+function ns.AuthorCharactersOf(side)
+	local p = ns.SignedPins and ns.SignedPins()
+	local a = p and p.author
+	if a and (a.Alliance or a.Horde) then return a[side] or NO_PINS, true end
+	if side ~= "Alliance" then return NO_PINS, false end
+	return ns.AuthorCharacters()
+end
 -- One of them (a sender's name: the server sets it), by its name on its realm group.
 function ns.IsAuthorName(name)
 	if type(name) ~= "string" or name == "" then return false end
@@ -1137,9 +1150,18 @@ function ns.IsTreasurerCharacter(name)
 	return false
 end
 -- The King's name on the lines and the crown: the army's name for him on the Alliance side,
--- his character's on the Horde (whose <Olympus> has a guild master of its own).
+-- his character's on the Horde (whose <Olympus> has a guild master of its own): the census
+-- leader given, else (1.5.4) the Horde King the author's signed list names, where it names one
+-- (a line about him with no census leader behind it: the Hop's, the sightings'), else "?".
 function ns.KingName(leader)
-	if ns.faction == "Horde" then return leader and ns.ShortName(leader) or "?" end
+	if ns.faction == "Horde" then
+		if leader then return ns.ShortName(leader) end
+		if Signed("king") then
+			local pin = ns.KingCharacter()
+			if pin then return pin end
+		end
+		return "?"
+	end
 	return ns.KING_NAME
 end
 ns.CROWN_ICON = "Interface\\GroupFrame\\UI-Group-LeaderIcon"
@@ -1163,37 +1185,37 @@ end
 -- realm group alone (ns.KING_REALM's): anywhere else (Forever's other realms, Classic Era,
 -- Anniversary) there is no King by name either, like the Horde's, and a namesake on another
 -- group is not him.
--- The Horde's (0.9.4): Duskmonkey Boneback, guild master of <Mudhutters>. His realm is not known
--- yet: until it is (ns.KING_REALM_HORDE), his name alone counts on the Horde, anywhere (Forever
--- names are one per region; a namesake can only exist on another client or region).
+-- The Horde's (0.9.4): Duskmonkey Boneback, guild master of <Mudhutters>, on the beta's realm
+-- group like the Alliance's (1.5.4); his realm within it is not known (ns.KING_REALM_HORDE, or the
+-- one learned below).
 ns.KING_CHARACTER = { Alliance = "Asmongold Asmongler", Horde = "Duskmonkey Boneback" }
 ns.KING_REALM = "ClassicBetaPvP"
 ns.KING_REALM_HORDE = nil
 -- (1.3.4) Where the author's signed titles list names our side's King (^king^, his name with his
 -- realm), he alone is the King, on his realm group, whatever the code says. Where it names none,
--- the code's pins above count on their own realm group alone (ns.KING_REALM's, the beta's). The
--- Horde's, his realm not known, still counts anywhere until the author's launch list reaches a
--- realm group (as before 1.3.4: ns.LaunchListHeld); where it does, on the code's group alone, so a
--- namesake on a launch realm is nobody's King there.
+-- the code's pins above count on their own realm group alone (ns.KING_REALM's, the beta's).
+-- (1.5.4) The Horde's too. His name counted anywhere until a launch list reached a realm group, so
+-- on Forever, where no list is held yet, a Horde player of that name was the King by code (a
+-- verifier, a trusted relay, a trusted census relay, beyond moderation). Now nobody is King by
+-- code off the beta's group on either side; the signed list's ^king^Horde^ names the Horde's.
 -- Until it is set here, the Horde King's realm is learned from the first message of his that
--- reaches us (his name is his alone), and from then on only that realm group counts: shown in
--- /oly status so it can be written here.
+-- reaches us (his name is his alone, on the beta's group), and from then on that realm stands for
+-- his: shown in /oly status so it can be written here. A realm a version before 1.5.4 learned on
+-- another group (a namesake's) is not his.
 local function KingRealm()
 	local signed = Signed("king")
 	if signed then return ns.RealmOf(signed[1]) end
-	if ns.faction == "Horde" then return ns.KING_REALM_HORDE or (ns.rdb and ns.rdb.kingRealmHorde) end
+	if ns.faction == "Horde" then
+		if ns.KING_REALM_HORDE then return ns.KING_REALM_HORDE end
+		local learned = ns.rdb and ns.rdb.kingRealmHorde
+		if learned and ns.GroupOf(learned) == ns.GroupOf(ns.KING_REALM) then return learned end
+	end
 	return ns.KING_REALM
 end
 ns.KingRealm = KingRealm
--- The realm group whose King counts (nil: any), as above.
-local function KingHome()
-	local realm = KingRealm()
-	if realm == nil and ns.LaunchListHeld() then return ns.KING_REALM end
-	return realm
-end
 function ns.KingCharacter()
 	local signed = Signed("king")
-	local home = KingHome()
+	local home = KingRealm()
 	if home and ns.GroupOf(ns.realm or ns.CurrentRealm()) ~= ns.GroupOf(home) then return nil end
 	if signed then return ns.ShortName(signed[1]) end
 	return ns.KING_CHARACTER[ns.faction or "Alliance"]
@@ -1201,7 +1223,7 @@ end
 function ns.IsKingCharacter(name)
 	local pin = ns.KingCharacter()
 	if pin == nil or type(name) ~= "string" or ns.ShortName(name) ~= pin then return false end
-	local realm = KingHome()
+	local realm = KingRealm()
 	return realm == nil or OfGroup(name, realm)
 end
 -- The King's "First Surname-Realm" where one is named here (ns.KingCharacter), or nil; the second
@@ -1251,7 +1273,8 @@ function ns.KingUnpinned() return ns.KingCharacter() == nil and not ns.LaunchLis
 -- Learned only from a message he sent (King.lua: the sender name is the server's), never from
 -- a name written inside a report, which anyone could forge to lock him out.
 function ns.LearnKingRealm(sender)
-	if ns.faction ~= "Horde" or KingRealm() ~= nil or not ns.rdb or not ns.IsKingCharacter(sender) then return end
+	if ns.faction ~= "Horde" or not ns.rdb or ns.rdb.kingRealmHorde ~= nil or ns.KING_REALM_HORDE ~= nil
+		or Signed("king") ~= nil or not ns.IsKingCharacter(sender) then return end
 	local realm = ns.RealmOf(ns.FullName(sender))
 	if not realm then return end
 	ns.rdb.kingRealmHorde = realm

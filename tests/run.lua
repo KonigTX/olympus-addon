@@ -14620,16 +14620,20 @@ test("0.9.4 the Horde's King: Duskmonkey Boneback of <Mudhutters>, a guild of th
 		local ok, err = pcall(function()
 			ns.faction = "Horde"
 			eq(ns.IsKingGuild("Mudhutters"), true); eq(ns.IsFederation("Mudhutters"), true, "his guild is Olympus's")
-			local ourRealm = ns.realm
-			ns.realm = "ClassicBetaPvP" -- (a client of his realm group: a learned realm elsewhere is not ours)
+			-- (1.5.4) His realm within the beta's group (the harness pins it on "Realm") is not known: his
+			-- name counts on that group alone, no longer anywhere (on Forever a namesake was the King by
+			-- code), until his own first message teaches his realm; a namesake's teaches nothing.
 			ns.rdb.kingRealmHorde = nil
-			eq(ns.IsKingCharacter("Duskmonkey Boneback-ClassicBetaPvE"), true, "realm unknown yet: his name anywhere")
+			eq(ns.IsKingCharacter("Duskmonkey Boneback-Realm"), true, "realm unknown yet: his name on the beta's group")
+			eq(ns.IsKingCharacter("Duskmonkey Boneback-ClassicBetaPvE"), false, "a namesake on another realm group")
 			eq(ns.rdb.kingRealmHorde, nil, "a name in a report teaches nothing")
-			ns.LearnKingRealm("Duskmonkey Boneback-ClassicBetaPvP2") -- a message he sent
-			eq(ns.rdb.kingRealmHorde, "ClassicBetaPvP2", "his realm, learned")
-			eq(ns.IsKingCharacter("Duskmonkey Boneback-ClassicBetaPvP"), true, "the same realm group")
+			ns.LearnKingRealm("Duskmonkey Boneback-ClassicBetaPvE") -- a namesake's message
+			eq(ns.rdb.kingRealmHorde, nil, "nothing learned from a namesake")
+			ns.LearnKingRealm("Duskmonkey Boneback-Realm") -- a message he sent
+			eq(ns.rdb.kingRealmHorde, "Realm", "his realm, learned"); eq(ns.KingRealm(), "Realm")
+			eq(ns.IsKingCharacter("Duskmonkey Boneback-Realm"), true, "the same realm group")
 			eq(ns.IsKingCharacter("Duskmonkey Boneback-ClassicBetaPvE"), false, "then only there")
-			ns.rdb.kingRealmHorde, ns.realm = nil, ourRealm
+			ns.rdb.kingRealmHorde = nil
 			eq(ns.IsKingCharacter("Duskmonkey Boneback"), true)
 			eq(ns.IsKingCharacter("Asmongold Asmongler"), false, "the Alliance's King is not the Horde's")
 			-- His own client: guild master of <Mudhutters>, the addon on.

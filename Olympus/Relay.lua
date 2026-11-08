@@ -57,6 +57,9 @@ Relay.MAX_REPORTERS = 400   -- (1.5.4) guilds a relay keeps a reporter for
 Relay.VERIFY_ASK_EVERY = 180 -- one recovery ask across the signed relays, never per reporter
 Relay.SNAPSHOT_WINDOW = 60  -- at most one bounded snapshot transfer per signed origin in this window
 Relay.LAUNCH_PINS = { ForeverPvE = { "Developus Olympicus", "Asmongold Thereal" }, ForeverPvP = { "Twalin Firebraid", "Elrond Oaklance" } }
+-- (1.5.4) The above are Alliance characters: a Horde client's launch pins, by family, go here once
+-- Horde ones exist (a whisper to an Alliance name never arrives on the Horde). None yet.
+Relay.LAUNCH_PINS_HORDE = {}
 -- (1.5.0) Words every client says on the channel on its own clock (the channel's hello H3, the
 -- census ask Q1, the lists' ask HQ, positions P1, the Wanted list's ask W4, verification asks GV)
 -- are heard by the relay and answered from there, but never fanned out: with 46 guilds registered
@@ -168,9 +171,16 @@ end
 
 -- The relays' names, as whispers reach them: the plain "First Surname", sorted; ours left out
 -- unless asked for (IsRelay asks: our own client is a relay too).
+-- (1.5.4) The Horde apart: a Horde client names only relays that can be Horde characters, those
+-- the author's signed list names for its side (its King, its author characters, a Treasurer signed
+-- for it). An Alliance name there was a relay nobody could reach: the whisper never arrives across
+-- factions, so the name sat DEAD_FOR and the word fell back to the channel, which Forever never
+-- delivers. The council's list names no side (every councillor is Alliance), the code's Treasurer
+-- and the launch pins are Alliance characters: an Alliance client's names are as they were.
 function Relay.Names(withSelf)
 	local out, set = {}, {}
 	local mine = ns.ShortName(ns.me or ""):lower()
+	local horde = ns.faction == "Horde"
 	local function Add(n)
 		if type(n) ~= "string" or n == "" then return end
 		local short = ns.ShortName(n)
@@ -181,19 +191,29 @@ function Relay.Names(withSelf)
 		out[#out + 1] = short
 	end
 	local c = ns.rdb and ns.rdb.council
-	if type(c) == "table" and type(c.names) == "table" then
+	if not horde and type(c) == "table" and type(c.names) == "table" then
 		local list = {}
 		for _, name in pairs(c.names) do list[#list + 1] = name end
 		table.sort(list)
 		for _, name in ipairs(list) do Add(name) end
 	end
-	if ns.AuthorCharacters then for _, n in ipairs((ns.AuthorCharacters())) do Add(n) end end
+	if horde then
+		if ns.AuthorCharactersOf then for _, n in ipairs((ns.AuthorCharactersOf("Horde"))) do Add(n) end end
+	elseif ns.AuthorCharacters then
+		for _, n in ipairs((ns.AuthorCharacters())) do Add(n) end
+	end
 	if ns.KingCharacter then Add(ns.KingCharacter()) end
 	-- (1.4.6) A client with no signed list yet (a guild nobody handed it to) must still find a
 	-- relay to get it from: the launch's author and King, by code, on their Forever family alone.
 	local family = ns.ForeverFamily and ns.ForeverFamily(ns.realm)
-	if family then for _, p in ipairs(Relay.LAUNCH_PINS[family] or {}) do Add(p) end end
-	if ns.TreasurerPins then for _, n in ipairs((ns.TreasurerPins())) do Add(n) end end
+	if family then
+		local pins = horde and Relay.LAUNCH_PINS_HORDE or Relay.LAUNCH_PINS
+		for _, p in ipairs(type(pins) == "table" and pins[family] or {}) do Add(p) end
+	end
+	if ns.TreasurerPins then
+		local pins, signed = ns.TreasurerPins()
+		if not horde or signed == true then for _, n in ipairs(pins) do Add(n) end end
+	end
 	table.sort(out)
 	return out
 end
