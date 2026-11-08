@@ -894,8 +894,11 @@ local function ToReporters(flag, origin, body, sender)
 			-- and the census snapshots waited behind it. Its own word of one kind (as QueueWord keys
 			-- the same word in one whisper) takes the waiting copy's place, as a snapshot does.
 			local id, head = set[1]:match("^C(%w+):%d+:%d+:(.*)$")
+			-- (The review of the candidate.) Only a word in one batch: replaced batch by batch, a word
+			-- too long for one (its envelope past MAX_CHUNKS whispers) mixed halves of two copies, or
+			-- had its newer copy split by a whole round of reporters; each copy goes whole instead.
 			local kind = head and (head:match("^(%u%w~%d+~S)~") or head:match("^(R[12])~")
-				or (own and head:match("^%u%w~") and QueueWord(head)))
+				or (own and #batches == 1 and head:match("^%u%w~") and QueueWord(head)))
 			local word = Lower(origin) .. " " .. (kind or ("#" .. tostring(id)))
 			for k, batch in ipairs(batches) do DripSet(r.name, word .. " " .. k, batch) end
 		else

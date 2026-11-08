@@ -395,3 +395,56 @@ test("relay trickle (1.5.4): a word in pieces that can never pass whole spends n
 		eq(pieces, 20, "with 10 reporters both pieces of the report go to each")
 	end)
 end)
+
+-- The review of the 1.5.4 candidate: the relay's own word too long for one drip batch (wrapped whole
+-- it is more than MAX_CHUNKS whispers, so each piece goes wrapped alone: two batches) was keyed by its
+-- kind and replaced batch by batch. A newer copy that came while the older's first batch was already
+-- in the queue replaced only its second: that reporter got half of each copy and could put the older
+-- together never. Each copy of such a word goes whole now. Fails before (a reporter with half a copy).
+test("relay fan-out (1.5.4): the relay's own word too long for one drip batch is never split by a newer copy: each reporter gets every piece of each copy it gets any of, and the newer copy whole", function()
+	Relayed(function(R, sent, Run)
+		local REPORTERS = 6
+		for i = 1, REPORTERS do
+			R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i))
+		end
+		local label = #("RM~P~" .. R.me .. "~")
+		local size = R.Codec.CHUNK * R.Codec.MAX_CHUNKS - label + 1 -- one whisper past MAX_CHUNKS once wrapped whole
+		local function Word(stamp, fill) return (("T9~Olympus~%d~"):format(stamp) .. fill:rep(size)):sub(1, size) end
+		local older, newer = Word(1794011276, "a"), Word(1794011400, "b")
+		local first = R.Codec.Chunk(older, "61")
+		eq(#first <= R.Codec.MAX_CHUNKS, true, "the word itself fits MAX_CHUNKS pieces")
+		for _, p in ipairs(first) do R.Relay.HandleIn("WHISPER", R.me, "RL~P~" .. p) end
+		-- (The first reporter's first batch is in the queue already when the newer copy comes.)
+		for _, p in ipairs(R.Codec.Chunk(newer, "62")) do R.Relay.HandleIn("WHISPER", R.me, "RL~P~" .. p) end
+		Run(2000)
+		eq(R.Comm.QueueSize(), 0, "everything went out")
+		local half, newerWhole = 0, 0
+		for i = 1, REPORTERS do
+			local prefix = ("Rep Number%d-"):format(i)
+			local outer, got, total = R.Codec.NewAssembler(), {}, {}
+			for _, s in ipairs(sent) do
+				if s.target and s.target:sub(1, #prefix) == prefix then
+					local rm = s.msg:sub(1, 3) == "RM~" and s.msg or R.Codec.Feed(outer, "relay", s.msg, 0)
+					local body = rm and rm:match("^RM~[LP]~[^~]+~(.*)$")
+					local id, k, n = nil, nil, nil
+					if body then id, k, n = body:match("^C(%w+):(%d+):(%d+):") end
+					if id then
+						got[id] = got[id] or {}
+						got[id][tonumber(k)] = true
+						total[id] = tonumber(n)
+					end
+				end
+			end
+			for id, ks in pairs(got) do
+				local c = 0
+				for _ in pairs(ks) do c = c + 1 end
+				if c ~= total[id] then half = half + 1 end
+			end
+			local c = 0
+			for _ in pairs(got["62"] or {}) do c = c + 1 end
+			if total["62"] and c == total["62"] then newerWhole = newerWhole + 1 end
+		end
+		eq(half, 0, "no reporter is sent part of a copy")
+		eq(newerWhole, REPORTERS, "every reporter gets the newer copy whole")
+	end)
+end)
