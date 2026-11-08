@@ -564,14 +564,15 @@ local function AnswerAsk(body, now, sender)
 	end
 	-- A legacy ask cannot prove that it holds our words, even with equal counts.
 	-- ANSWER_GAP and the delayed/coalesced answer still bound recovery traffic.
-	-- (Pending until it is queued or given up: one answer at a time, and another verifier's answer
-	-- heard meanwhile still covers it.)
+	-- (Pending until it is queued or given up: one answer at a time. Another verifier's answer heard
+	-- meanwhile covers it on the channel alone: where answers go Direct (Forever), what this client
+	-- hears went to someone else, its own ask's answer or a hand-over in its own guild.)
 	local request = {}
 	pending = request
 	local function Answer(tries)
 		if pending ~= request then return end
 		if Verify.Clock() - lastSent < Verify.ANSWER_GAP then pending = false return end
-		if request.coverage then
+		if request.coverage and not Direct() then
 			local _, _, covered = Verify.Payload(nil, request.coverage)
 			if covered then pending = false return end
 		end
@@ -623,7 +624,8 @@ function Verify.Handle(dist, sender, text)
 		end
 		local realm = ns.RealmOf(sender)
 		local count, changed, bad = 0, false, false
-		local coverage = pending and {} -- only while answering; at most MAX_ROWS received entries
+		-- (only while answering on the channel; at most MAX_ROWS received entries)
+		local coverage = pending and not Direct() and {}
 		for row in rows:gmatch("[^;]+") do
 			if count >= Verify.MAX_ROWS then bad = true break end
 			count = count + 1

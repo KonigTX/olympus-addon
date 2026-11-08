@@ -304,3 +304,74 @@ test("verify mesh: a client's ask and a relay's ask answered in the same seconds
 		eq(hub.c.Verify.Digest() >= rows, true, "the relay holds the store")
 	end)
 end)
+
+-- The review of the 1.5.4 candidate: where answers go to the one client that asked (Relay.Direct, on
+-- Forever), a snapshot a verifier's client hears went to someone else (another verifier's answer to its
+-- own ask, a hand-over in its own guild), never to the client whose ask it is answering. Taken as
+-- "coverage" it dropped that answer, the first one or a refused one's retry, and the client's guild got
+-- nothing until a later ask. Coverage holds on the channel alone. Each fails before (the member holds none).
+local function Covered(Node, As, Flush, Advance, quiet)
+	local hub = Node(HUB, "Olympus Hearth")
+	eq(As(hub, hub.c.Verify.Approve, OTHER, MASTER), true) -- before the verifier logs in: it lacks this one
+	Flush(); Advance(10)
+	local verifier = Node(HC, "Olympus Crown")
+	for i = 1, 12 do eq(As(verifier, verifier.c.Verify.Approve, ("Olympus Recovery %03d"):format(i), MASTER), true) end
+	Flush(); Advance(3600)
+	eq(verifier.c.rdb.verify.list[ns.Fold(OTHER)], nil, "the verifier lacks the hub's earlier approval")
+	local member = Member(Node, As, "Cov Client-Realm", GUILD, verifier)
+	if quiet then -- a client's ask crossed a moment ago (one each VERIFY_ASK_EVERY): the member's stays here
+		local n, newest, sum, fp = As(verifier, verifier.c.Verify.Digest)
+		As(verifier, verifier.deliver, "WHISPER", "Earlier Client-Realm", ("RL~P~GV~1~Q~%d~%d~%d~%s"):format(n, newest, sum, fp))
+		Flush(); Advance(10)
+	end
+	return hub, verifier, member
+end
+
+test("verify mesh: another verifier's answer to the verifier's own ask, heard while a client's answer waits its 2-9 s, never drops that answer", function()
+	World(function(Node, As, Flush, Advance)
+		local _, verifier, member = Covered(Node, As, Flush, Advance, true)
+		verifier.c.Verify.random = function(_, b) return b end -- the client's answer at 9 s; the hub answers at 2 s
+		eq(As(member, member.c.Verify.Ask), true)
+		eq(As(verifier, verifier.c.Verify.Ask), true) -- its own half-hourly ask, in the same seconds
+		Flush()
+		for _ = 1, 8 do Advance(6) end
+		eq(verifier.c.rdb.verify.list[ns.Fold(OTHER)] ~= nil, true, "the hub's answer reached the verifier first")
+		eq(member.c.Verify.Digest() >= verifier.c.Verify.Digest(), true, "the member holds the store")
+	end, true)
+end)
+
+test("verify mesh: a refused answer is tried again although another verifier's answer to the verifier's own ask came meanwhile", function()
+	World(function(Node, As, Flush, Advance)
+		local _, verifier, member = Covered(Node, As, Flush, Advance, true)
+		local direct, refused = verifier.c.Relay.Direct, 0
+		verifier.c.Relay.Direct = function(target, ...) -- (the first answer refused: a full queue, say)
+			if ns.ShortName(target) == ns.ShortName(member.c.me) and refused == 0 then refused = 1 return false end
+			return direct(target, ...)
+		end
+		local ok, err = pcall(function()
+			eq(As(member, member.c.Verify.Ask), true)
+			eq(As(verifier, verifier.c.Verify.Ask), true)
+			Flush()
+			for _ = 1, 2 + verifier.c.Verify.ANSWER_RETRIES do Advance(verifier.c.Verify.ANSWER_RETRY_EVERY + 1) end
+		end)
+		verifier.c.Relay.Direct = direct
+		if not ok then error(err, 0) end
+		eq(refused, 1, "the first answer was refused")
+		eq(verifier.c.rdb.verify.list[ns.Fold(OTHER)] ~= nil, true, "the hub's answer reached the verifier before the retry")
+		eq(member.c.Verify.Digest() >= verifier.c.Verify.Digest(), true, "the member holds the store: the retry went")
+	end, true)
+end)
+
+test("verify mesh: a hand-over in the verifier's own guild, heard while a client of another guild waits its answer, never drops that answer", function()
+	World(function(Node, As, Flush, Advance)
+		local hub, verifier, member = Covered(Node, As, Flush, Advance)
+		local mate = Member(Node, As, "Crown Mate-Realm", "Olympus Crown", hub) -- the verifier's guild picked the hub
+		verifier.c.Verify.random = function(_, b) return b end
+		eq(As(mate, mate.c.Verify.Ask), true)     -- to the hub, which answers it (and hands it to the verifier's guild)
+		eq(As(member, member.c.Verify.Ask), true) -- to the verifier; it crosses, and the busy hub ignores it
+		Flush()
+		for _ = 1, 8 do Advance(6) end
+		eq(verifier.c.rdb.verify.list[ns.Fold(OTHER)] ~= nil, true, "the verifier heard its guild's hand-over")
+		eq(member.c.Verify.Digest() >= verifier.c.Verify.Digest(), true, "the member holds the store")
+	end, true)
+end)
