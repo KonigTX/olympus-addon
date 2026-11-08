@@ -224,6 +224,8 @@ function Comm.Stats()
 		electAll = Comm.ElectsAcrossRealms(now), quietAfter = Comm.QuietAfter(now), presence = Comm.PresenceRealms(now),
 		-- 1.2.5.1: quiet presence on, and how many of our words it held (Comm.QuietHolds).
 		quietPresence = Quiet(), quietHeld = stats.quiet or 0,
+		-- (1.5.4) Words dropped at the door from clients marked as modified builds (Builds.lua).
+		quarantined = stats.quarantined or 0,
 		-- 1.4.0: the game's "not now" (a throttle, a lockdown): sends kept for another try, sends
 		-- held back by a lockdown, and whether the queue is held now.
 		retried = stats.retried or 0, lockHeld = stats.locked or 0, held = heldSince ~= nil,
@@ -493,6 +495,9 @@ end
 --   1.5.4, lists: Comm LS (words of one kind packed as one word where the relay carries the channel,
 --   Comm.SendList: the Church's public rows first; each receiver hands the words inside to their own
 --   handler, one by one, as if each had come on its own).
+--   1.5.4, modified builds: Builds BD (a guild master's, an officer's or a councillor's sighting of a
+--   client whose version is no release, over GUILD and on the channel; the record the right-click
+--   menu and /oly builds show, and the lock on such a client's words).
 local handlers = {}
 -- 1.1 (Moderation.lua): a client the moderators took off (net-off) sends none of what they hide.
 local function Held(msg)
@@ -1780,7 +1785,11 @@ local function Electable(now)
 		-- lane, each reporting the same roster and each taking the relay's registration from the
 		-- others (the dev's relay: 9 members of one guild registered in turn).
 		if relayed and carries then ours, sameLane = true, true end
-		if (benched[name] or 0) <= now and (all or ours) and not peerBank[name] and sameLane and carries then pool[name] = t end
+		-- (1.5.4) Never a client marked as a modified build (Builds.lua): no relay takes its
+		-- registration and nobody takes its reports, so an election that chose it reported to nobody.
+		local B = ns.Builds
+		local locked = B ~= nil and not B.missing and B.Quarantined(name) == true
+		if (benched[name] or 0) <= now and (all or ours) and not peerBank[name] and sameLane and carries and not locked then pool[name] = t end
 	end
 	return pool
 end
@@ -2144,6 +2153,14 @@ local function OnAddonMessage(prefix, text, dist, sender, target, zoneChannelID,
 		return
 	end
 	if ns.db.blocked[sender:lower()] then return end
+	-- (1.5.4) A client marked as a modified build (Builds.lua) is locked out here, as a blocked one is:
+	-- nothing of its reaches a handler, the census or the relay, but its hello and its version answer,
+	-- which clear the mark when they name a release. Our own client is never marked.
+	local B = ns.Builds
+	if B and not B.missing and B.Quarantined(sender) and not B.Passes(text) then
+		stats.quarantined = (stats.quarantined or 0) + 1
+		return
+	end
 	if not Comm.Admit(sender, GetTime()) then return end
 	stats.recv = stats.recv + 1
 	-- Olympus Link (0.9.10; 1.4.0 its own addon, Olympus_Link): a High Councillor's addon waiting to
@@ -2203,6 +2220,10 @@ local function OnAddonMessage(prefix, text, dist, sender, target, zoneChannelID,
 		peerRealm[sender] = named
 		local version = text:match("^H1~([^~]+)")
 		peerVersion[sender] = version and (version:match("^%d+%.%d+%.%d+$") or version:match("^%d+%.%d+%.%d+%.%d+$")) and version or "?"
+		-- (1.5.4) The version as the hello says it, to the builds' record (Builds.lua): a form that is
+		-- no release marks a modified build and locks its words out; a release clears the mark.
+		local B = ns.Builds
+		if B and not B.missing then B.Hello(sender, version or "", now) end
 		local sealed = text:match("^H1~[^~]*~[^~]*~([^~]*)")
 		peerSealed[sender] = (sealed == "s" or sealed == "p") and sealed or nil
 		peerZone[sender] = text:match("^H1~[^~]*~[^~]*~[^~]*~([^~]*)") == "z" or nil

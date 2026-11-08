@@ -1418,6 +1418,9 @@ function Arena.Handle(kind, fn)
 		if type(text) ~= "string" or type(sender) ~= "string" then return end
 		local k, mode, proto, body = text:match("^(%w%w)~([^~]?)(%d*)~(.*)$")
 		if k ~= kind then Count(stats.dropped, "envelope") return end
+		-- (1.5.4) A client marked as a modified build (Builds.lua) is locked out of the arena's words too.
+		local B = ns.Builds
+		if B and not B.missing and B.Quarantined(sender) then Count(stats.dropped, "build") return end
 		-- (Whatever comes of it: the sender is online, and what waits for him goes.)
 		Heard(sender)
 		if mode ~= "L" and mode ~= "T" then Count(stats.dropped, "mode") return end

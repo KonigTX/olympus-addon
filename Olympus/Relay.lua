@@ -142,6 +142,12 @@ local pending = {}   -- (1.4.4) what waits for the first relay to answer: { part
 local holding = false -- a timer runs to send what waits anyway after PING_WAIT
 local flushing = false
 local stats = { out = 0, forwarded = 0, delivered = 0, dropped = 0, dead = 0, registered = 0 }
+-- (1.5.4) A client marked as a modified build (Builds.lua): a relay takes no registration from it,
+-- drops one it holds and forwards nothing to it (Comm drops its words at the door already).
+local function Quarantined(name)
+	local B = ns.Builds
+	return B ~= nil and not B.missing and type(name) == "string" and B.Quarantined(name) == true
+end
 function Relay.Stats()
 	local n = 0
 	for _, r in pairs(reporters) do n = n + 1 end
@@ -542,6 +548,21 @@ function Relay.Register(force)
 	return Relay.Out({ "RR~" .. guild }, false, nil, "relay register", false)
 end
 
+-- (1.5.4) A registration this relay holds from `name` goes (Builds.lua, when it marks a client as a
+-- modified build); the guilds it reported for register again with another reporter. How many went.
+function Relay.DropReporter(name)
+	if type(name) ~= "string" or name == "" then return 0 end
+	local key, short, n = Lower(ns.FullName(name)), Lower(ns.ShortName(name)), 0
+	for g, r in pairs(reporters) do
+		if Lower(r.name) == key or (ns.splitNames and Lower(ns.ShortName(r.name)) == short) then
+			reporters[g] = nil
+			n = n + 1
+		end
+	end
+	if n > 0 then ns.Log("relay: %s's registration dropped (modified build)", tostring(name)) end
+	return n
+end
+
 -- Taking a message and deciding whether to forward it use the same age limit. An expired
 -- key may remain in this bounded table until cleanup; its presence alone is not a duplicate.
 local function Remembered(origin, text, now)
@@ -892,7 +913,7 @@ end
 local function CrownToReporters(flag, origin, body, now)
 	local hide, due = Hide(body), {}
 	for g, r in pairs(reporters) do
-		if now - r.t > Relay.REPORTER_FOR then reporters[g] = nil
+		if now - r.t > Relay.REPORTER_FOR or Quarantined(r.name) then reporters[g] = nil
 		elseif CrownDue("r:" .. Lower(r.name), body, now) then due[#due + 1] = r end
 	end
 	local function Last(r) return crownSent["r:" .. Lower(r.name)] or -math.huge end
@@ -992,7 +1013,7 @@ local function ToReporters(flag, origin, body, sender)
 	end
 	local pieces
 	for g, r in pairs(reporters) do
-		if now - r.t > Relay.REPORTER_FOR then
+		if now - r.t > Relay.REPORTER_FOR or Quarantined(r.name) then
 			reporters[g] = nil
 		elseif scoped and g ~= scoped then
 			stats.scoped = (stats.scoped or 0) + 1 -- (another guild's presentation: heard here alone)
@@ -1139,7 +1160,7 @@ function Relay.HandleIn(dist, sender, text)
 		-- A guild's name as the game allows it (at most MAX_GUILD_NAME, no separator), one guild
 		-- per reporter (a new one leaves his old one), and at most MAX_REPORTERS guilds.
 		local who, key = ns.FullName(sender), guild:lower()
-		if #guild > Relay.MAX_GUILD_NAME or guild:find("[~|%c]") then
+		if #guild > Relay.MAX_GUILD_NAME or guild:find("[~|%c]") or Quarantined(who) then
 			stats.dropped = stats.dropped + 1
 			return true
 		end

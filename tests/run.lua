@@ -166,7 +166,7 @@ end
 -- Load addon files like WoW does: each gets (addonName, sharedTable)
 ---------------------------------------------------------------------------
 local ns = {}
-for _, file in ipairs({ "Bootstrap", "Locales", "Locales/MapNamesText", "Locales/PlayerTooltipText", "Locales/deDE", "Locales/esES", "Locales/frFR", "Locales/DuesGraceText", "Locales/DuesRosterText", "Locales/JusticeResponseText", "Locales/CarryText", "Locales/CarryMergerText", "Locales/CampaignText", "Locales/GuildFinanceText", "Locales/RankingRulesText", "Locales/AccordText", "Core", "RankingRules", "GamepadRegistry", "Gamepad", "Diagnostics", "Dialog", "PlayerMenu", "Codec", "Sign", "Authority", "Zones", "Who", "Data", "Roster", "Comm", "Map", "Layers", "Hop", "Positions", "Decree", "Channels", "Filter", "MapNames", "Inspect", "PlayerTooltip", "King", "HopSightings", "Vox", "Court", "Board", "Groups", "Week", "Treasury", "Dues", "Bank", "Acts", "Loot", "War", "Crafters", "Chronicle", "Workshop", "Versions", "Ed25519", "libs/QREncode/qrencode", "LinkLoader", "ArmyExport", "Recruit", "PartyGuard", "AnswerBank", "Answers", "Views", "Accord", "Consent", "ChatRooms", "CraftRequests", "ViewAs", "TabardsV2", "Members", "Nominees", "CensusClean", "Bridge", "BridgeSections", "BridgePeople", "BridgeAffairs" }) do
+for _, file in ipairs({ "Bootstrap", "Locales", "Locales/MapNamesText", "Locales/PlayerTooltipText", "Locales/deDE", "Locales/esES", "Locales/frFR", "Locales/DuesGraceText", "Locales/DuesRosterText", "Locales/JusticeResponseText", "Locales/CarryText", "Locales/CarryMergerText", "Locales/CampaignText", "Locales/GuildFinanceText", "Locales/RankingRulesText", "Locales/AccordText", "Core", "RankingRules", "GamepadRegistry", "Gamepad", "Diagnostics", "Dialog", "PlayerMenu", "Codec", "Sign", "Authority", "Zones", "Who", "Data", "Roster", "Comm", "Map", "Layers", "Hop", "Positions", "Decree", "Channels", "Filter", "MapNames", "Inspect", "PlayerTooltip", "King", "HopSightings", "Vox", "Court", "Board", "Groups", "Week", "Treasury", "Dues", "Bank", "Acts", "Loot", "War", "Crafters", "Chronicle", "Workshop", "Versions", "Builds", "Ed25519", "libs/QREncode/qrencode", "LinkLoader", "ArmyExport", "Recruit", "PartyGuard", "AnswerBank", "Answers", "Views", "Accord", "Consent", "ChatRooms", "CraftRequests", "ViewAs", "TabardsV2", "Members", "Nominees", "CensusClean", "Bridge", "BridgeSections", "BridgePeople", "BridgeAffairs" }) do
 	local chunk = assert(loadfile(ADDON_DIR .. file .. ".lua"))
 	chunk("Olympus", ns)
 end
@@ -6999,6 +6999,8 @@ assert(loadfile(ROOT .. "tests/king-crown-relay.lua"))(ns, test, eq, { RelayWorl
 -- 1.5.4: the King's presence where he leads no guild named Olympus (tests/king-online.lua).
 assert(loadfile(ROOT .. "tests/king-online.lua"))(ns, test, eq, { RelayWorld = RelayWorld, ADDON_DIR = ADDON_DIR })
 assert(loadfile(ROOT .. "tests/hop-forever-king.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
+-- 1.5.4: modified builds (tests/builds.lua): detection, the record, the shared word, the views and the lock.
+assert(loadfile(ROOT .. "tests/builds.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
 
 test("1.4.3 the relay: where names split, a channel message goes to the picked signed relay by whisper (RL), pinged once; a chat line goes logged; the relay registers reporters (RR), forwards to each guild's reporter (RM) and hears it itself; a reporter takes it once and hands it to its guild (RG); a guildmate takes it once; a stranger's RM is dropped", function()
 	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild }
@@ -61133,6 +61135,12 @@ end)()
 	end)
 
 	test("1.1.2 versions: a guildmate's hello names it (by the short name too); up to date, out of date, newer, unreadable; the author's released version is the newest known", function()
+		-- (1.5.4: a version that is no release form, "beta" here, marks a modified build in the builds'
+		-- record, Builds.lua, and Status says "modified" where it said "olympus"; a record of this
+		-- test's own, so Dan's mark never reaches another test.)
+		local savedBuilds = ns.db.builds
+		ns.db.builds = {}
+		ns.Builds.Reset()
 		local cns, Deliver = FreshComm()
 		Deliver("GUILD", "Ann", "H1~" .. ns.VERSION .. "~Realm~p")
 		Deliver("GUILD", "Bob", "H1~1.1.0~Realm~p")
@@ -61147,7 +61155,9 @@ end)()
 			eq((V.Status("Ann-Realm")), "current")
 			local state, version, how = V.Status("Bob")
 			eq(state, "outdated"); eq(version, "1.1.0"); eq(how, "hello")
-			eq((V.Status("Dan")), "olympus"); eq((V.Status("Eve")), "unknown")
+			-- (Changed on purpose, 1.5.4: "beta" is no release, so a modified build, with the version it said.)
+			local danState, danVersion = V.Status("Dan")
+			eq(danState, "modified"); eq(danVersion, "beta"); eq((V.Status("Eve")), "unknown")
 			eq(V.Line("outdated", "1.1.0"), L.VERSION_LINE_OUTDATED:format("1.1.0"))
 			w.hellos = {}
 			ns.Comm.PeerVersion = function(name) if ns.ShortName(name) == "Cid" then return "9.9.9", w.clock end end
@@ -61160,6 +61170,8 @@ end)()
 			eq((V.Status("Ann")), "outdated")
 			W.ResetVersion()
 		end)
+		ns.db.builds = savedBuilds
+		ns.Builds.Reset()
 	end)
 
 	test("1.1.2 Check version: one addon whisper, answered with the version alone; 'no answer' after 10 s; once per player every 2 min, 6 a minute; the answering side's limits, blocks and ignores", function()

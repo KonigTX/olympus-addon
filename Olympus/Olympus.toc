@@ -112,6 +112,7 @@ War.lua
 Crafters.lua
 Workshop.lua
 Versions.lua
+Builds.lua
 Ed25519.lua
 libs\QREncode\qrencode.lua
 LinkLoader.lua

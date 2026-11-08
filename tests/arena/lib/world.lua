@@ -60,7 +60,7 @@ end
 World.FromArena = FromArena
 
 -- The existing modules a scenario asserts on (the design), in TOC order, loaded into each client.
-World.MODULES = { "Channels", "King", "Treasury", "Dues", "Moderation", "Alts", "Workshop", "Consent" }
+World.MODULES = { "Channels", "King", "Treasury", "Dues", "Moderation", "Alts", "Workshop", "Builds", "Consent" }
 -- Loaded into each client too, before them, never shared: Ed25519.lua's job queue (one client's
 -- signature checks never count against another's limit, nor run with its globals).
 World.OWN = { "Ed25519", "RankingRules" }

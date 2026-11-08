@@ -2488,6 +2488,7 @@ StandIn("Record", { "Slash" }) -- the Guinness attempt's record mode, the witnes
 -- answer bank's Answers and explanations (Answers.lua).
 StandIn("PlayerMenu", {})
 StandIn("Versions", { "Check", "AskUpdate", "Tell" })
+StandIn("Builds", { "Show", "Slash" }) -- 1.5.4: modified builds, their record and their lock (Builds.lua)
 StandIn("Answers", { "Open" })
 -- 1.1.5: the guild masters' centurions and correspondents (Nominees.lua).
 StandIn("Nominees", { "Slash", "Prompt" })
@@ -2795,6 +2796,7 @@ local function Help()
 	if rawget(L, "HELP_VERIFY") then print(L.HELP_VERIFY) end -- (guild verification, Verify.lua)
 	print(L.HELP_PRIVACY_PAGE)
 	print(L.HELP_PROFILE)
+	print(L.HELP_BUILDS) -- (1.5.4: modified builds, Builds.lua)
 	print(L.HELP_CHAT)
 	print(L.HELP_LOG)
 	print(L.HELP_FILTER)
@@ -3101,6 +3103,10 @@ local function Slash(input)
 			ns.Print(ns.L.DEMO_REMOVED)
 		elseif cmd == "bug" then
 			ns.UI.ShowBugReport()
+		elseif cmd == "builds" then
+			-- 1.5.4: the modified builds this client saw, and those the guild masters, officers and the
+			-- High Council reported (Builds.lua), in a copy window.
+			if ns.Builds.missing then ns.Print(L.RESTART_NEEDED) else ns.Builds.Show() end
 		elseif cmd == "record" then
 			-- The Guinness attempt's record mode (Record.lua): on, off, status, mark; alone, its status
 			-- in the copy window. It writes only to this client's own saved file and sends nothing.
