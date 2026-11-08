@@ -492,6 +492,34 @@ test("census scope: a validated scoped snapshot restores an empty login immediat
 	eq(late.D.Summary().characters, 900); eq(late.D.Summary().snapshot, nil)
 end)
 
+-- 1.5.4 (the dev's account store of 2026-11-07, replayed through 1.5.3: in 45 minutes his PvE client
+-- said 21 carried looks, each another player's one-guild look, and never its own 19-guild look of
+-- PvP). Fails before: the carrier walked every observer's look of an origin, and a newer one stood
+-- for the origin until its window closed, so the account's own complete look was skipped each time.
+test("census carry: a carrier says one look per origin, its own account's first, never every observer's look of it", function()
+	local w = GroupWorld("Zed Own-CAMWOWUS1Realm8PvP")
+	w.ns.group, w.ns.realm = "ForeverPvP", "CAMWOWUS1Realm8PvP"
+	for i = 1, 19 do w.ns.rdb.guilds["Olympus Pvp " .. i] = { total = 190 + i, online = 20, t = w.clock - 60, from = w.ns.realm } end
+	assert(w.D.RecordGroupCensus())
+	local own = assert(w.D.PortablePayload())
+	-- An hour later, on PvE: two other players' newer one-guild looks of PvP heard (their names sort first).
+	w.ns.me, w.ns.group, w.ns.realm, w.ns.rdb.guilds = "Carrier-CAMWOWUS2Realm1PvE", "ForeverPvE", "CAMWOWUS2Realm1PvE", {}
+	w.clock = w.clock + 3600
+	for i, who in ipairs({ "Abe One-CAMWOWUS1Realm6PvP", "Bob Two-CAMWOWUS1Realm4PvP" }) do
+		assert(w.D.ReceiveGroupCensus("CHANNEL", "Some Carrier-CAMWOWUS2Realm1PvE",
+			("CX~3~S~%s~ForeverPvP~Alliance~%d,%d,1,%d~"):format(who, 100 * i, 100 * i, w.clock - 600 + 60 * i)))
+	end
+	w.sent = {}
+	for _ = 1, 27 do -- the turns of one half-hour window
+		w.D.SayGroupCensus()
+		w.clock = w.clock + w.D.GROUP_SEND_GAP
+	end
+	local carried = {}
+	for _, p in ipairs(w.sent) do if p:match("^CX~3~") then carried[#carried + 1] = p end end
+	eq(carried[1], own, "the account's own complete look is the one said")
+	eq(#carried, 1, "one look for the origin in its window, not one per observer")
+end)
+
 test("census groups (1.4.0): our own look at our realm group is kept and carried to another group, where it is said; ours is never said where everyone sees it live", function()
 	local w = GroupWorld("Traveller-Realm")
 	w.ns.rdb.guilds["Olympus Dawn"] = { total = 640, online = 40, avgLevel = 30, t = w.clock, st = w.clock }
@@ -503,7 +531,10 @@ test("census groups (1.4.0): our own look at our realm group is kept and carried
 	w.ns.group = "Launchpvp"
 	w.clock = w.clock + 600
 	local said = w.D.GroupCensusPayload()
-	eq(said, ("CX~1~S~%d~Launchpve|Alliance|640|640|1|%d"):format(w.clock, w.clock - 600))
+	-- (1.5.4) Commas, not the "|" of 1.4.0: Comm's OnAddonMessage drops every received "|" (0.9.2), so
+	-- no client ever parsed a 1.4.0 row (the dev's stores hold no "relay" or "witnessed" group row).
+	eq(said, ("CX~1~S~%d~Launchpve,Alliance,640,640,1,%d"):format(w.clock, w.clock - 600))
+	eq(Codec.Plain(said), said, "the row survives the receiver's escape-code filter")
 	eq(w.D.SayGroupCensus(), true)
 	-- One other traveller is insufficient for everyone else on this channel: our independent
 	-- observation must still leave, even though we can already corroborate it locally.

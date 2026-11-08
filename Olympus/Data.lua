@@ -1717,6 +1717,10 @@ local function TakeGroup(row, sender, trusted, now)
 	end
 	if trusted then
 		groupHeard[key] = math.max(groupHeard[key] or 0, row.observed)
+		-- (1.5.4) While a look is still counted, a newer trusted one covering under half its guilds
+		-- does not replace it: a client that saw only its own guild there is not the family's count.
+		if type(held) == "table" and now - (tonumber(held.observed) or 0) <= Data.GROUP_COUNT
+			and row.guilds * 2 < (tonumber(held.guilds) or 0) then return false end
 		return Keep(row, "relay", 1)
 	end
 	local who = PersonKey(sender)
@@ -1762,13 +1766,19 @@ end
 
 -- What this client sends: its rows of the OTHER groups (ours everyone here sees live), its own looks
 -- and those it took, newer than what was said here lately; the beta's never on a launch realm.
+-- (1.5.4) A Forever family's row only from a trusted client, whose word stands alone (1.4.0, "a
+-- moderator's alone"): 1.5.2 kept every family out, so no client that never played the other family
+-- ever counted it (the dev, 11-08: "para mim mostra os dados ... não mostra para ninguém"). A row
+-- kept under a plain realm (learned before 1.4.6, a sub-realm's partial view) never travels.
 function Data.GroupCensusPayload(now)
 	now = now or ns.Now()
+	local trusted = GlobalTrusted(ns.me)
 	local rows, byOrigin = {}, {}
 	for _, e in pairs(GroupStore()) do
 		local row = type(e) == "table" and GroupRow(e.group, e.faction, e.characters, e.people, e.guilds, e.observed)
 		local key = row and GroupKey(row.faction, row.group)
-		if row and not ScopedGroup(row.group) and not e.unscoped and not (row.group == GroupField(ns.group) and row.faction == OurFaction()) and Listed(row.group)
+		if row and (not ScopedGroup(row.group) or (trusted and e.group == row.group)) and not e.unscoped
+			and not (row.group == GroupField(ns.group) and row.faction == OurFaction()) and Listed(row.group)
 			and row.observed > (groupHeard[key] or 0) + Data.FRESH then
 			if not byOrigin[key] or GroupLater(row, byOrigin[key]) then byOrigin[key] = row end
 		end
@@ -1779,7 +1789,9 @@ function Data.GroupCensusPayload(now)
 	local out = {}
 	for i = 1, math.min(#rows, Data.GROUP_SAY_MAX) do
 		local r = rows[i]
-		out[#out + 1] = ("%s|%s|%d|%d|%d|%d"):format(r.group, r.faction, r.characters, r.people, r.guilds, r.observed)
+		-- (1.5.4) Commas: every client's Comm drops a received message's "|" before any handler reads
+		-- it (0.9.2, Comm's OnAddonMessage), so the rows 1.4.0 sent with "|" never parsed anywhere.
+		out[#out + 1] = ("%s,%s,%d,%d,%d,%d"):format(r.group, r.faction, r.characters, r.people, r.guilds, r.observed)
 	end
 	return ("CX~%d~S~%d~%s"):format(Data.GROUP_PROTOCOL, math.floor(now), table.concat(out, ";"))
 end
@@ -1826,10 +1838,12 @@ function Data.ReceiveGroupCensus(dist, sender, text)
 	for part in tostring(body):gmatch("[^;]+") do
 		if count >= Data.GROUP_SAY_MAX then break end
 		count = count + 1
-		local g, f, c, p, n, o = part:match("^([^|]+)|(%a+)|(%d+)|(%d+)|(%d+)|(%d+)$")
+		local g, f, c, p, n, o = part:match("^([^|,]+)[|,](%a+)[|,](%d+)[|,](%d+)[|,](%d+)[|,](%d+)$")
 		local row = g and GroupRow(g, f, c, p, n, o)
 		if row then
-			row.unproven = ScopedGroup(row.group) ~= nil
+			-- A Forever family's row without an original observer: a trusted sender's word alone,
+			-- anyone else's reported only (1.5.2: forwarders are not independent witnesses).
+			row.unproven = ScopedGroup(row.group) ~= nil and not trusted
 			if Listed(row.group) and TakeGroup(row, sender, trusted, now) then changed = true end
 		end
 	end
@@ -2180,11 +2194,31 @@ function Data.CapturePortable(row)
 	PortableKeep(observer, row, head .. table.concat(parts, ";"), true)
 	return true
 end
+-- (1.5.4) One look carries an origin: this account's own, else the one covering the most guilds, then
+-- the newest. Walking every observer's look let a newer one-guild look stand for the origin through
+-- its window, and the account's own complete look was skipped every time (the dev's store of 11-07:
+-- 21 one-guild looks said in 45 minutes, never its own 19 guilds of PvP). One word per origin a window.
+local function PortableGuilds(e)
+	return tonumber(tostring(e.wire):match("^CX~3~S~[^~]+~[^~]+~%a+~%d+,%d+,(%d+),%d+~")) or 0
+end
+local function PortableBetter(a, b)
+	if (a.own == true) ~= (b.own == true) then return a.own == true end
+	local ga, gb = PortableGuilds(a), PortableGuilds(b)
+	if ga ~= gb then return ga > gb end
+	if a.observed ~= b.observed then return a.observed > b.observed end
+	return a.wire < b.wire
+end
 function Data.PortablePayload(now, sending)
 	now = now or ns.Now()
 	PortableTrim(now)
-	local store, keys = PortableStore(), {}
-	for key, e in pairs(store) do if Listed(e.group) then keys[#keys + 1] = key end end
+	local store, best, keys = PortableStore(), {}, {}
+	for key, e in pairs(store) do
+		if Listed(e.group) then
+			local origin = GroupKey(e.faction, e.group)
+			if not best[origin] or PortableBetter(e, store[best[origin]]) then best[origin] = key end
+		end
+	end
+	for _, key in pairs(best) do keys[#keys + 1] = key end
 	if #keys == 0 then return nil end
 	table.sort(keys)
 	for offset = 1, #keys do
