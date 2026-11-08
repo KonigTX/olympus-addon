@@ -195,10 +195,12 @@ test("verification recovery: waiting for a relay cannot bypass a revoked capabil
 		eq(Send(), true); Flush()
 		eq(results[1], false); eq(carried, 0); eq(member.c.Relay.Stats().pending, 0)
 		allowed = true
-		eq(Send(), true); eq(carried, 1); eq(member.c.Relay.Stats().pending, 1)
+		-- (1.5.4) No channel text while waiting for a relay at all: Forever blocked that timer send
+		-- (ChatHall.lua says why). The held message is still checked again at the flush below.
+		eq(Send(), true); eq(carried, 0); eq(member.c.Relay.Stats().pending, 1)
 		allowed = false
 		As(member, member.deliver, "WHISPER", "Hildryn Payne-Realm", "RY~"); Flush()
-		eq(results[2], false); eq(carried, 1)
+		eq(results[2], false); eq(carried, 0)
 		eq(#member.sentOf("RL~P~X1~held-capability"), 0, "flush checks revocation again before the actual whisper")
 	end)
 end)
