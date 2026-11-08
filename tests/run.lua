@@ -10709,7 +10709,7 @@ test("The Treasury: the Treasurer's book (not his gold), the King's three switch
 			T.Share(true)
 			ns.Comm.SendChunked = savedChunked
 			-- 1.1: the channel carries the army's part alone, and the King shows the army nothing
-			-- yet: no name and no number there (Zeal's promise, its own test further down). The
+			-- yet: no name and no number there (the hidden-treasury promise, its own test further down). The
 			-- whole book is what goes by whisper to the King, a Steward and the keepers.
 			eq(LastSent(w), "TB~1.0~Olympus~0~0~0~0~0~0~~-~000@1~~~~0:0", "the army's part: nothing")
 			local msg = T.Message() -- (Fern's #36: the week's donors as a count, 3, never by name)
@@ -29073,7 +29073,7 @@ test("the public package ships Olympus, Olympus_Arena and OlympusSiteAggregate; 
 	assert(not rest:find("Olympus_Link", 1, true), "Olympus_Link only through OLY_LINK_REPO")
 end)
 
--- 1.1: what the King hides no longer goes on the channel (Zeal's promise): the reminder says the
+-- 1.1: what the King hides no longer goes on the channel (the hidden-treasury promise): the reminder says the
 -- hidden parts are whispered to the keepers, the King and his Steward alone, and the part the
 -- army sees goes on the channel, which every client on it receives.
 test("1.0.0 treasury: the reminder a sharing keeper gets says where what he shares goes, hidden or shown (both languages)", function()
@@ -45373,7 +45373,7 @@ test("1.1 crafters (#24): told he is busy, the page says so and a click asks aga
 end)
 end
 ---------------------------------------------------------------------------
--- 1.1 (batch E): the treasury. What the King's switches hide off the public channel (Zeal's
+-- 1.1 (batch E): the treasury. What the King's switches hide off the public channel (the hidden-treasury
 -- promise), the bank's search, what left it and the sister guilds' banks, bank requests, the
 -- Treasurer's "taking donations", and a clipboard backup.
 ---------------------------------------------------------------------------
@@ -45404,7 +45404,7 @@ local function OldTreasury()
 	return tns.Treasury, tns, logs
 end
 
-test("1.1 Zeal's promise: what the King hides never goes on the channel; the King, his Stewards and the keepers get it whole by whisper", function()
+test("1.1 the hidden-treasury promise: what the King hides never goes on the channel; the King, his Stewards and the keepers get it whole by whisper", function()
 	WithThrone(function(w, K)
 		local T, B = ns.Treasury, ns.Bank
 		local saved = { split = ns.splitNames, after = ns.After, chunked = ns.Comm.SendChunked, notFound = ERR_CHAT_PLAYER_NOT_FOUND_S, chat = C_ChatInfo }
@@ -49921,7 +49921,7 @@ local function TreasurySim(opts)
 	return result
 end
 
-test("1.1 Zeal's promise, the keeper's message budget: a donation a minute with 2 or 3 of them online drops nothing from his queue, and each gets the latest book whole", function()
+test("1.1 the hidden-treasury promise, the keeper's message budget: a donation a minute with 2 or 3 of them online drops nothing from his queue, and each gets the latest book whole", function()
 	for _, case in ipairs({
 		{ what = "the ranking shown, the King and a keeper", flags = { ranking = true, at = 1 }, keepers = 1 },
 		{ what = "the ranking shown, the King and two keepers", flags = { ranking = true, at = 1 }, keepers = 2 },
@@ -49948,7 +49948,7 @@ test("1.1 Zeal's promise, the keeper's message budget: a donation a minute with 
 	end
 end)
 
-test("1.1 Zeal's promise and 1.0: a King, Steward or keeper still on 1.0 is named on a 1.1 insider's Treasury tab while the King hides a part", function()
+test("1.1 the hidden-treasury promise and 1.0: a King, Steward or keeper still on 1.0 is named on a 1.1 insider's Treasury tab while the King hides a part", function()
 	WithThrone(function(w, K)
 		local T = ns.Treasury
 		local saved = { split = ns.splitNames }

@@ -2390,8 +2390,8 @@ also saved in `WTF/Account/<ACCOUNT>/SavedVariables/Olympus.lua`.
   regressions, adapted from PR #52), and HTX (the Board's group listings, applications and
   invites, adapted from PR #62).
 - **Feature requests:** Fernmelder, whose 39 posts became 1.1 (the Fernmelder release);
-  shenanigans_ (the nameplate marks), Valdericht (`<OLYMPIAN>`), Pyralis Ashandar (taking
-  donations) and Zeal (what the King hides stays off the channel).
+  shenanigans_ (the nameplate marks), Valdericht (`<OLYMPIAN>`) and Pyralis Ashandar (taking
+  donations).
 - **Art:** Max (the bronze elite borders, drawn over the game's own; the winged one remains the guild masters').
 - **Reports from the field:** Riukensei and PartyRockAce (the gamepad UI; PartyRockAce's report
   of the world map blocked in controller mode, fixed in 1.0), Ignitheus (whispers to Forever
