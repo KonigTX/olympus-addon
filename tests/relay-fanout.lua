@@ -448,3 +448,57 @@ test("relay fan-out (1.5.4): the relay's own word too long for one drip batch is
 		eq(newerWhole, REPORTERS, "every reporter gets the newer copy whole")
 	end)
 end)
+
+-- The review of the 1.5.4 candidate: the Treasurer's client (a relay: Relay.Names takes his signed
+-- pins) passes on each of his mail characters' books (TR~<name>~) in one tick (Treasury.Relay), each
+-- as Treasury.Send sends it: in pieces above 250 bytes, else one channel message. Keyed "TR" alone,
+-- the last book took the others' places for every reporter still waiting: in the drip for books in
+-- pieces (one reporter of six had both), in Comm's keyed jobs for books in one whisper (none had
+-- both). Each mail character's book keeps its own place now, and a newer copy of one character's
+-- book still takes its waiting copy's place. Fails before (the first book at one reporter of six).
+test("relay fan-out (1.5.4): the relay's own books of two mail characters (TR), sent in one tick, both reach every reporter, in pieces or in one whisper; a newer copy of one character's book still takes its waiting copy's place", function()
+	Relayed(function(R, sent, Run)
+		local REPORTERS = 6
+		for i = 1, REPORTERS do
+			R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i))
+		end
+		-- As Treasury.Send sends each book: in pieces above 250 bytes, else one channel message.
+		local options = { owner = "test treasury", guard = function() return true end }
+		local function Send(book)
+			if #book <= 250 then return R.Comm.Send("CHANNEL", book, nil, nil, nil, nil, options) end
+			return R.Comm.SendChunked(book, nil, "CHANNEL", nil, options)
+		end
+		local function Both(a, b)
+			local n = 0
+			for i = 1, REPORTERS do
+				local got = Assembled(R, sent, ("Rep Number%d-"):format(i))
+				if got[a] and got[b] then n = n + 1 end
+			end
+			return n
+		end
+		local big1 = "TR~Pyralis Andarai-Realm~1794011276~TB~" .. ("a"):rep(700)
+		local big2 = "TR~Pyralis Thirdchar-Realm~1794011276~TB~" .. ("b"):rep(700)
+		Send(big1); Send(big2)
+		Run(400)
+		eq(Both(big1, big2), REPORTERS, "each mail character's book in pieces reaches every reporter")
+		local small1, small2 = "TR~Pyralis Andarai-Realm~1794011277~TB~a", "TR~Pyralis Thirdchar-Realm~1794011277~TB~b"
+		Send(small1); Send(small2)
+		Run(100)
+		eq(Both(small1, small2), REPORTERS, "each mail character's book in one whisper reaches every reporter")
+		-- Still: the queue full, a newer copy of one character's book takes its waiting copy's place.
+		for i = 1, R.Comm.MAX_QUEUE do R.Comm.Whisper("Filler Target-CAMWOWUS2Realm7PvE", "X1~filler " .. i, "filler " .. i, false, false) end
+		local older = "TR~Pyralis Andarai-Realm~1794011300~TB~" .. ("c"):rep(700)
+		local newer = "TR~Pyralis Andarai-Realm~1794011301~TB~" .. ("d"):rep(700)
+		Send(older); Send(newer)
+		Run(400)
+		eq(R.Comm.QueueSize(), 0, "everything went out")
+		local olderSent, newerOnce = 0, 0
+		for i = 1, REPORTERS do
+			local got = Assembled(R, sent, ("Rep Number%d-"):format(i))
+			if got[older] then olderSent = olderSent + 1 end
+			if got[newer] == 1 then newerOnce = newerOnce + 1 end
+		end
+		eq(olderSent, 0, "no reporter is sent the copy the newer one replaced")
+		eq(newerOnce, REPORTERS, "each reporter gets the newer copy, once")
+	end)
+end)

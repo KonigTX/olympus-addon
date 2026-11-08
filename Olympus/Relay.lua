@@ -572,7 +572,10 @@ local function QueueWord(body)
 	-- Fragment i and fragment i+1 are both required. Coalescing them by the first
 	-- two bytes (C1, etc.) discarded all but the last before the queue could send.
 	-- (1.5.4) The Throne's kinds apart too: the King's newest crown never takes a waiting call's place.
-	return body:match("^(C[^:]+:%d+):%d+:") or body:match("^(T1~%a)~") or body:sub(1, 2)
+	-- (The review of the 1.5.4 candidate.) And each of the Treasurer's mail characters' books apart
+	-- (TR~<name>~): Treasury.Relay passes on one per mail character in one tick, and keyed "TR" alone
+	-- the last took the others' places, in the drip and in Comm's queue alike.
+	return body:match("^(C[^:]+:%d+):%d+:") or body:match("^(T1~%a)~") or body:match("^(TR~[^~]+)~") or body:sub(1, 2)
 end
 
 local function SnapshotPart(origin, body, now)
