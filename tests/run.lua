@@ -7159,7 +7159,14 @@ test("1.4.4 the relay: the first message with no relay answered pings every rela
 		GetGuildInfo = function() return "Olympus II", "Member", 3 end
 		local O, odeliver, osent, _, opump, osentOf = RelayWorld("Orig Inal-Realm", "Olympus II")
 		local quieted, timers, dones = {}, {}, {}
-		O.Accord = { Quiet = function(n) quieted[#quieted + 1] = n end }
+		-- (1.5.4: Comm opens the quiet window again when each whisper actually goes, so a name is
+		-- quieted when the relay hands its whisper in and again when it leaves. What matters here is
+		-- whose lines stay out of the chat, in order: each name once, as the relay first quieted it.)
+		O.Accord = { Quiet = function(n)
+			n = ns.TellName(n)
+			for _, q in ipairs(quieted) do if q == n then return end end
+			quieted[#quieted + 1] = n
+		end }
 		O.After = function(_, _, fn) timers[#timers + 1] = fn end
 		-- Held, every relay pinged at once, each ping's name quieted.
 		eq(O.Comm.Send("CHANNEL", "X1~one", "k1", false, false, function(sent) dones[#dones + 1] = sent end), true)
@@ -7185,7 +7192,7 @@ test("1.4.4 the relay: the first message with no relay answered pings every rela
 		opump()
 		local out = osentOf("RL~P~X1~")
 		eq(#out, 2); eq(out[1].msg, "RL~P~X1~two"); eq(out[1].target, "Max Ran"); eq(out[2].msg, "RL~P~X1~three"); eq(out[2].target, "Max Ran")
-		eq(table.concat(quieted, ","), "Max Ran,Max Ran")
+		eq(table.concat(quieted, ","), "Max Ran", "both messages' name quieted (each name once, see above)")
 		eq(O.Relay.Stats().pending, 0); eq(O.Relay.Stats().sure, true); eq(O.Relay.Pick(), "Max Ran", "the one that answered, while any did")
 		-- The next message goes straight out, no new ping (it answered within DEAD_FOR).
 		eq(O.Comm.Send("CHANNEL", "X1~four"), true)
@@ -7629,6 +7636,39 @@ test("1.5.4 the relay: while no relay answers, a word's pieces wait for the firs
 		eq(#carried, 0); eq(said, 0)
 	end)
 	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild, SendChatMessage = saved.channel, saved.member, saved.guild, saved.inGuild, saved.say
+	C_ChatInfo = nil
+	if not ok then error(err, 0) end
+end)
+
+-- 1.5.4 (the dev's live report: "No player named <a reporter> is currently playing" filled his chat
+-- on his relay). The quiet window opened when a whisper was handed to the queue, and a relay's
+-- whisper can wait there far longer (a batch behind thirty reporters' turns), or go to a reporter
+-- whose registration lapsed meanwhile. The window opens again when the whisper actually goes, for
+-- every whisper the addon sends. Fails before (the line shows: no window, or a closed one).
+test("1.5.4 the server's no-player line for a whisper the addon sent is kept out of the chat from the moment it went, however long it waited in the queue; anyone else's shows, and later as ever", function()
+	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild, err = ERR_CHAT_PLAYER_NOT_FOUND_S, time = GetTime }
+	local ok, err = pcall(function()
+		GetChannelName = function() return 0 end
+		ns.IsMember = function() return true end
+		IsInGuild = function() return true end
+		GetGuildInfo = function() return "Olympus II", "Member", 3 end
+		ERR_CHAT_PLAYER_NOT_FOUND_S = "No player named '%s' is currently playing."
+		local mono = 5000
+		GetTime = function() return mono end
+		local O = RelayWorld("Hildryn Payne-Realm", "Olympus II")
+		O.Treasury = ns.Treasury
+		local A = O.Accord
+		local line = ERR_CHAT_PLAYER_NOT_FOUND_S:format("Gone Reporter")
+		-- A whisper handed to the queue now, sent half a minute later (a busy relay's queue).
+		eq(O.Comm.Whisper("Gone Reporter-Realm", "X1~a word for him", nil, false, false) ~= false, true)
+		mono = mono + 30
+		for _ = 1, 10 do O.Comm.Pump() end
+		eq(A.QuietLine(nil, "CHAT_MSG_SYSTEM", line), true, "the line his whisper caused stays out of the chat")
+		eq(A.QuietLine(nil, "CHAT_MSG_SYSTEM", ERR_CHAT_PLAYER_NOT_FOUND_S:format("Somebody Else")), false, "anyone else's shows")
+		mono = mono + A.QUIET + 1
+		eq(A.QuietLine(nil, "CHAT_MSG_SYSTEM", line), false, "and later, as ever")
+	end)
+	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild, ERR_CHAT_PLAYER_NOT_FOUND_S, GetTime = saved.channel, saved.member, saved.guild, saved.inGuild, saved.err, saved.time
 	C_ChatInfo = nil
 	if not ok then error(err, 0) end
 end)

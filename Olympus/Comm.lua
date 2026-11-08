@@ -692,6 +692,14 @@ local function SendNow(dist, msg, logged, whisperTo)
 	if ok and IsSuccess(res) then
 		stats.sent = stats.sent + 1
 		refusedInRow = 0
+		-- (1.5.4, the dev's live report: "No player named <a reporter> is currently playing" kept
+		-- filling his chat.) The server's line answers the whisper that actually went, and a whisper
+		-- can wait in the queue (a relay's batch behind thirty reporters' turns) far longer than the
+		-- quiet window opened when it was handed in. The window opens again now, whoever sent it.
+		if dist == "WHISPER" then
+			local A = ns.Accord
+			if type(A) == "table" and type(A.Quiet) == "function" then pcall(A.Quiet, whisperTo) end
+		end
 		if dist == "CHANNEL" then laneRefused = 0 end -- (1.4.1: the channel takes our words)
 		return true
 	end
