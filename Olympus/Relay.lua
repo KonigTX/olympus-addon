@@ -107,14 +107,18 @@ local budget = {} -- reporter name (lower) -> { at = when refilled, left = piece
 -- trickle now shares TRICKLE_PER_MIN a minute among the reporters, REPORTER_RATE at most each (the
 -- model: half again as many whole snapshots at 35 reporters and five times as many at 80, none left
 -- without one at 35; more chat lines and decisions arrive). A whole allowance at a time, taken in
--- the order the words come, as before: REPORTER_RATE every minute up to 15 reporters, else a wrapped
--- piece (two whispers) every 120 / share seconds. (The review of the candidate: refilled a fraction
--- at a time, it went to the first word that fitted one whisper, and a word in two whispers, a census
--- look in one chunk or any full piece, never found room beside the short ones.)
+-- the order the words come, as before: REPORTER_RATE every minute up to 15 reporters, else three
+-- whispers, a census report in two pieces, every 180 / share seconds. (The review of the candidate:
+-- refilled a fraction at a time, it went to the first word that fitted one whisper, and a word in two
+-- whispers, a census look in one chunk or any full piece, never found room beside the short ones.
+-- The review again, mixed versions: an allowance of two above 20 reporters never held a report in
+-- two pieces, three whispers, which 1.5.3 passed whenever its allowance was full, so no other guild's
+-- full report reached any guild through a busy relay; an allowance holds three at the least now, the
+-- same share a minute in a longer window.)
 Relay.TRICKLE_PER_MIN = 60
 local share = Relay.REPORTER_RATE -- each reporter's whispers a minute (ToReporters sets it)
 local function Afford(name, pieces, now, need)
-	local most = math.min(Relay.REPORTER_RATE, math.max(2, share))
+	local most = math.min(Relay.REPORTER_RATE, math.max(3, share))
 	-- (The review of the candidate.) A piece of a word that needs more whispers than an allowance
 	-- holds never reaches the reporter whole: it spends nothing (need: the least the word takes).
 	if need and need > most then return false end
@@ -908,7 +912,7 @@ local function ToReporters(flag, origin, body, sender)
 	-- (The review of the candidate.) Another client's word in pieces passes the trickle whole or not
 	-- at all: the pieces before its last are full, and a full piece with its RM label is one or two
 	-- whispers. The least it takes, for Afford: a census report in two pieces (385 bytes) is three
-	-- whispers, which an allowance of two (more than 20 reporters) never holds.
+	-- whispers, which every allowance holds; one in three pieces is five, which none does.
 	local need
 	do
 		local id, n = body:match("^C(%w+):%d+:(%d+):")

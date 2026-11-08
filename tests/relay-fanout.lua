@@ -318,9 +318,10 @@ test("relay trickle (1.5.4): a word in two whispers still gets through beside sh
 		local looks, most = Trial(10, 300)
 		eq(looks >= 5, true, ("10 reporters: each is handed a look in two whispers each minute: at least %d in 5 minutes"):format(looks))
 		eq(most <= rate * 6, true, ("and no more than REPORTER_RATE a minute: at most %d whispers"):format(most))
+		-- (The review, mixed versions: an allowance holds three whispers at the least, a window of 105 s here.)
 		looks, most = Trial(35, 300)
-		eq(looks >= 4, true, ("35 reporters: each is handed one about every 70 s: at least %d in 5 minutes"):format(looks))
-		eq(most <= 2 + all / 35 * 5 + 1, true, ("and no more than his share: at most %d whispers"):format(most))
+		eq(looks >= 2, true, ("35 reporters: each is handed one about every 105 s: at least %d in 5 minutes"):format(looks))
+		eq(most <= 3 + all / 35 * 5 + 1, true, ("and no more than his share: at most %d whispers"):format(most))
 	end)
 end)
 
@@ -345,11 +346,15 @@ test("relay trickle (1.5.4): a clock set back starts a reporter's new allowance"
 end)
 
 -- The review of the 1.5.4 candidate: another client's word in pieces passes the trickle whole or not
--- at all. With 35 reporters an allowance holds two whispers; a census report in two pieces (385 bytes:
--- its full first piece and its RM label are two whispers, its last one more) can never reach a reporter
--- whole, yet its first piece took the allowance and the single words after it went to nobody. A last
--- piece alone (its first ones refused before) took a single word's place the same way. Fails before.
-test("relay trickle (1.5.4): a word in pieces that can never pass whole spends nothing, and the single words after it still pass", function()
+-- at all. A census report in three pieces (its two full pieces with their RM labels are two whispers
+-- each, its last one more: five) can never reach a reporter whole, yet its first piece took the
+-- allowance and the single words after it went to nobody. A last piece alone (its first ones refused
+-- before) took a single word's place the same way. Fails before. (The same review, mixed versions:
+-- with more than 20 reporters an allowance held two whispers, so a report in two pieces, three
+-- whispers, never passed either, and no other guild's full report reached any guild through a busy
+-- relay, which 1.5.3 let through whenever the allowance was full. It holds three at the least now.
+-- Fails before: the two-piece report reached nobody with 35 reporters.)
+test("relay trickle (1.5.4): a word in pieces that can never pass whole spends nothing, and the single words after it still pass; a census report in two pieces passes whole with many reporters too", function()
 	Relayed(function(R)
 		R.Relay.Reset()
 		for i = 1, 35 do
@@ -372,8 +377,8 @@ test("relay trickle (1.5.4): a word in pieces that can never pass whole spends n
 			end
 		end
 		Watch()
-		local report = R.Codec.Chunk("R2~" .. ("r"):rep(382), "7")
-		eq(#report, 2, "a 385-byte census report is two pieces")
+		local report = R.Codec.Chunk("R2~" .. ("r"):rep(600), "7")
+		eq(#report, 3, "a 603-byte census report is three pieces")
 		for _, p in ipairs(report) do R.Relay.HandleIn("WHISPER", "Census Guy-CAMWOWUS2Realm3PvE", "RL~P~" .. p) end
 		R.Relay.HandleIn("WHISPER", "Census Guy-CAMWOWUS2Realm3PvE", "RL~P~C8:3:3:" .. ("x"):rep(40))
 		R.Relay.HandleIn("WHISPER", "Some Client-CAMWOWUS2Realm3PvE", "RL~P~X2~1~a word")
@@ -382,6 +387,14 @@ test("relay trickle (1.5.4): a word in pieces that can never pass whole spends n
 		eq(pieces, 0, "no piece of a word that can never pass whole is sent")
 		eq(words["1"] or 0, 35, "the first single word reaches every reporter")
 		eq(words["2"] or 0, 35, "and so does the second")
+		-- Every allowance full again: a report in two pieces (385 bytes, three whispers) passes whole.
+		R.clock = R.clock + 120
+		Watch()
+		local two = R.Codec.Chunk("R2~" .. ("t"):rep(382), "8")
+		eq(#two, 2, "a 385-byte census report is two pieces")
+		for _, p in ipairs(two) do R.Relay.HandleIn("WHISPER", "Census Guy-CAMWOWUS2Realm3PvE", "RL~P~" .. p) end
+		R.Comm.Whisper, R.Comm.SendBatch = raw, rawBatch
+		eq(pieces, 70, "with 35 reporters both pieces of a two-piece report go to each")
 		-- A few reporters (an allowance of REPORTER_RATE): the same report still passes whole.
 		R.Relay.Reset()
 		for i = 1, 10 do
