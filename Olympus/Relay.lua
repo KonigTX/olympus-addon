@@ -288,7 +288,67 @@ local function PermitParts(parts, options)
 	end
 	return true
 end
+
+-- (The layer hop on Forever, after 1.5.3.) A layer-hop ask (LQ) and the King-sighting query (LY~Q)
+-- are for helpers who can answer them, and on Forever those are the asker's own guildmates:
+-- Hop.Member takes another guild's ordinary member for a stranger, a relay hands another client's
+-- word to a reporter only within REPORTER_RATE (the dev's relay on 2026-11-07: about 149 words a
+-- minute for 34 reporters, four of them passed a minute), and a word that passes waits in the
+-- relay's queue past the ask's NOBODY window. So these go to the asker's guild at once over GUILD,
+-- as the relay's hand-over from himself (RG, which 1.5.3 guildmates already take:
+-- Relay.HandleGuild), and to no relay. Layer words (L1, L0) go to the guild at once as well, and
+-- still to the relay. The origin is the plain name: Forever's roster files every guildmate by his
+-- bare name under the reader's own sub-realm, so a name stamped with another sub-realm missed that
+-- row and the guildmate was a stranger (Hop.Member, Roster.RankOf).
+Relay.GUILD_ONLY = { LQ = true } -- (and LY~Q, GuildRoute)
+Relay.GUILD_TOO = { L0 = true, L1 = true }
+local function GuildRoute(text)
+	if type(text) ~= "string" then return nil end
+	if Relay.GUILD_ONLY[text:sub(1, 2)] or text:find("^LY~Q~") then return "only" end
+	if Relay.GUILD_TOO[text:sub(1, 2)] then return "too" end
+	return nil
+end
+Relay.GuildRoute = GuildRoute
+-- nil when it cannot be wrapped (then the relay as before); else whether Comm took it.
+local function OwnGuild(original, done, key, urgent, options)
+	local me = ns.ShortName(ns.me or "") or ""
+	local wrapped = "RG~P~" .. me .. "~" .. original
+	if me == "" or #wrapped > 255 then return nil end
+	local pass = { owner = options and options.owner or Relay, guard = function()
+		-- The wrapped text names no type Comm's holds read: the original's are asked here, at the
+		-- actual send, as Comm asks the original's on the channel (quiet presence, net-off).
+		if ns.Comm.QuietHolds and ns.Comm.QuietHolds(original) then return false, "quiet" end
+		local M = ns.Moderation
+		if type(M) == "table" and not M.missing and type(M.Blocks) == "function" and M.Blocks(original) == true then
+			return false, "held"
+		end
+		if options and options.guard then
+			local ok, valid, why = pcall(options.guard)
+			if not ok or valid ~= true then return false, why or "guard" end
+		end
+		return true
+	end }
+	if options and options.permit then
+		-- The owner's permit keeps seeing its original lane and payload (as Relay.Out's whispers do).
+		pass.key = options.guardKey
+		pass.permit = function(owner, guardKey, dist, target, message)
+			if owner ~= options.owner or guardKey ~= options.guardKey or dist ~= "GUILD" or target ~= nil
+				or message ~= wrapped then return false, "lane" end
+			return options.permit(owner, guardKey, "CHANNEL", nil, original)
+		end
+	end
+	return ns.Comm.Send("GUILD", wrapped, key and ("guild " .. key) or nil, urgent, false, done, pass) ~= false
+end
+
 function Relay.Out(parts, logged, done, key, urgent, options, anyway)
+	if not anyway and not logged and #parts == 1 and IsInGuild() then
+		local route = GuildRoute(parts[1])
+		if route == "only" then
+			if OwnGuild(parts[1], done, key, urgent, options) ~= nil then return true end
+		elseif route == "too" then
+			OwnGuild(parts[1], nil, key, urgent, options)
+		end
+	end
 	local relay, sure = Relay.Pick()
 	if not relay then return false end
 	-- (1.4.5) A chat line reaches the sender's own guild at once, over GUILD, as hop 3 from himself,
