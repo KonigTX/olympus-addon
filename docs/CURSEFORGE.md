@@ -2389,8 +2389,9 @@ also saved in `WTF/Account/<ACCOUNT>/SavedVariables/Olympus.lua`.
   adapted from PR #51), Rick-laboratory (bounded transport, cancellation and admission
   regressions, adapted from PR #52), HTX (the Board's group listings, applications and
   invites, adapted from PR #62), XOData (a relay's snapshot sent whole to each reporter and
-  wrapped once, and guildmates on other Forever sub-realms recognised, from PRs #81 and #82), and
-  ArithmeticLogic (Dues History asks that skip a Treasurer already reported offline, from PR #86).
+  wrapped once, and guildmates on other Forever sub-realms recognised, from PRs #81 and #82),
+  ArithmeticLogic (Dues History asks that skip a Treasurer already reported offline, from PR #86),
+  and fiddlecat (chunk assemblies kept alive while their pieces keep arriving, from PR #80).
 - **Feature requests:** Fernmelder, whose 39 posts became 1.1 (the Fernmelder release);
   shenanigans_ (the nameplate marks), Valdericht (`<OLYMPIAN>`) and Pyralis Ashandar (taking
   donations).
