@@ -3621,8 +3621,9 @@ its changes listed at its top).
   Bernardo Costa / Costafitness (exact layer-hop confirmation and stale-request regressions,
   adapted from PR #51), Rick-laboratory (bounded transport, cancellation and admission
   regressions, adapted from PR #52), HTX (the Board's group listings, applications and
-  invites, adapted from PR #62), and XOData (a relay's snapshot sent whole to each reporter and
-  wrapped once, and guildmates on other Forever sub-realms recognised, from PRs #81 and #82).
+  invites, adapted from PR #62), XOData (a relay's snapshot sent whole to each reporter and
+  wrapped once, and guildmates on other Forever sub-realms recognised, from PRs #81 and #82), and
+  ArithmeticLogic (Dues History asks that skip a Treasurer already reported offline, from PR #86).
 - **Feature requests:** Fernmelder, whose 39 posts became 1.1 (the Fernmelder release);
   shenanigans_ (the nameplate marks), Valdericht (`<OLYMPIAN>`), Pyralis Ashandar (taking
   donations), and FedGuy / Fed Olympus (nameplate-assisted layer hopping).
