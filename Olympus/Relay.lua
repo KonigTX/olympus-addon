@@ -710,6 +710,13 @@ local function Drip()
 		-- newer words, goes back to the front while it is fresh; otherwise the next batch goes.
 		ns.Comm.SendBatch("WHISPER", d.whispers, nil, d.name, false, function(sent, why)
 			if not sent and (why == "full" or why == "dropped") and Now() - d.t < Relay.SET_WAIT then
+				-- (The review of the 1.5.4 candidate.) A newer copy of his word queued while this one
+				-- was in flight (DripSet found no waiting entry to replace and appended it) goes in
+				-- this one's place: he was sent the superseded snapshot now and the newest a whole
+				-- round of reporters later.
+				for i, w in ipairs(drip) do
+					if w.name == d.name and w.word == d.word then d.whispers = w.whispers; table.remove(drip, i); break end
+				end
 				table.insert(drip, 1, d)
 				ns.After(1, "relay drip", function() dripSince = nil; Drip() end)
 				return
