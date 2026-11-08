@@ -340,6 +340,35 @@ test("profile effects: a heard grant lives SESSION_TTL_RELAYED (150 s) where nam
 	end)
 end)
 
+-- The review of the 1.5.4 candidate's fixes: the test above made a session heard where names split
+-- live SESSION_TTL_RELAYED, and the README's privacy table and docs/API.md still said every missed
+-- session ends after about SESSION_TTL. Fails before: neither named the longer life on Forever.
+test("profile effects: the README's privacy table and docs/API.md give a heard session's life on Forever (SESSION_TTL_RELAYED) beside SESSION_TTL", function()
+	WithWorld(function(w)
+		local E = w.client("Docs").ProfileEffects
+		local short, relayed = ("about %d seconds"):format(E.SESSION_TTL), ("about %d seconds"):format(E.SESSION_TTL_RELAYED)
+		local function Read(path)
+			local f = assert(io.open(ROOT .. path, "rb"), path)
+			local text = f:read("*a")
+			f:close()
+			return text
+		end
+		local function Has(text, part, where) assert(text:find(part, 1, true), where .. ": " .. part) end
+		local row = Read("README.md"):match("\n(| A bounded profile presentation %(FX%)[^\n]*)")
+		assert(row, "the README's privacy row for the profile presentation")
+		Has(row, short, "the README's privacy row"); Has(row, relayed, "the README's privacy row")
+		Has(row, "Forever", "the README's privacy row")
+		local api = Read("docs/API.md")
+		local session = api:match("\n### Profile%-presentation session\n(.-)\n### ")
+		assert(session, "docs/API.md: its profile-presentation section")
+		Has(session, short, "docs/API.md, profile-presentation session"); Has(session, relayed, "docs/API.md, profile-presentation session")
+		Has(session, "Forever", "docs/API.md, profile-presentation session")
+		local quiet = api:match("\n### Quiet presence\n(.-)\n### ")
+		assert(quiet, "docs/API.md: its quiet presence section")
+		Has(quiet, short, "docs/API.md, quiet presence"); Has(quiet, relayed, "docs/API.md, quiet presence")
+	end)
+end)
+
 test("profile effects: targeting shows the short non-chat presentation and screenshot start hides it", function()
 	WithWorld(function(w)
 		local issuer = w.client("Council")
