@@ -188,3 +188,36 @@ test("relay fan-out (1.5.4): a snapshot batch pushed out of the queue before it 
 		eq(whole, REPORTERS, "every reporter can put the snapshot together, the one whose batch was pushed out too")
 	end)
 end)
+
+-- The review of the 1.5.4 candidate: the relay's own repeats in pieces (the King's Hands and the
+-- Treasury's words every 300 s, a ranking's repeat) were keyed by their message id, so each repeat
+-- waited in the drip as one more batch behind the rest: on a busy relay the drip grew without end
+-- and the census snapshots waited behind it. Its newer word of one kind takes the waiting copy's
+-- place now, as a newer snapshot does. Fails before (every reporter gets the older copy too).
+test("relay fan-out (1.5.4): the relay's own newer word in pieces takes its waiting copy's place in the drip; a word of another kind keeps its own", function()
+	Relayed(function(R, sent, Run)
+		local REPORTERS = 3
+		for i = 1, REPORTERS do
+			R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i))
+		end
+		-- The queue full: the batches wait in the drip for room (they never push out what waits there).
+		for i = 1, R.Comm.MAX_QUEUE do R.Comm.Whisper("Filler Target-CAMWOWUS2Realm7PvE", "X1~filler " .. i, "filler " .. i, false, false) end
+		eq(R.Comm.QueueRoom(), 0)
+		local older, other, newer = "T1~H~" .. ("a"):rep(400), "T1~N~" .. ("c"):rep(400), "T1~H~" .. ("b"):rep(400)
+		for _, word in ipairs({ { older, "61" }, { other, "62" }, { newer, "63" } }) do
+			for _, p in ipairs(R.Codec.Chunk(word[1], word[2])) do R.Relay.HandleIn("WHISPER", R.me, "RL~P~" .. p) end
+		end
+		Run(400)
+		eq(R.Comm.QueueSize(), 0, "everything went out")
+		local olderSent, newerOnce, otherSent = 0, 0, 0
+		for i = 1, REPORTERS do
+			local got = Assembled(R, sent, ("Rep Number%d-"):format(i))
+			if got[older] then olderSent = olderSent + 1 end
+			if got[newer] == 1 then newerOnce = newerOnce + 1 end
+			if got[other] then otherSent = otherSent + 1 end
+		end
+		eq(olderSent, 0, "no reporter is sent the copy the newer word replaced")
+		eq(newerOnce, REPORTERS, "each reporter gets the newer word, once")
+		eq(otherSent, REPORTERS, "the word of another kind keeps its own place")
+	end)
+end)

@@ -850,8 +850,14 @@ local function ToReporters(flag, origin, body, sender)
 			-- (review prototype) A newer copy replaces a waiting one only where it supersedes it: the
 			-- same origin's snapshot of one kind, or its census report. Any other word keeps its own
 			-- place (two of the King's T1 words, say, are different words).
+			-- (The review of the 1.5.4 candidate.) The relay's own words in pieces are its repeats (the
+			-- King's Hands every 300 s, the Treasury's every 300 s, a ranking's repeat): keyed by their
+			-- message id, each repeat waited as a new batch behind the rest, the drip grew without end
+			-- and the census snapshots waited behind it. Its own word of one kind (as QueueWord keys
+			-- the same word in one whisper) takes the waiting copy's place, as a snapshot does.
 			local id, head = set[1]:match("^C(%w+):%d+:%d+:(.*)$")
-			local kind = head and (head:match("^(%u%w~%d+~S)~") or head:match("^(R[12])~"))
+			local kind = head and (head:match("^(%u%w~%d+~S)~") or head:match("^(R[12])~")
+				or (own and head:match("^%u%w~") and QueueWord(head)))
 			local word = Lower(origin) .. " " .. (kind or ("#" .. tostring(id)))
 			for k, batch in ipairs(batches) do DripSet(r.name, word .. " " .. k, batch) end
 		else
