@@ -92,6 +92,7 @@ test("1.5.4 the King's presence on Forever: his own word (T1~o, or his global ce
 		local k = ns.Hop.King(true)
 		assert(k, "his own word confirms him, from any sub-realm of his family")
 		eq(k.realm, "CAMWOWUS1Realm5PvE", "his realm from his own word, as before")
+		eq(ns.Hop.KingOtherRealm(k), false, "a sub-realm of his family is no other realm (the review of the 1.5.4 candidate)")
 		assert(KingLine().right:find(L.ONLINE_NOW, 1, true))
 		advance(ns.Hop.KING_HEARD_FRESH + 1)
 		eq(ns.Hop.King(), nil, "his word lapsed, as after a logout")
@@ -105,6 +106,51 @@ test("1.5.4 the King's presence on Forever: his own word (T1~o, or his global ce
 			assert(ns.Hop.King(true), "his snapshot: online")
 		end)
 		ns.Church.IsLedgerRelay = saved.trusted
+		if not ok then error(err, 0) end
+	end)
+end)
+
+-- The review of the 1.5.4 candidate. On Forever every word of his a member hears came through a relay,
+-- whose client stamps a whisper's bare sender with ITS OWN sub-realm (Comm.OnAddonMessage, Relay.HandleIn):
+-- "Asmongold Thereal-<the relay's sub-realm>" is what Hop.HeardKing keeps, whatever sub-realm he plays
+-- on. Fails before: Hop.KingOtherRealm compared that stamp with ns.realm as a plain string, so for every
+-- member whose own sub-realm was not the relay's the King played "on another realm" (the relay's): the
+-- layer line's click said so and sent no LQ, /oly bug said "(another realm)", the Companion was told
+-- otherRealm. And Hop.King looked his layer up by that exact stamp, while his layer word reached his
+-- guildmates under their own (his guild's copy over GUILD): "layer not known" with his layer known.
+test("1.5.4 the King on Forever: his word stamped with the relay's sub-realm places him on no other realm, and his layer heard under the reader's stamp is his under the relay's", function()
+	WithForever("Olympus Faraway", function()
+		local saved = { print = ns.Print }
+		local printed = {}
+		ns.Layers.Reset()
+		local ok, err = pcall(function()
+			ns.Print = function(msg) printed[#printed + 1] = tostring(msg) end
+			-- His layer word as his guild's copy reached a guildmate: under the reader's own sub-realm.
+			ns.Layers.Receive("Asmongold Thereal-CAMWOWUS2Realm1PvE", { mapID = 1453, zoneUID = 9, rank = 1, guild = "OLYMPUS PRIME" })
+			-- His presence as the relay on Realm3 handed it on, stamped with the relay's sub-realm.
+			ns.King.HandleCommand("CHANNEL", "Asmongold Thereal-CAMWOWUS2Realm3PvE", "T1~o~5~OLYMPUS PRIME")
+			local k = assert(ns.Hop.King(true), "his own word confirms him")
+			eq(k.realm, "CAMWOWUS2Realm3PvE", "the stamp is what his realm reads (the relay's sub-realm)")
+			eq(ns.Hop.KingOtherRealm(k), false, "a sub-realm of our own family is ours, not another realm")
+			eq(k.zoneUID, 9, "his layer, heard under the reader's stamp, is his under the relay's"); eq(k.mapID, 1453)
+			local status = ns.Hop.KingStatusLine()
+			assert(status:find("realm CAMWOWUS2Realm3PvE (ours)", 1, true), status)
+			assert(status:find("layer map 1453 zone 9", 1, true), status)
+			local other = L.HOP_KING_OTHER_REALM:format(k.name, k.realm)
+			assert(ns.Hop.KingUnknownText(k) ~= other, "why his layer can't be asked for: never 'another realm' for a stamp of our family")
+			ns.Hop.AskKing()
+			eq(#printed <= 1, true)
+			assert(printed[1] ~= other, "the click never refuses the hop for the relay's sub-realm: " .. tostring(printed[1]))
+			local top = ns.Hop.KingLines()
+			assert(#top >= 1 and top[1].onClick, "the layer line tops the Census and the Realm")
+			-- A stamp of another family is another realm still, and off Forever a realm is one server.
+			eq(ns.Hop.KingOtherRealm({ name = k.name, realm = "CAMWOWUS1Realm8PvP" }), true, "a PvP family's stamp")
+			ns.splitNames = false
+			eq(ns.Hop.KingOtherRealm({ name = k.name, realm = "CAMWOWUS2Realm3PvE" }), true, "off Forever another realm is another realm")
+			ns.splitNames = true
+		end)
+		ns.Print = saved.print
+		ns.Layers.Reset()
 		if not ok then error(err, 0) end
 	end)
 end)
