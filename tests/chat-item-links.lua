@@ -227,3 +227,40 @@ test("1.5.4 Chat tab items: a line's item link shows highlighted with the name a
 	end)
 end)
 
+test("1.5.4 Chat tab links: a left click on a link opens the game's link window (SetItemRef) with mouse and keyboard and nothing with the gamepad UI; never a player link or a right click; Shift puts it in our box; the hover tooltip in both modes", function()
+	WithWindow(function(w)
+		WithItemData(function(_, _, refs)
+			ns.rdb.chat = { A = { Line(T0, "Aa Bb-Realm", "look " .. ITEM .. " cheap") } }
+			local f = w.CW.Open()
+			assert(f, "open")
+			local b = BubbleWith(f, "[Mooncloth]")
+			assert(b, "the link in its bubble")
+			-- A left click: the game's link window, as the game's chat (SetItemRef), with the link's data.
+			b:Fire("OnHyperlinkClick", LINK, ITEM, "LeftButton")
+			eq(#refs, 1, "SetItemRef once"); eq(refs[1].link, LINK); eq(refs[1].text, ITEM); eq(refs[1].button, "LeftButton")
+			b:Fire("OnHyperlinkClick", "player:Someone", "[Someone]", "LeftButton")
+			eq(#refs, 1, "never a player link: the game's chat box")
+			b:Fire("OnHyperlinkClick", LINK, ITEM, "RightButton")
+			eq(#refs, 1, "a right click: nothing")
+			-- Shift: into Olympus's own box, no game window.
+			IsShiftKeyDown = function() return true end
+			f.input:SetText("wts ")
+			b:Fire("OnHyperlinkClick", LINK, ITEM, "LeftButton")
+			eq(f.input:GetText(), "wts " .. ITEM); eq(#refs, 1)
+			IsShiftKeyDown = function() return false end
+			-- The hover tooltip, in both modes; the click opens nothing of the game's with the gamepad UI.
+			for _, pad in ipairs({ false, true }) do
+				WithGamepadUI(pad, function()
+					local shown
+					GameTooltip.SetHyperlink = function(_, link) shown = link end
+					b:Fire("OnHyperlinkEnter", LINK, ITEM)
+					eq(shown, LINK, "the tooltip, gamepad UI " .. tostring(pad)); eq(GameTooltip:IsShown(), true)
+					b:Fire("OnHyperlinkLeave")
+					local before = #refs
+					b:Fire("OnHyperlinkClick", LINK, ITEM, "LeftButton")
+					eq(#refs, pad and before or before + 1, "the game's link window only with mouse and keyboard")
+				end)
+			end
+		end)
+	end)
+end)

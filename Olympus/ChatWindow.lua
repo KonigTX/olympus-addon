@@ -46,8 +46,10 @@ local L = ns.L
 --   (Olympus's own window with the gamepad UI); the Olympus window closes with Escape through
 --   ns.EscapeCloses (nothing on UISpecialFrames with the gamepad UI: its X closes it there).
 -- - Links in a line show their tooltip on hover (GameTooltip:SetHyperlink) and go into its own
---   box with a Shift-click; never SetItemRef, ChatEdit_InsertLink or HandleModifiedItemClick.
---   1.5.4: an item shows with the name and colour this client's item data gives it (ChatWindow.Relink).
+--   box with a Shift-click; never ChatEdit_InsertLink or HandleModifiedItemClick. 1.5.4: a left
+--   click on an item, spell, enchant or quest link opens the game's link window as a click in the
+--   game's chat does (SetItemRef, the gate's item-ref), with mouse and keyboard alone; and an item
+--   shows with the name and colour this client's item data gives it (ChatWindow.Relink).
 -- Nothing is drawn while the tab is hidden: a change marks it dirty and it redraws at most every
 -- 0.2 s while shown (the census at most every 5 s); 1.2.1: after a slow redraw, ten times what it
 -- cost (up to 5 s, ChatWindow.RedrawGap), and a bubble whose look did not change is only moved
@@ -666,6 +668,19 @@ local function LinkTip(owner, link)
 	end
 end
 
+-- 1.5.4 (the dev: items "clicável, com hover que aparece os detalhes do item"): a left click on an
+-- item, spell, enchant or quest link in a line opens the game's link window, as a click in the
+-- game's chat does (ChatFrame's OnHyperlinkClick calls SetItemRef, which shows ItemRefTooltip).
+-- Never for another link type (a player link would open the game's chat box), and never with the
+-- gamepad UI (a game panel from Olympus there): the hover tooltip stays, the click does nothing.
+function ChatWindow.LinkClick(link, text, button) -- gp:item-ref
+	if not ns.Gate.Allowed("item-ref") then return false end
+	local kind = type(link) == "string" and link:match("^(%a+):")
+	if not kind or not LINK_TIPS[kind] or button ~= "LeftButton" then return false end
+	if type(SetItemRef) ~= "function" then return false end
+	return (pcall(SetItemRef, link, text, button)) -- gp:item-ref
+end
+
 -- 1.5.4: an item link in a line as this client's item data has the item: its name and its
 -- quality's colour (C_Item.GetItemInfo on Forever, the global on an older client), in place of
 -- the sender's, which a modified client could write as it liked; the link's own data stays (the
@@ -800,14 +815,17 @@ local function NewBubble(pane)
 	b.replyWho:SetJustifyH("LEFT"); b.replyWho:SetTextColor(1, 0.82, 0); b.replyWho:Hide()
 	b.replyText = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	b.replyText:SetJustifyH("LEFT"); b.replyText:SetWordWrap(true); b.replyText:SetTextColor(0.65, 0.65, 0.68); b.replyText:Hide()
-	-- Its links: a tooltip on hover, into our own box with Shift.
+	-- Its links: a tooltip on hover, into our own box with Shift, the game's link window on a left
+	-- click (1.5.4, LinkClick: with mouse and keyboard alone).
 	if b.SetHyperlinksEnabled then b:SetHyperlinksEnabled(true) end
 	b:SetScript("OnHyperlinkEnter", function(self, link) ns.SafeCall("chat tab link", LinkTip, self, link) end)
 	b:SetScript("OnHyperlinkLeave", function(self) Untip(self) end)
-	b:SetScript("OnHyperlinkClick", function(_, _, text)
+	b:SetScript("OnHyperlinkClick", function(_, link, text, button)
 		if IsShiftKeyDown and IsShiftKeyDown() then
 			if pane and pane.input then pane.input:Insert(text) else ns.SafeCall("chat tab link", InsertLink, text) end
+			return
 		end
+		ns.SafeCall("chat tab link", ChatWindow.LinkClick, link, text, button)
 	end)
 	-- A line the block terms hide: a click shows it (this session). 1.1.6: a right-click opens a
 	-- moderator's choices on a line he may act on (ChatWindow.ModerateLine, WatchChat.lua); 1.2.1,

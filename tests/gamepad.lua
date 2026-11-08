@@ -156,12 +156,16 @@ end
 -- Called directly from Olympus's code (the model's own calls don't count): FromOlympus(1) in a
 -- function of the model asks about that function's caller.
 -- (Through pcall and the like: C functions, and tests/run.lua's stand-ins for them, are skipped.)
+-- (1.5.4) The model's hooksecurefunc wrappers (below): the client's hook is C code between the
+-- caller and the function hooked, so Olympus's call through one is still Olympus's. The wrappers
+-- are skipped as a C frame is.
+local HOOK_WRAPPERS = setmetatable({}, { __mode = "k" })
 local function FromOlympus(level)
 	level = (level or 1) + 2
 	while true do
-		local info = debug.getinfo(level, "S")
+		local info = debug.getinfo(level, "Sf")
 		if not info then return false end
-		if info.what ~= "C" and not (info.source or ""):find("tests[/\\]run%.lua$") then
+		if info.what ~= "C" and not HOOK_WRAPPERS[info.func] and not (info.source or ""):find("tests[/\\]run%.lua$") then
 			return OlympusFile(info.source) ~= nil
 		end
 		level = level + 1
@@ -550,6 +554,9 @@ local function NewClient(opts)
 	function W:AddDoubleLine(a, b) self.lines = self.lines or {}; self.lines[#self.lines + 1] = tostring(a) .. " | " .. tostring(b) end
 	function W:ClearLines() self.lines = {} end
 	function W:NumLines() return #(self.lines or {}) end
+	-- (1.5.4) GameTooltip:SetHyperlink(link): the tooltip filled with the link's item, spell or quest
+	-- (the fixture's GameTooltip methods; Blizzard_SharedXML's TooltipDataHandler fills the lines).
+	function W:SetHyperlink(link) self.lines = self.lines or {}; self.hyperlink = link; self.lines[#self.lines + 1] = tostring(link) end
 	function W:SetMinimumWidth(w) self.minWidth = w end
 	-- (The unit a tooltip shows: its name and unit token, as the game's GameTooltip:GetUnit.)
 	function W:GetUnit() if self.unit then return E.UnitName(self.unit), self.unit end end
@@ -1049,10 +1056,11 @@ local function World(C, opts)
 	-- Shared/ChatFrame.lua:19; Blizzard_UIPanels_Game/Mainline/ItemRef.lua:6). Modelled for the link
 	-- types the pass clicks: "addon" goes to the game's AddOn handler, which only fires EventRegistry's
 	-- "SetItemRef" (ItemRefHandlersShared.lua:279); another type, the game's own work, kept in C.itemRefs.
-	E.SetItemRef = function(link, text, button, frame)
+	-- (1.5.4: a reach when Olympus calls it, the audit's "SetItemRef": the Chat tab's link click.)
+	E.SetItemRef = Fn("SetItemRef", function(link, text, button, frame)
 		C.itemRefs = C.itemRefs or {}
 		C.itemRefs[#C.itemRefs + 1] = { link = link, button = button, handled = tostring(link):find("^addon:") and "AddOn" or "game" }
-	end
+	end)
 
 	-- Channels (the census channel): joined, numbered, listed.
 	C.channels = {}
@@ -1190,6 +1198,12 @@ local function World(C, opts)
 		GetItemIconByID = function() return 134400 end,
 		GetItemNameByID = function() return nil end,
 		GetItemCount = function() return 0 end,
+		-- (1.5.4, the Chat tab's item links: Blizzard_APIDocumentationGenerated/ItemDocumentation.lua.
+		-- This client holds no item's data: GetItemInfo answers nothing, as for an item not cached,
+		-- IsItemDataCachedByID false, and RequestLoadItemDataByID asks the server for it.)
+		GetItemInfo = function() return nil end,
+		IsItemDataCachedByID = function() return false end,
+		RequestLoadItemDataByID = function(id) C.itemsRequested = C.itemsRequested or {}; C.itemsRequested[#C.itemsRequested + 1] = id end,
 	})
 	-- (1.4.0: LoadAddOn gives the game's two answers, loaded and a reason, as Blizzard's
 	-- Blizzard_APIDocumentationGenerated/AddOnsDocumentation.lua has it and ArenaNet.lua already reads
@@ -1403,11 +1417,13 @@ local function World(C, opts)
 		assert(type(original) == "function", "hooksecurefunc on something that is no function: " .. tostring(key))
 		hooks[#hooks + 1] = { t = t, key = key, post = post }
 		C.callbacks[#C.callbacks + 1] = { kind = "hooksecurefunc", key = key, fn = post, frame = t ~= E and t or nil }
-		rawset(t, key, function(...)
+		local wrapper = function(...)
 			local r = { original(...) }
 			post(...)
 			return unpack(r)
-		end)
+		end
+		HOOK_WRAPPERS[wrapper] = true -- (the client's hook is no caller: FromOlympus)
+		rawset(t, key, wrapper)
 	end)
 	E.Menu = Namespace("Menu", {
 		ModifyMenu = Fn("Menu.ModifyMenu", function(tag, fn)
@@ -3228,6 +3244,68 @@ test("gamepad pass 7: the chat's channel names as links: hooked once with mouse 
 	Check(P.ledger, "a gamepad login, then mouse and keyboard")
 	NoErrors(P, "a gamepad login, then mouse and keyboard")
 	GP.Covers("chat-links"); GP.Covers("chat-box")
+end)
+
+-- 1.5.4: a link in a line of the Chat tab (ChatWindow.lua). A left click opens the game's link
+-- window as the game's chat does (SetItemRef, the gate's item-ref) with mouse and keyboard; with
+-- the gamepad UI the click reaches nothing of the game's, and the hover tooltip (GameTooltip owned
+-- by Olympus's own bubble) stays in both modes. An item this client holds no data of (the model's
+-- client holds none) shows as sent and is asked for once.
+local ITEM_LINK = "item:14342::::::::60:::::"
+local ITEM_TEXT = "|cff1eff00|H" .. ITEM_LINK .. "|h[Mooncloth]|h|r"
+local function LinkBubble(C, ns)
+	ns.db.addonChat = true
+	ns.rdb.chat = { A = { { t = C.now - 30, sender = "Aa Bb-Realm", guild = "Olympus II", text = "look " .. ITEM_TEXT .. " cheap" } } }
+	local f = ns.ChatWindow.Open("A")
+	assert(f, "the Chat tab")
+	C.Advance(1)
+	for _, b in ipairs(f.bubbles or {}) do
+		if b:IsShown() and (b.body:GetText() or ""):find("Mooncloth", 1, true) then return b, f end
+	end
+	error("no bubble with the link")
+end
+local function ClickLink(C, b)
+	local mark = C.Mark()
+	local before = #(C.itemRefs or {})
+	C.RunScript(b, "OnHyperlinkClick", ITEM_LINK, ITEM_TEXT, "LeftButton")
+	return #(C.itemRefs or {}) - before, C.Since(mark)
+end
+test("gamepad pass: a link in the Chat tab: a left click opens the game's link window (SetItemRef) with mouse and keyboard; with the gamepad UI the click reaches nothing of the game's and the hover tooltip stays; nothing at a gamepad login until the switch", function()
+	local C, ns = Session(false)
+	local b = LinkBubble(C, ns)
+	eq(b.body:GetText(), "look " .. ITEM_TEXT .. " cheap", "the link as sent: this client holds no data of the item")
+	eq(#(C.itemsRequested or {}), 1, "asked the client for its data once"); eq(C.itemsRequested[1], 14342)
+	local opened, ledger = ClickLink(C, b)
+	eq(opened, 1, "the game's link window, with mouse and keyboard")
+	eq(C.itemRefs[#C.itemRefs].link, ITEM_LINK); eq(C.itemRefs[#C.itemRefs].handled, "game")
+	eq(Ids(ledger)["item-ref"], 1, "the gate's item-ref")
+	Check(ledger, "the click")
+	C.RunScript(b, "OnHyperlinkClick", "player:Someone", "[Someone]", "LeftButton")
+	eq(#C.itemRefs, 1, "a player link opens nothing (the game's chat box)")
+	-- The gamepad UI: the hover tooltip in Olympus's bubble; the click reaches nothing of the game's.
+	C.Switch(true); C.Advance(1)
+	local padOpened, padLedger = ClickLink(C, b)
+	eq(padOpened, 0, "nothing with the gamepad UI")
+	eq(#padLedger, 0, "nothing of the game's reached" .. (padLedger[1] and (": " .. Describe(padLedger[1])) or ""))
+	local mark = C.Mark()
+	C.RunScript(b, "OnHyperlinkEnter", ITEM_LINK, ITEM_TEXT)
+	eq(C.env.GameTooltip:IsShown(), true, "the hover tooltip with the gamepad UI")
+	eq(C.env.GameTooltip.hyperlink, ITEM_LINK)
+	C.RunScript(b, "OnHyperlinkLeave")
+	Check(C.Since(mark), "the hover with the gamepad UI")
+	C.Switch(false); C.Advance(1)
+	eq((ClickLink(C, b)), 1, "again with mouse and keyboard")
+	Check(C.ledger, "the whole session")
+	NoErrors(C, "the Chat tab's links")
+	-- A gamepad login: the click opens nothing; after the switch to mouse and keyboard, it does.
+	local P, pns = Session(true)
+	local pb = LinkBubble(P, pns)
+	eq((ClickLink(P, pb)), 0, "nothing at a gamepad login")
+	P.Switch(false); P.Advance(1)
+	eq((ClickLink(P, pb)), 1, "after the switch to mouse and keyboard")
+	Check(P.ledger, "a gamepad login, then mouse and keyboard")
+	NoErrors(P, "a gamepad login, then mouse and keyboard")
+	GP.Covers("item-ref")
 end)
 
 -- A moderator's cover name (Cover.lua) on a name the game updates (a nameplate's, a raid frame's):
