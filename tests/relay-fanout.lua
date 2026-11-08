@@ -263,3 +263,83 @@ test("relay trickle (1.5.4): many reporters share TRICKLE_PER_MIN a minute of ot
 		eq(least >= rate * 5 and most <= rate * 6, true, ("10 reporters: %d to %d whispers each in 5 minutes"):format(least, most))
 	end)
 end)
+
+-- The review of the 1.5.4 candidate: a reporter's allowance refilled a fraction at a time went to the
+-- first word that fitted one whisper, so a word in two whispers (a census look in one chunk, as
+-- Data.CapturePortable builds it, once wrapped with its carrier's name; any full piece of a word in
+-- pieces) never passed again beside one short word every few seconds, with 10 reporters (REPORTER_RATE
+-- each, "as before") or with 35 (60 a minute shared). A whole allowance at a time, taken in the order
+-- the words come, as 1.5.3 did. Fails before (no look reached any reporter after the first minute).
+test("relay trickle (1.5.4): a word in two whispers still gets through beside short words, with a few reporters and with many", function()
+	Relayed(function(R)
+		local function Trial(reporters, seconds)
+			R.Relay.Reset()
+			for i = 1, reporters do
+				R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i))
+			end
+			local wide, small = {}, {}
+			local rawBatch, rawWhisper = R.Comm.SendBatch, R.Comm.Whisper
+			R.Comm.SendBatch = function(dist, pieces, key, target, ...)
+				if tostring(target):find("^Rep Number") then wide[target] = (wide[target] or 0) + #pieces end
+				return rawBatch(dist, pieces, key, target, ...)
+			end
+			R.Comm.Whisper = function(target, msg, ...)
+				if tostring(target):find("^Rep Number") and tostring(msg):find("^RM~P~") then small[target] = (small[target] or 0) + 1 end
+				return rawWhisper(target, msg, ...)
+			end
+			local start = R.clock
+			for second = 1, seconds do
+				R.clock = start + second
+				if second % 2 == 0 then
+					-- A look as Data.CapturePortable builds it, whole rows within one chunk (219-220 bytes here).
+					local carrier = ("Look Carrier%d-CAMWOWUS2Realm1PvE"):format(second % 40)
+					local rows = {}
+					for k = 1, 3 do rows[k] = ("OLYMPUS FORCES OF EVIL,%d,43,300,1794011276"):format(100 + k) end
+					local look = ("CX~3~S~%s~ForeverPvP~Alliance~3626,2100,19,%d~"):format(carrier, 1794011276 + second)
+						.. table.concat(rows, ";")
+					assert(#look <= R.Codec.CHUNK, "one chunk")
+					R.Relay.HandleIn("WHISPER", carrier, "RL~P~" .. R.Codec.Chunk(look, tostring(second % 1000))[1])
+				end
+				if second % 6 == 0 then
+					R.Relay.HandleIn("WHISPER", ("Some Asker%d-CAMWOWUS2Realm1PvE"):format(second % 40), ("RL~P~T7~%d"):format(second))
+				end
+				if second % 3 == 0 then R.Comm.Pump() end
+			end
+			R.Comm.SendBatch, R.Comm.Whisper = rawBatch, rawWhisper
+			local fewest, most = math.huge, 0
+			for i = 1, reporters do
+				local name = ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i)
+				fewest = math.min(fewest, (wide[name] or 0) / 2)
+				most = math.max(most, (wide[name] or 0) + (small[name] or 0))
+			end
+			return fewest, most
+		end
+		local rate, all = R.Relay.REPORTER_RATE, R.Relay.TRICKLE_PER_MIN
+		local looks, most = Trial(10, 300)
+		eq(looks >= 5, true, ("10 reporters: each is handed a look in two whispers each minute: at least %d in 5 minutes"):format(looks))
+		eq(most <= rate * 6, true, ("and no more than REPORTER_RATE a minute: at most %d whispers"):format(most))
+		looks, most = Trial(35, 300)
+		eq(looks >= 4, true, ("35 reporters: each is handed one about every 70 s: at least %d in 5 minutes"):format(looks))
+		eq(most <= 2 + all / 35 * 5 + 1, true, ("and no more than his share: at most %d whispers"):format(most))
+	end)
+end)
+
+-- (The same review.) A clock set back (time() is the computer's) starts a new allowance: a window
+-- measured from a later second never froze the trickle until the clock caught up.
+test("relay trickle (1.5.4): a clock set back starts a reporter's new allowance", function()
+	Relayed(function(R)
+		R.Relay.Reset()
+		R.Relay.HandleIn("WHISPER", "Rep Number1-CAMWOWUS2Realm7PvE", "RL~P~RR~Guild 1")
+		local got, raw = 0, R.Comm.Whisper
+		R.Comm.Whisper = function(target, msg, ...)
+			if tostring(msg):find("^RM~P~Some Client") then got = got + 1 end
+			return raw(target, msg, ...)
+		end
+		for i = 1, R.Relay.REPORTER_RATE + 1 do R.Relay.HandleIn("WHISPER", "Some Client-CAMWOWUS2Realm3PvE", ("RL~P~X1~spent %d"):format(i)) end
+		eq(got, R.Relay.REPORTER_RATE, "the allowance spent")
+		R.clock = R.clock - 3600
+		R.Relay.HandleIn("WHISPER", "Some Client-CAMWOWUS2Realm3PvE", "RL~P~X1~after the clock went back")
+		R.Comm.Whisper = raw
+		eq(got, R.Relay.REPORTER_RATE + 1, "a new allowance after the clock went back")
+	end)
+end)
