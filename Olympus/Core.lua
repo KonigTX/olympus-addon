@@ -1998,9 +1998,14 @@ local AGAINST = { anti = true, against = true, no = true, ["not"] = true, never 
 	ruin = true, ruins = true, ruined = true, ruining = true, raze = true, burn = true, crush = true,
 	doom = true, wreck = true } -- "Ruin Olympus", "Ruins of Olympus", "Burn Olympus" (1.0.1)
 local LINKS = { with = true, to = true, the = true, of = true }
-local AGAINST_AFTER = { haters = true, hater = true, sucks = true, ruined = true, burns = true, falls = true }
--- ...or after one or two linking words: "Olympus in Ruins", "Olympus in the Ruins" (1.1).
-local LINKS_AFTER = { ["in"] = true, of = true, on = true, to = true, the = true }
+-- (1.5.4, the verifiers' ask: "Olympus is for Cucks" reached their list.) The insults that follow the
+-- name, straight or after a linking verb or preposition ("is", "for"), are against it too.
+local AGAINST_AFTER = { haters = true, hater = true, sucks = true, sux = true, ruined = true, burns = true, falls = true,
+	cuck = true, cucks = true, cucked = true, loser = true, losers = true, trash = true, garbage = true, scam = true,
+	scammers = true, cringe = true, dead = true, fail = true, fails = true, failed = true }
+-- ...or after one or two linking words: "Olympus in Ruins", "Olympus in the Ruins" (1.1); "Olympus
+-- is for Cucks", "Olympus is Trash" (1.5.4).
+local LINKS_AFTER = { ["in"] = true, of = true, on = true, to = true, the = true, is = true, are = true, ["for"] = true, was = true, be = true }
 local RUIN_AFTER = { ruin = true, ruins = true, ruined = true, ashes = true }
 
 local function Against(words, i)

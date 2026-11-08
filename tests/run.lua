@@ -394,12 +394,16 @@ test("federation filter: Olympus however it was spelled, but not other words", f
 		"Down with Olympus", "Death to Olympus", "Olympus Haters", "Olympus Sucks", "Kill Olympus",
 		"Ruin Olympus", "RUIN OLYMPUS", "Ruins of Olympus", "Ruined Olympus", "Olympus Ruined", "Burn Olympus",
 		"Crush Olympus", "Raze Olympus", "Doom of Olympus", "Olympus Falls",
-		"Olympus in Ruins", "Olympus In Ruin", "Olympus in the Ruins", "Olympus to Ashes", "Olympus of Ruin" }) do
+		"Olympus in Ruins", "Olympus In Ruin", "Olympus in the Ruins", "Olympus to Ashes", "Olympus of Ruin",
+		-- (1.5.4) the insults the verifiers' list caught, straight or after a linking verb or preposition
+		"Olympus is for Cucks", "Olympus Cucks", "Olympus is Trash", "Olympus Losers", "Olympus Are Losers", "Olympus is Dead",
+		"Olympus Fails", "OLYMPUS SUX" }) do
 		eq(ns.IsFederation(name), false, name)
 	end
 	for _, name in ipairs({ "Knights of Olympus", "Sons of Olympus", "Olympus No Mercy", "OLYMPUS NULLA", "Order of the Olympus",
 		"Olympus Killers", "Anti Horde Olympus", "Olympus Rising", "Olympus Reborn", "Rise of Olympus", "Dark Olympus", "DARK OLYMPUS",
-		"Olympus in Stormwind", "Olympus of Zeus", "Olympus on Top", "Olympus to Victory" }) do
+		"Olympus in Stormwind", "Olympus of Zeus", "Olympus on Top", "Olympus to Victory",
+		"Olympus for Life", "Olympus is Great", "Olympus Forever", "Olympus Is Rising" }) do
 		eq(ns.IsFederation(name), true, name)
 	end
 	eq(ns.Slips("olmps", "olympus", 2), 2); eq(ns.Slips("olympia", "olympus", 2), 2); eq(ns.Slips("abcdefg", "olympus", 2), 3)
