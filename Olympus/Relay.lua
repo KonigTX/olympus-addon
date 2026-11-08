@@ -875,6 +875,13 @@ local function ToReporters(flag, origin, body, sender)
 	share = math.min(Relay.REPORTER_RATE, Relay.TRICKLE_PER_MIN / math.max(1, fresh))
 	local scoped = PresentationScope(origin, body, now)
 	local presence = flag ~= "L" and KingPresence(origin, body)
+	-- (The review of the 1.5.4 candidate, mixed versions.) A layer word (L1, L0: GUILD_TOO) names its
+	-- origin plain on the wire, as his own copy over GUILD does (OwnGuild). Stamped here with this
+	-- relay's sub-realm, it was a second name for him at every 1.5.3 client, whose Seen and Layers key
+	-- the name as written: a 1.5.3 reporter handed the relay's copy to the guild after the origin's own,
+	-- and a 1.5.3 guildmate on another sub-realm counted him twice (a 1.5.4 one takes a layer word by
+	-- the short name, Deliver). The origin as stamped stays everywhere else: Seen, the keys, Deliver here.
+	local wire = GuildRoute(body) == "too" and ns.ShortName(origin) or origin
 	-- Reserve a complete, bounded snapshot from a signed origin. Charging each
 	-- fragment against the four-piece ordinary trickle stranded every larger
 	-- snapshot mid-transfer. This admits no new authority and does not bypass
@@ -903,7 +910,7 @@ local function ToReporters(flag, origin, body, sender)
 		elseif scoped and g ~= scoped then
 			stats.scoped = (stats.scoped or 0) + 1 -- (another guild's presentation: heard here alone)
 		elseif r.name == ns.me then
-			if Deliver(origin, body, flag == "L") then ToGuild(flag, origin, body) end
+			if Deliver(origin, body, flag == "L") then ToGuild(flag, wire, body) end
 		elseif set == false then
 			-- (Some pieces of the set are still on their way: the whole set goes once they are here.)
 		elseif set then
@@ -925,7 +932,7 @@ local function ToReporters(flag, origin, body, sender)
 			local word = Lower(origin) .. " " .. (kind or ("#" .. tostring(id)))
 			for k, batch in ipairs(batches) do DripSet(r.name, word .. " " .. k, batch) end
 		else
-			pieces = pieces or Envelope("RM", "RM~" .. flag .. "~" .. origin .. "~" .. body)
+			pieces = pieces or Envelope("RM", "RM~" .. flag .. "~" .. wire .. "~" .. body)
 			-- (1.5.0) Another client's word that is not a chat line: within the reporter's trickle
 			-- (REPORTER_RATE) or not sent to him; the relay's own words and chat lines always.
 			if flag == "L" or own or snapshot or presence or KingLayer(origin, body, r.name, now) or Afford(r.name, #pieces, now, need) then

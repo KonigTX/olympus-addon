@@ -181,7 +181,10 @@ end
 -- The review of the 1.5.4 candidate: a layer word (L1, L0: Relay.GUILD_TOO) reaches the origin's
 -- guildmates as his own copy over GUILD, naming him plain, and as the relay's copy, which the relay's
 -- client stamps with its own sub-realm. Every guildmate off the relay's sub-realm counted him twice,
--- and a reporter handed the relay's copy to the guild again. Fails before.
+-- and a reporter handed the relay's copy to the guild again. Fails before. (The same review, mixed
+-- versions: the relay's copy names him plain on the wire too, as his own copy does. A 1.5.3 client
+-- keys Seen and Layers by the name as written, so the two copies agreeing is what keeps it from
+-- counting him twice; the test after this one runs one. Fails before on the wire's name.)
 test("Forever layer hop: a layer word heard as the origin's guild copy and as the relay's copy counts him once, at the reporter and at guildmates on a third sub-realm, either copy first; a reporter that had the guild copy hands the relay's to nobody", function()
 	local s = Saved()
 	local ok, err = pcall(function()
@@ -205,7 +208,7 @@ test("Forever layer hop: a layer word heard as the origin's guild copy and as th
 		xdeliver("WHISPER", "Asker Name", rl.msg)
 		xpump()
 		local rm = xsentOf("RM~")[1]
-		eq(rm and rm.msg, "RM~P~Asker Name-CAMWOWUS2Realm3PvE~" .. LAYER, "the relay's copy names him with its own sub-realm")
+		eq(rm and rm.msg, "RM~P~Asker Name~" .. LAYER, "the relay's copy names him plain, as his own guild copy does")
 		-- The reporter, on Realm7, has the guild copy first: one player, and the relay's copy to nobody.
 		ns.realm = "CAMWOWUS2Realm7PvE"
 		local R, rdeliver, _, _, rpump, rsentOf = extra.RelayWorld("Rep Orter-CAMWOWUS2Realm7PvE", "Olympus II")
@@ -225,7 +228,7 @@ test("Forever layer hop: a layer word heard as the origin's guild copy and as th
 		r2pump()
 		local handed = r2sentOf("RG~")
 		eq(#handed, 1, "the relay's copy handed to the guild once")
-		eq(handed[1].msg, "RG~P~Asker Name-CAMWOWUS2Realm3PvE~" .. LAYER)
+		eq(handed[1].msg, "RG~P~Asker Name~" .. LAYER, "handed on by the name on the wire: plain")
 		n, muster = Counted(R2)
 		eq(n, 1, "relay's copy first: counted once"); eq(muster, 1)
 		-- Guildmates on a third sub-realm hear his guild copy and the reporter's, either first: once.
@@ -240,6 +243,66 @@ test("Forever layer hop: a layer word heard as the origin's guild copy and as th
 			n, muster = Counted(B)
 			eq(n, 1, which .. ": a guildmate on a third sub-realm counts him once")
 			eq(muster, 1, which .. ": and musters him once")
+		end
+	end)
+	Restore(s)
+	if not ok then error(err, 0) end
+end)
+
+-- The review of the 1.5.4 candidate, mixed versions: most players run 1.5.3 for days after the
+-- release, and a 1.5.3 client (tests/fixtures/relay-1.5.3.lua, its own Relay.lua on this Comm and
+-- Layers, which 1.5.3 shares) takes a word once by the origin's name as written, with no dedupe by
+-- the short name. So the relay's copy of a layer word must name him as his own guild copy does, plain:
+-- stamped with the relay's sub-realm it was a second member of the layer at every 1.5.3 guildmate on
+-- another sub-realm, renewed with each L1, and a 1.5.3 reporter handed it to the guild after the
+-- origin's own. Fails before (the reporter hands the stamped copy on, the guildmate counts two).
+test("Forever layer hop: a 1.5.4 relay on another sub-realm, a 1.5.3 reporter and a 1.5.3 guildmate running their own Relay.lua: the member counts once at the 1.5.3 guildmate, either copy first", function()
+	local s = Saved()
+	local ok, err = pcall(function()
+		GetChannelName = function() return 0 end
+		ns.IsMember = function() return true end
+		IsInGuild = function() return true end
+		GetGuildInfo = function() return "Olympus II", "Member", 3 end
+		local OLD = extra.fixtures .. "relay-1.5.3.lua"
+		-- The origin, on Realm5, on 1.5.4: his layer to his guild at once, then to the relay once it answers.
+		ns.realm = "CAMWOWUS2Realm5PvE"
+		local O, odeliver, _, _, opump, osentOf = extra.RelayWorld("Lay Erman-CAMWOWUS2Realm5PvE", "Olympus II")
+		eq(O.Comm.Send("CHANNEL", LAYER, "layer"), true)
+		opump()
+		odeliver("WHISPER", "Max Ran", "RY~")
+		opump()
+		local guildCopy, rl = osentOf("RG~P~Lay Erman~L1~")[1], osentOf("RL~P~L1~")[1]
+		assert(guildCopy and rl and rl.target == "Max Ran", "the guild copy, and the relay's")
+		-- The relay, Max Ran, on Realm7 in another guild, on 1.5.4, with Olympus II's reporter registered.
+		ns.realm = "CAMWOWUS2Realm7PvE"
+		local X, xdeliver, _, _, xpump, xsentOf = extra.RelayWorld("Max Ran-CAMWOWUS2Realm7PvE", "Olympus Zeus")
+		xdeliver("WHISPER", "Rep Orter", "RL~P~RR~Olympus II")
+		xdeliver("WHISPER", "Lay Erman", rl.msg)
+		xpump()
+		local rm = xsentOf("RM~")[1]
+		assert(rm and rm.target == "Rep Orter", "the relay's copy to the guild's reporter")
+		eq(X.Relay.Stats().delivered, 1, "the relay's own client took the word once")
+		-- The reporter and the guildmates, on Realm5 with the origin, still on 1.5.3.
+		ns.realm = "CAMWOWUS2Realm5PvE"
+		for _, guildFirst in ipairs({ true, false }) do
+			local which = guildFirst and "the guild copy first" or "the relay's copy first"
+			local R, rdeliver, _, _, rpump, rsentOf = extra.RelayWorld("Rep Orter-CAMWOWUS2Realm5PvE", "Olympus II", OLD)
+			local copies = { { "GUILD", "Lay Erman", guildCopy.msg }, { "WHISPER", "Max Ran", rm.msg } }
+			if not guildFirst then copies[1], copies[2] = copies[2], copies[1] end
+			for _, copy in ipairs(copies) do rdeliver(copy[1], copy[2], copy[3]) end
+			rpump()
+			local handed = rsentOf("RG~")
+			-- A 1.5.3 guildmate hears the origin's own copy and whatever his reporter handed on.
+			local G, gdeliver = extra.RelayWorld("Gil Mate-CAMWOWUS2Realm5PvE", "Olympus II", OLD)
+			LoadLayers(G)
+			gdeliver("GUILD", "Lay Erman", guildCopy.msg)
+			for _, h in ipairs(handed) do gdeliver("GUILD", "Rep Orter", h.msg) end
+			local n, muster = Counted(G)
+			eq(n, 1, which .. ": a 1.5.3 guildmate counts him once")
+			eq(muster, 1, which .. ": and musters him once")
+			eq(G.Relay.Stats().delivered, 1, which .. ": the 1.5.3 guildmate took the word once")
+			eq(#handed, guildFirst and 0 or 1, which .. ": the 1.5.3 reporter hands the relay's copy on only when it came first")
+			eq(R.Relay.Stats().delivered, 1, which .. ": the 1.5.3 reporter took the word once")
 		end
 	end)
 	Restore(s)

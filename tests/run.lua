@@ -6970,12 +6970,14 @@ do -- (1.4.3: the relay's tests, their locals scoped)
 -- says "on the channel" travels by the relay instead (Relay.lua): origin -> a signed relay by whisper
 -- (RL), relay -> each guild's registered reporter by whisper (RM), reporter -> its guild (RG), and each
 -- client takes it once as if from the channel, its origin the sender. A client of each kind here.
-local function RelayWorld(me, guild)
+-- relayFile (the review of 1.5.4, mixed versions): another release's Relay.lua instead of this one
+-- (tests/fixtures/relay-1.5.3.lua: a client still on 1.5.3, as tests/hop-forever.lua runs one).
+local function RelayWorld(me, guild, relayFile)
 	local cns, Deliver = FreshComm()
 	cns.me, cns.splitNames = me, true
 	cns.rdb = { council = { names = { ["max ran"] = "Max Ran", ["hildryn payne"] = "Hildryn Payne" }, realm = "Realm" } }
 	cns.KingCharacter, cns.TreasurerPins, cns.AuthorCharacters = function() return nil end, function() return {} end, function() return {} end
-	assert(loadfile(ADDON_DIR .. "Relay.lua"))("Olympus", cns)
+	assert(loadfile(relayFile or (ADDON_DIR .. "Relay.lua")))("Olympus", cns)
 	cns.Relay.Reset()
 	local sent, heard = {}, {}
 	C_ChatInfo.SendAddonMessage = function(_, msg, dist, target) sent[#sent + 1] = { msg = msg, dist = dist, target = target, logged = false } return 0 end
@@ -6989,7 +6991,7 @@ end
 Harness.RelayWorld = RelayWorld -- (1.5.4: the Chat tab's link tests, tests/chat-item-links.lua)
 
 assert(loadfile(ROOT .. "tests/census-relay.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
-assert(loadfile(ROOT .. "tests/hop-forever.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
+assert(loadfile(ROOT .. "tests/hop-forever.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR, fixtures = ROOT .. "tests/fixtures/" })
 assert(loadfile(ROOT .. "tests/relay-fanout.lua"))(ns, test, eq, { RelayWorld = RelayWorld })
 assert(loadfile(ROOT .. "tests/relay-presentation.lua"))(ns, test, eq, { RelayWorld = RelayWorld })
 assert(loadfile(ROOT .. "tests/roster-subrealm.lua"))(ns, test, eq)
