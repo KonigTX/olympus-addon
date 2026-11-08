@@ -373,13 +373,17 @@ local function CrownToRelays(parts, pick)
 	if not (ns.me and ns.IsKingCharacter and ns.IsKingCharacter(ns.me)) then return end
 	local now, mine, picked = Now(), Lower(ns.ShortName(ns.me)), Lower(pick)
 	for _, p in ipairs(parts) do
-		if type(p) == "string" and p:match("^T1~[PQ]~") then
+		-- (His presence, T1~o every King.PRESENCE_EVERY, goes the same way, on its own gap slot: a
+		-- relay never pings another, so the other relays' guilds heard it from nobody.)
+		local presence = type(p) == "string" and p:match("^T1~o~%d+~") ~= nil
+		if type(p) == "string" and (p:match("^T1~[PQ]~") or presence) then
 			for _, n in ipairs(Relay.Names(false)) do
 				local to = Lower(n)
-				if to ~= mine and to ~= picked and (offline[to] or 0) <= now and CrownDue("x:" .. to, p, now) then
-					crownSent["x:" .. to] = now
+				local slot = (presence and "o:" or "x:") .. to
+				if to ~= mine and to ~= picked and (offline[to] or 0) <= now and (presence or CrownDue(slot, p, now)) then
+					crownSent[slot] = now
 					Quiet(n)
-					ns.Comm.Whisper(n, "RL~P~" .. p, "crown " .. to, true, false)
+					ns.Comm.Whisper(n, "RL~P~" .. p, (presence and "presence " or "crown ") .. to, true, false)
 				end
 			end
 		end
@@ -736,6 +740,15 @@ local function CrownToReporters(flag, origin, body, now)
 	end
 	if not heard then Deliver(origin, body, false) end
 end
+-- (1.5.4) The King's presence (T1~o, King.SendPresence: one piece from his signed character every
+-- King.PRESENCE_EVERY) goes to every reporter as the relay's own words do, ahead of the queue and keyed
+-- per reporter: a busy relay holds at most one per reporter, the latest. 60 reporters, every five
+-- minutes: 12 pieces a minute of the 200 a relay sends. Within the trickle it reached a reporter
+-- only by chance, and the army never saw him online (the dev's report, 2026-11-08).
+local function KingPresence(origin, body)
+	return #body <= 64 and body:match("^T1~o~%d+~") ~= nil and ns.IsKingCharacter ~= nil and ns.IsKingCharacter(origin) == true
+end
+Relay.KingPresence = KingPresence
 local function ToReporters(flag, origin, body, sender)
 	local now = Now()
 	if Crown(origin, body) then
@@ -746,6 +759,7 @@ local function ToReporters(flag, origin, body, sender)
 	end
 	local own = ns.FullName(origin) == ns.me
 	local scoped = PresentationGuild(body)
+	local presence = flag ~= "L" and KingPresence(origin, body)
 	-- Reserve a complete, bounded snapshot from a signed origin. Charging each
 	-- fragment against the four-piece ordinary trickle stranded every larger
 	-- snapshot mid-transfer. This admits no new authority and does not bypass
@@ -777,15 +791,16 @@ local function ToReporters(flag, origin, body, sender)
 			pieces = pieces or Envelope("RM", "RM~" .. flag .. "~" .. origin .. "~" .. body)
 			-- (1.5.0) Another client's word that is not a chat line: within the reporter's trickle
 			-- (REPORTER_RATE) or not sent to him; the relay's own words and chat lines always.
-			if flag == "L" or own or snapshot or Afford(r.name, #pieces, now) then
+			if flag == "L" or own or snapshot or presence or Afford(r.name, #pieces, now) then
 				stats.forwarded = stats.forwarded + 1
 				Quiet(r.name) -- (a reporter gone offline since: the server's line out of the chat)
 				-- A word that is not a chat line is keyed by its origin, kind and reporter: a newer
 				-- census of the same guild takes the waiting one's place in the queue (Comm's keyed
 				-- jobs), so a busy relay sends the latest, never a backlog.
-				local key = flag ~= "L" and ("relay " .. r.name .. " " .. Lower(origin) .. " " .. QueueWord(body)) or nil
-				if #pieces == 1 then ns.Comm.Whisper(r.name, pieces[1], key, false, false)
-				else ns.Comm.SendBatch("WHISPER", pieces, key, r.name, false) end
+				local word = presence and "T1~o" or QueueWord(body)
+				local key = flag ~= "L" and ("relay " .. r.name .. " " .. Lower(origin) .. " " .. word) or nil
+				if #pieces == 1 then ns.Comm.Whisper(r.name, pieces[1], key, presence, false)
+				else ns.Comm.SendBatch("WHISPER", pieces, key, r.name, presence) end
 			else
 				stats.trickled = (stats.trickled or 0) + 1
 			end
@@ -802,6 +817,9 @@ end
 local function Across(flag, origin, body)
 	local now = Now()
 	local mine, from = ns.ShortName(ns.me or ""):lower(), ns.ShortName(origin):lower()
+	-- (1.5.4) The King's presence keyed apart from his crown (both T1): a crown sent after it must not
+	-- take its place in the queue, since only the presence passes the other relay's trickle.
+	local presence = flag ~= "L" and KingPresence(origin, body)
 	local pieces
 	for _, name in ipairs(Relay.Names(false)) do
 		local key = name:lower()
@@ -809,9 +827,9 @@ local function Across(flag, origin, body)
 			pieces = pieces or Envelope("RX", "RX~" .. flag .. "~" .. origin .. "~" .. body)
 			stats.across = (stats.across or 0) + 1
 			Quiet(name)
-			local key = flag ~= "L" and ("across " .. name .. " " .. from .. " " .. QueueWord(body)) or nil
-			if #pieces == 1 then ns.Comm.Whisper(name, pieces[1], key, false, false)
-			else ns.Comm.SendBatch("WHISPER", pieces, key, name, false) end
+			local key = flag ~= "L" and ("across " .. name .. " " .. from .. " " .. (presence and "T1~o" or QueueWord(body))) or nil
+			if #pieces == 1 then ns.Comm.Whisper(name, pieces[1], key, presence, false)
+			else ns.Comm.SendBatch("WHISPER", pieces, key, name, presence) end
 		end
 	end
 end

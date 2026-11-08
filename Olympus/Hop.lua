@@ -903,9 +903,57 @@ end
 -- and Layers.lua call Hop.HeardKing for the character pinned by name, ns.IsKingCharacter).
 -- A census report is anyone's word: one forged report from another realm of our group placed him
 -- there ("he plays on another realm"), and his layer could not be asked for. This session's alone.
-local kingFrom
+-- (1.5.4) And when: a word of his own (his presence T1~o, his crown, his layer, his commands, his
+-- global census snapshot, each held by his quiet presence: Comm.QUIET_WORDS) heard within
+-- KING_HEARD_FRESH says he is online (Hop.SignedKingPresence). Two of his presence periods and a minute.
+Hop.KING_HEARD_FRESH = 11 * 60
+local kingFrom, kingHeardAt
 function Hop.HeardKing(sender)
-	if type(sender) == "string" and ns.IsKingCharacter(sender) then kingFrom = ns.FullName(sender) end
+	if type(sender) == "string" and ns.IsKingCharacter(sender) then kingFrom, kingHeardAt = ns.FullName(sender), ns.Now() end
+end
+
+-- (1.5.4, the dev's report of 2026-11-08: "não tá mostrando quando ele tá online") The presence of the
+-- King the author's signed list names (ns.KingCharacter), whatever his guild and rank. On Forever he
+-- is a Captain of another Olympus guild and no guild there is named Olympus, so the King guild's
+-- leader flag (Hop.King's loop below) and /who (Views.SeenNow, a click's 50 names) never saw him.
+-- Returns online, days, dim, at, as Views.PresenceNow does:
+--   our own client, or his own word heard within KING_HEARD_FRESH: online (all that `strict` takes);
+--   else a fresh report naming him its leader or a Captain (the census has him only at those ranks),
+--   the newest, or our own roster (his guildmates; not while his private presence told our guild);
+--   else his word heard earlier: nil and when ("online <age> ago"); nothing known: nil (no claim).
+function Hop.SignedKingPresence(strict)
+	local pin = ns.KingCharacter()
+	if not pin then return nil end
+	if ns.IsKingCharacter(ns.me) then return true, 0, false end
+	local now = ns.Now()
+	if kingHeardAt and now - kingHeardAt <= Hop.KING_HEARD_FRESH then return true, 0, false end
+	if not strict then
+		-- (His name's first letters first: the census holds hundreds of names, the realm check is dearer.)
+		local function His(name, realm)
+			return type(name) == "string" and name:sub(1, #pin) == pin and ns.IsKingCharacter(ns.FullName(ns.Normal(name), realm)) == true
+		end
+		local P = ns.PrivatePresence
+		for _, m in ipairs(ns.Roster and ns.Roster.online or {}) do
+			if type(m) == "table" and His(m.name) and not (P and P.Offline and P.Offline(ns.FullName(ns.Normal(m.name)))) then
+				return true, 0, false
+			end
+		end
+		local best
+		for _, g in pairs(ns.rdb.guilds or {}) do
+			local t = type(g) == "table" and tonumber(g.t) or nil
+			if t and now - t <= ns.Data.FRESH and (not best or t > best.t) and ns.ReportInGroup(g, ns.group) then
+				local realm = g.realm or ns.realm
+				if His(g.leader, realm) then best = { t = t, online = g.leaderOnline == true, days = tonumber(g.leaderDays) } end
+				for _, o in ipairs(type(g.officers) == "table" and g.officers or {}) do
+					if type(o) == "table" and His(o.name, realm) then best = { t = t, online = o.online == true, days = tonumber(o.days) } end
+				end
+			end
+		end
+		if best and best.online then return true, 0, false end
+		if best and (not kingHeardAt or best.t >= kingHeardAt) then return false, best.days, false end
+	end
+	if kingHeardAt then return nil, nil, false, kingHeardAt end
+	return nil
 end
 
 -- The King when he is online (leader of the guild named exactly "Olympus"), and his layer
@@ -923,6 +971,16 @@ end
 function Hop.King(strict)
 	local now = ns.Now()
 	local pin = ns.KingCharacter()
+	-- (1.5.4) Where the signed launch list names the King on Forever (King.IsKing's rule since 1.4.3:
+	-- his character, whatever his rank or guild), his own presence says he is online; his realm and
+	-- his layer from his own messages alone, as below. The loop after it looks for a guild named
+	-- exactly Olympus, which Forever's census does not have.
+	if pin ~= nil and ns.splitNames == true and ns.LaunchListHeld and ns.LaunchListHeld() and Hop.SignedKingPresence(strict) == true then
+		local at = kingFrom or (ns.IsKingCharacter(ns.me) and ns.me or nil)
+		local where = at and ns.Layers.Of(at, true)
+		return { name = ns.KingName(pin), mapID = where and where.mapID, zoneUID = where and where.zoneUID,
+			t = where and where.t, realm = at and ns.RealmOf(at) }
+	end
 	for name, g in pairs(ns.rdb.guilds or {}) do
 		if ns.IsKingGuild(name) and type(g) == "table" and g.leader
 			and now - (g.t or 0) <= ns.Data.FRESH and g.leaderOnline then
@@ -1304,7 +1362,7 @@ function Hop.Reset()
 	lastOffer, declines, pausedUntil = -math.huge, 0, -math.huge
 	wipe(offered); wipe(answeredAt); wipe(recent); wipe(guests)
 	for k in pairs(stats) do stats[k] = 0 end
-	kingFrom = nil
+	kingFrom, kingHeardAt = nil, nil
 end
 
 ns.Comm.Handle("LQ", function(...) Hop.HandleAsk(...) end)

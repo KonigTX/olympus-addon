@@ -1354,6 +1354,9 @@ function Data.ReceiveGlobalCensus(dist, sender, text)
 	if bad or count == 0 then return false end
 	globalLastHeard = now
 	HeardAnswer(now, trusted, sender)
+	-- (1.5.4) The King's own snapshot (his relay's, every Relay.GLOBAL_EVERY, held by his quiet
+	-- presence: Comm.QUIET_WORDS) is his word too: he is online (Hop.SignedKingPresence).
+	if ns.Hop and ns.Hop.HeardKing then ns.Hop.HeardKing(sender) end
 	return true
 end
 

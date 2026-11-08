@@ -161,3 +161,32 @@ test("1.5.4 the King's crown: in a relay's queue his newest crown never takes th
 		eq(Count(sent, function(s) return s.target == "Reporter1" and s.msg:find("~T1~P~3~", 1, true) ~= nil end), 1, "and the crown")
 	end)
 end)
+
+-- 1.5.4: the King's presence (T1~o) reaches the other relays the same way: his client, a relay,
+-- never pinged one, so only the guilds registered at his own client heard he was online.
+test("1.5.4 the King's presence: his own client whispers it to every other relay not left out, whatever crown went just before; anyone else's never fans out", function()
+	Guarded(function()
+		local K, _, sent, _, pump = KingWorld(KING .. "-Realm")
+		K.KingCharacter = function() return KING end
+		local function To(who, prefix)
+			return Count(sent, function(s) return s.dist == "WHISPER" and s.target == who and s.msg:sub(1, #prefix) == prefix end)
+		end
+		K.Comm.Send("CHANNEL", "T1~P~3~Olympus Prime~1453~420~510", "kinglocation")
+		pump(50)
+		K.Comm.Send("CHANNEL", "T1~o~7~Olympus Prime", "king presence", true)
+		pump(50)
+		eq(To("Max Ran", "RL~P~T1~o~7~"), 1, "to one relay, a crown just before notwithstanding")
+		eq(To("Hildryn Payne", "RL~P~T1~o~7~"), 1, "and the other")
+		K.Relay.LeaveOut("Max Ran", "offline")
+		K.clock = K.clock + 300
+		K.Comm.Send("CHANNEL", "T1~o~8~Olympus Prime", "king presence", true)
+		pump(50)
+		eq(To("Max Ran", "RL~P~T1~o~8~"), 0, "left out: nothing"); eq(To("Hildryn Payne", "RL~P~T1~o~8~"), 1)
+	end)
+	Guarded(function()
+		local O, _, sent, _, pump = KingWorld("Some Body-Realm")
+		O.Comm.Send("CHANNEL", "T1~o~7~Olympus Prime", "king presence", true)
+		pump(50)
+		eq(Count(sent, function(s) return s.msg:find("T1~o~", 1, true) ~= nil end) <= 1, true, "anyone else's presence never fans out to every relay")
+	end)
+end)

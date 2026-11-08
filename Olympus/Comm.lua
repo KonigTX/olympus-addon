@@ -490,6 +490,7 @@ Comm.QUIET_WORDS = {
 	"^LY~[RX]~",    -- an answer about the King's layer, or its withdrawal (HopSightings.lua)
 	"^PS~[RBXW]~",  -- a player-sighting answer, or its withdrawal (PlayerSightings.lua)
 	"^T1~[PQ]~",    -- the King's crown on the map, or its removal (King.lua)
+	"^T1~o~",       -- (1.5.4) the King's presence (King.lua)
 	"^CG~%d+~S~",   -- a global census snapshot (Data.lua)
 	"^CX~%d+~S~",   -- carried origin totals or guild detail (Data.lua)
 	"^V[248]~",     -- a roll call's answer, the author's presence, a version check's answer (Workshop.lua, Versions.lua)
