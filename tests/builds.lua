@@ -133,7 +133,8 @@ test("1.5.4 modified builds version: a release form (x.y.z, x.y.z.w) and the aut
 		local state, version, how = V.Status("Hal Brown")
 		eq(state, "modified"); eq(version, "1.5.3-custom"); eq(how, "check")
 		eq(B.Quarantined("Hal Brown-Realm"), true)
-		eq(w.printed[#w.printed], "Hal Brown: " .. L.VERSION_LINE_MODIFIED:format("1.5.3-custom"))
+		-- (Changed on purpose, the owner's call: the release it was made from, never the rest of its version.)
+		eq(w.printed[#w.printed], "Hal Brown: " .. L.VERSION_LINE_MODIFIED:format("1.5.3"))
 		eq(B.Modified("Hal Brown-Realm").how, "answer")
 		-- Nothing of a check is read without the matching id, or from the channel.
 		eq(V.Check("Ida Green-Realm"), true)
@@ -358,11 +359,11 @@ test("1.5.4 modified builds: /oly builds opens a copyable window: the sightings 
 		assert(text:find(L.BUILDS_LOCK_NOTE, 1, true), "what the lock does")
 		local online, seen = text:find(L.BUILDS_ONLINE, 1, true), text:find(L.BUILDS_SEEN, 1, true)
 		assert(online and seen and online < seen, text)
-		local bob = text:find("Bob Light  1.5.3-custom  " .. L.BUILDS_HOW_HELLO .. ", " .. ns.Ago(w.clock - 3600) .. "  (" .. L.BUILDS_BY_YOU .. ")", 1, true)
-		local ann = text:find("Ann Dark  1.5.1-onn.12  " .. L.BUILDS_HOW_HELLO .. ", " .. ns.Ago(w.clock - 120) .. "  (" .. L.BUILDS_BY_YOU .. ")", 1, true)
+		local bob = text:find("Bob Light  1.5.3  " .. L.BUILDS_HOW_HELLO .. ", " .. ns.Ago(w.clock - 3600) .. "  (" .. L.BUILDS_BY_YOU .. ")", 1, true)
+		local ann = text:find("Ann Dark  1.5.1  " .. L.BUILDS_HOW_HELLO .. ", " .. ns.Ago(w.clock - 120) .. "  (" .. L.BUILDS_BY_YOU .. ")", 1, true)
 		assert(bob and ann, text); assert(online < bob and bob < seen and seen < ann, "Bob online first, Ann seen before")
 		eq(text:find("Cid Grey", 1, true), nil, "a member is not shown the shared list")
-		assert(not text:find("ONN", 1, true) and not text:find("Edition", 1, true), "no third party named: a modified build, plainly")
+		assert(not text:find("-onn", 1, true) and not text:find("custom", 1, true), "never the rest of a version string: a modified build, plainly")
 	end)
 	WithBuilds("Tester-Realm", function(w)
 		w.ranks["Lord Hale-Realm"] = 0
@@ -371,28 +372,28 @@ test("1.5.4 modified builds: /oly builds opens a copyable window: the sightings 
 		B.Hello("Ann Dark-Realm", "1.5.4", w.clock)
 		local text = B.Text()
 		assert(text:find(L.BUILDS_HEAD:format(2), 1, true), text)
-		assert(text:find("Cid Grey <Olympus Dawn>  1.5.1-onn.12  " .. L.BUILDS_HOW_ANSWER .. ", " .. ns.Ago(w.clock - 7000) .. "  (" .. L.BUILDS_BY:format("Lord Hale") .. ")", 1, true), text)
-		assert(text:find("Ann Dark  1.5.1-onn.12  " .. L.BUILDS_HOW_HELLO .. ", " .. ns.Ago(w.clock - 120) .. "  (" .. L.BUILDS_BY_YOU .. "); " .. L.BUILDS_CLEARED:format("1.5.4"), 1, true), text)
+		assert(text:find("Cid Grey <Olympus Dawn>  1.5.1  " .. L.BUILDS_HOW_ANSWER .. ", " .. ns.Ago(w.clock - 7000) .. "  (" .. L.BUILDS_BY:format("Lord Hale") .. ")", 1, true), text)
+		assert(text:find("Ann Dark  1.5.1  " .. L.BUILDS_HOW_HELLO .. ", " .. ns.Ago(w.clock - 120) .. "  (" .. L.BUILDS_BY_YOU .. "); " .. L.BUILDS_CLEARED:format("1.5.4"), 1, true), text)
 		eq(text:find(L.BUILDS_MEMBERS_NOTE, 1, true), nil, "a guild master: the whole list")
 	end, { rank = 0 })
 end)
 
-test("1.5.4 modified builds menu: the right-click menu's version line says modified build with the version announced, under it where from and that it is locked; a reporter's record for a guild master, with his name; Ask to update greyed; the person card's line", function()
+test("1.5.4 modified builds menu: the right-click menu's version line says modified build with the release it was made from, under it where from and that it is locked; a reporter's record for a guild master, with his name; Ask to update greyed; the person card's line", function()
 	WithBuilds("Tester-Realm", function(w)
 		w.hellos["Ann Dark"] = "?" -- (Comm.PeerVersion: a version it cannot read)
 		B.Hello("Ann Dark-Realm", "1.5.1-onn.12", w.clock - 90)
 		local root = Menu()
 		V.MenuLines({ name = "Ann Dark-Realm" }, root)
 		local detail = L.VERSION_DETAIL_HELLO:format(ns.Ago(w.clock - 90)) .. "; " .. L.VERSION_DETAIL_LOCKED
-		eq(root.Texts(), "title:" .. L.VERSION_LINE_MODIFIED:format("1.5.1-onn.12") .. " | title:|cff9d9d9d" .. detail .. "|r | button:" .. L.VERSION_CHECK)
-		eq(V.CardLine("Ann Dark-Realm"), L.VERSION_LINE_MODIFIED:format("1.5.1-onn.12"), "the person card too")
+		eq(root.Texts(), "title:" .. L.VERSION_LINE_MODIFIED:format("1.5.1") .. " | title:|cff9d9d9d" .. detail .. "|r | button:" .. L.VERSION_CHECK)
+		eq(V.CardLine("Ann Dark-Realm"), L.VERSION_LINE_MODIFIED:format("1.5.1"), "the person card too")
 		eq(V.HasOlympus("Ann Dark-Realm"), true)
 		-- Nothing of a check: from the answer.
 		V.Check("Bob Light-Realm")
 		V.HandleAnswer("WHISPER", "Bob Light-Realm", "V8~4242~1.5.3-custom")
 		root = Menu()
 		V.MenuLines({ name = "Bob Light-Realm" }, root)
-		assert(root.Texts():find("^title:" .. L.VERSION_LINE_MODIFIED:format("1.5.3-custom"):gsub("%p", "%%%0") .. " | title:|cff9d9d9d" .. L.VERSION_DETAIL_CHECK:format(ns.Ago(w.clock)):gsub("%p", "%%%0") .. "; "), root.Texts())
+		assert(root.Texts():find("^title:" .. L.VERSION_LINE_MODIFIED:format("1.5.3"):gsub("%p", "%%%0") .. " | title:|cff9d9d9d" .. L.VERSION_DETAIL_CHECK:format(ns.Ago(w.clock)):gsub("%p", "%%%0") .. "; "), root.Texts())
 		-- A member is shown nothing of a reporter's record.
 		w.ranks["Lord Hale-Realm"] = 0
 		B.HandleShare("GUILD", "Lord Hale-Realm", Word("Cid Grey-Realm", "1.5.1-onn.12"))
@@ -407,7 +408,7 @@ test("1.5.4 modified builds menu: the right-click menu's version line says modif
 		local root = Menu()
 		V.MenuLines({ name = "Cid Grey-Realm" }, root)
 		local detail = L.VERSION_DETAIL_SHARED:format("Lord Hale", ns.Ago(w.clock - 3600))
-		eq(root.Texts(), "title:" .. L.VERSION_LINE_MODIFIED:format("1.5.1-onn.12") .. " | title:|cff9d9d9d" .. detail .. "|r | button:" .. L.VERSION_CHECK)
+		eq(root.Texts(), "title:" .. L.VERSION_LINE_MODIFIED:format("1.5.1") .. " | title:|cff9d9d9d" .. detail .. "|r | button:" .. L.VERSION_CHECK)
 		local state, version, how, at = V.Status("Cid Grey-Realm")
 		eq(state, "modified"); eq(version, "1.5.1-onn.12"); eq(how, "shared"); eq(at, w.clock - 3600)
 		ns.rdb.council = { at = 1, names = { tester = "Tester" } }
@@ -851,5 +852,31 @@ test("1.5.4 modified builds prompt: Comm's door counts a locked client as online
 		R.clock = R.clock + R.Builds.ONLINE_FOR + 1
 		eq(R.Builds.Online(one), false, "five minutes on, no longer")
 		eq(R.Builds.Online("Nobody Here" .. REALM7), false, "never one without a record")
+	end)
+end)
+
+test("1.5.4 modified builds wording: the menu line, the person card, a check's line and /oly builds say modified build with the release the version starts from, never the rest of it (it may name its maker); a version with no release in it is Olympus (modified build); the record keeps the whole string", function()
+	eq(B.Shown("1.5.1-onn.12"), "1.5.1"); eq(B.Shown("1.5.3-custom"), "1.5.3"); eq(B.Shown("1.2.5.1-x"), "1.2.5.1")
+	eq(B.Shown("custom"), nil); eq(B.Shown("?"), nil); eq(B.Shown("1.5"), nil); eq(B.Shown(nil), nil)
+	WithBuilds("Tester-Realm", function(w)
+		w.hellos["Ann Dark"], w.hellos["Eve Red"] = "?", "?"
+		B.Hello("Ann Dark-Realm", "1.5.1-onn.12", w.clock)
+		B.Hello("Eve Red-Realm", "custom", w.clock)
+		eq(V.Line(V.Status("Ann Dark-Realm")), L.VERSION_LINE_MODIFIED:format("1.5.1"), "the release it was made from")
+		eq(V.CardLine("Eve Red-Realm"), L.VERSION_LINE_MODIFIED_ANY, "no release in it: no number at all")
+		local text = B.Text()
+		assert(text:find("Ann Dark  1.5.1  ", 1, true) and text:find("Eve Red  ?  ", 1, true), text)
+		for _, part in ipairs({ "onn", "custom" }) do
+			eq(text:find(part, 1, true), nil, "/oly builds never shows " .. part)
+			for _, n in ipairs({ "Ann Dark-Realm", "Eve Red-Realm" }) do
+				local root = Menu()
+				V.MenuLines({ name = n }, root)
+				eq(root.Texts():find(part, 1, true), nil, "the menu never shows " .. part)
+			end
+		end
+		eq(B.Modified("Ann Dark-Realm").version, "1.5.1-onn.12", "the record keeps the whole string")
+		for _, k in ipairs({ "VERSION_LINE_MODIFIED", "VERSION_LINE_MODIFIED_ANY", "BUILDS_TITLE", "BUILDS_HEAD" }) do
+			assert(L[k]:lower():find("modified", 1, true), k .. " says modified, plainly")
+		end
 	end)
 end)

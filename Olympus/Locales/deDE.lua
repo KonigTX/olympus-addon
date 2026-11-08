@@ -4670,6 +4670,7 @@ ns.Locale("deDE", {
 	VERSION_LINE_NONE = "Olympus: keine Antwort",
 	VERSION_LINE_OLYMPUS = "Nutzt Olympus (Version unbekannt)",
 	VERSION_LINE_MODIFIED = "Olympus %s (veränderte Version)",
+	VERSION_LINE_MODIFIED_ANY = "Olympus (veränderte Version)",
 	VERSION_SOURCE_SHARED = "Aus der Meldung eines Gildenleiters, Offiziers oder Ratsmitglieds, %s.",
 	VERSION_DETAIL_SHARED = "gemeldet von %s, %s",
 	VERSION_DETAIL_LOCKED = "gesperrt: seine Nachrichten werden verworfen, bis es eine offizielle Version meldet",

@@ -4670,6 +4670,7 @@ ns.Locale("ruRU", {
 	VERSION_LINE_NONE = "Olympus: нет ответа",
 	VERSION_LINE_OLYMPUS = "Использует Olympus (версия неизвестна)",
 	VERSION_LINE_MODIFIED = "Olympus %s (изменённая версия)",
+	VERSION_LINE_MODIFIED_ANY = "Olympus (изменённая версия)",
 	VERSION_SOURCE_SHARED = "Из сообщения главы гильдии, офицера или советника, %s.",
 	VERSION_DETAIL_SHARED = "сообщил %s, %s",
 	VERSION_DETAIL_LOCKED = "заблокирован: его сообщения отбрасываются, пока он не объявит официальную версию",

@@ -4670,6 +4670,7 @@ ns.Locale("itIT", {
 	VERSION_LINE_NONE = "Olympus: nessuna risposta",
 	VERSION_LINE_OLYMPUS = "Usa Olympus (versione sconosciuta)",
 	VERSION_LINE_MODIFIED = "Olympus %s (versione modificata)",
+	VERSION_LINE_MODIFIED_ANY = "Olympus (versione modificata)",
 	VERSION_SOURCE_SHARED = "Dalla segnalazione di un capogilda, un ufficiale o un consigliere, %s.",
 	VERSION_DETAIL_SHARED = "segnalato da %s, %s",
 	VERSION_DETAIL_LOCKED = "bloccato: i suoi messaggi vengono scartati finché non annuncia una versione ufficiale",

@@ -191,7 +191,12 @@ function Versions.Line(state, version)
 	if state == "current" then return L.VERSION_LINE_CURRENT:format(version) end
 	if state == "newer" then return L.VERSION_LINE_NEWER:format(version) end
 	if state == "outdated" then return L.VERSION_LINE_OUTDATED:format(version) end
-	if state == "modified" then return L.VERSION_LINE_MODIFIED:format(tostring(version or "?")) end
+	if state == "modified" then
+		-- (1.5.4) The release it was made from alone, never the rest of its version (Builds.Shown).
+		local B = ns.Builds
+		local shown = B and not B.missing and B.Shown(version)
+		return shown and L.VERSION_LINE_MODIFIED:format(shown) or L.VERSION_LINE_MODIFIED_ANY
+	end
 	if state == "olympus" then return L.VERSION_LINE_OLYMPUS end
 	if state == "checking" then return L.VERSION_LINE_CHECKING end
 	if state == "none" then return L.VERSION_LINE_NONE end

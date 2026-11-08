@@ -6383,6 +6383,7 @@ L.BUGASK_GONE = "That ask is over (10 minutes passed): nothing was sent. The aut
 L.PAGE_HELP_ENGLISH = "(This explanation is in English.)"
 -- 1.5.4: modified builds (Builds.lua): the menu's line, its detail, /oly builds.
 L.VERSION_LINE_MODIFIED = "Olympus %s (modified build)"
+L.VERSION_LINE_MODIFIED_ANY = "Olympus (modified build)"
 L.VERSION_SOURCE_SHARED = "From a guild master's, an officer's or a councillor's report, %s."
 L.VERSION_DETAIL_SHARED = "reported by %s, %s"
 L.VERSION_DETAIL_LOCKED = "locked out: its words are dropped until it announces a release"
@@ -6510,6 +6511,7 @@ if GetLocale and GetLocale() == "ptBR" then
 	L.BUGASK_GONE = "Esse pedido acabou (passaram 10 minutos): nada foi enviado. O autor pode pedir de novo."
 	L.PAGE_HELP_ENGLISH = "(Esta explicação está em inglês.)"
 	L.VERSION_LINE_MODIFIED = "Olympus %s (versão modificada)"
+	L.VERSION_LINE_MODIFIED_ANY = "Olympus (versão modificada)"
 	L.VERSION_SOURCE_SHARED = "Do relato de um mestre de guilda, oficial ou conselheiro, %s."
 	L.VERSION_DETAIL_SHARED = "relatado por %s, %s"
 	L.VERSION_DETAIL_LOCKED = "bloqueado: as mensagens dele são descartadas até anunciar uma versão oficial"

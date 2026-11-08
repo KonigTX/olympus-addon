@@ -4670,6 +4670,7 @@ ns.Locale({ "esES", "esMX" }, {
 	VERSION_LINE_NONE = "Olympus: sin respuesta",
 	VERSION_LINE_OLYMPUS = "Usa Olympus (versión desconocida)",
 	VERSION_LINE_MODIFIED = "Olympus %s (versión modificada)",
+	VERSION_LINE_MODIFIED_ANY = "Olympus (versión modificada)",
 	VERSION_SOURCE_SHARED = "Del informe de un maestro de hermandad, un oficial o un consejero, %s.",
 	VERSION_DETAIL_SHARED = "informado por %s, %s",
 	VERSION_DETAIL_LOCKED = "bloqueado: sus mensajes se descartan hasta que anuncie una versión oficial",

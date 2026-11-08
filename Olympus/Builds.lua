@@ -62,7 +62,8 @@ local L = ns.L
 --     unasked first, never while his queue has fewer than PROMPT_ROOM places free (the relay's own
 --     words first; tried again a minute later), never to a character not marked.
 --   * The view: /oly builds, a copyable window (the owner cannot copy chat lines); the right-click
---     menu's version line, "Olympus <version> (modified build)" (Versions.lua).
+--     menu's version line, "Olympus <release it was made from> (modified build)" (Versions.lua,
+--     Builds.Shown: never the rest of the version string).
 --   BD~1~<reporter's guild>~<name>~<version>~h|a|c~<first>~<last>~<their guild>   GUILD and CHANNEL
 --   (h the hello, a a version answer, c the character announced the release <version> to the sender)
 
@@ -103,8 +104,17 @@ local function Release(v)
 end
 Builds.Release = Release
 
--- A version string as it is kept, shown and sent: no escape code, control byte or separator, at
--- most VERSION_MAX bytes; "?" for none (an empty field, as Comm shows an unreadable version).
+-- What the menu and /oly builds show of a modified build's version (the owner's call: "modified
+-- build", plainly, no third party named): the release it was made from, its leading x.y.z or
+-- x.y.z.w, never the rest, which may carry its maker's name ("1.5.1-<suffix>" shows as 1.5.1); nil
+-- when it starts with none. The whole string stays in the record and the shared word.
+function Builds.Shown(v)
+	if type(v) ~= "string" then return nil end
+	return v:match("^(%d+%.%d+%.%d+%.%d+)") or v:match("^(%d+%.%d+%.%d+)")
+end
+
+-- A version string as it is kept and sent: no escape code, control byte or separator, at most
+-- VERSION_MAX bytes; "?" for none (an empty field, as Comm shows an unreadable version).
 function Builds.Clean(v)
 	v = tostring(v or ""):gsub("[|~%c]", "")
 	v = ns.Cut(v, Builds.VERSION_MAX)
@@ -471,7 +481,7 @@ local function By(e)
 end
 local function Line(e)
 	local name = ns.DisplayName(e.name) .. (e.guild and (" <" .. e.guild .. ">") or "")
-	local text = ("%s  %s  %s, %s  (%s)"):format(name, tostring(e.version or "?"), How(e), ns.Ago(e.last or 0), By(e))
+	local text = ("%s  %s  %s, %s  (%s)"):format(name, Builds.Shown(e.version) or "?", How(e), ns.Ago(e.last or 0), By(e))
 	if e.by == nil and e.how ~= "silent" and e.locked == false and e.release then
 		text = text .. "; " .. L.BUILDS_CLEARED:format(e.release)
 	elseif e.by ~= nil and e.cleared then
