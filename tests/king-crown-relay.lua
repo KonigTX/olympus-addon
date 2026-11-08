@@ -190,3 +190,29 @@ test("1.5.4 the King's presence: his own client whispers it to every other relay
 		eq(Count(sent, function(s) return s.msg:find("T1~o~", 1, true) ~= nil end) <= 1, true, "anyone else's presence never fans out to every relay")
 	end)
 end)
+
+-- 1.5.4: the King's layer word (L1, L0) too: when it changes, else once each KING_REFRESH, to every
+-- other relay, so their guilds learn where to ask for his layer (the arrow's exact mark, the hop).
+test("1.5.4 the King's layer: his own client whispers it to every other relay when it changes, else once each KING_REFRESH", function()
+	Guarded(function()
+		local K, _, sent, _, pump = KingWorld(KING .. "-Realm")
+		K.KingCharacter = function() return KING end
+		local function To(who, prefix)
+			return Count(sent, function(s) return s.dist == "WHISPER" and s.target == who and s.msg:sub(1, #prefix) == prefix end)
+		end
+		K.Comm.Send("CHANNEL", "L1~1429~3~0~Olympus Prime")
+		pump(50)
+		eq(To("Max Ran", "RL~P~L1~1429~3~"), 1, "to one relay"); eq(To("Hildryn Payne", "RL~P~L1~1429~3~"), 1, "and the other")
+		K.clock = K.clock + 60
+		K.Comm.Send("CHANNEL", "L1~1429~3~0~Olympus Prime")
+		pump(50)
+		eq(To("Max Ran", "RL~P~L1~1429~3~"), 1, "the same layer again within KING_REFRESH: not again")
+		K.Comm.Send("CHANNEL", "L1~1429~6~0~Olympus Prime")
+		pump(50)
+		eq(To("Max Ran", "RL~P~L1~1429~6~"), 1, "a new layer at once")
+		K.clock = K.clock + K.Relay.KING_REFRESH
+		K.Comm.Send("CHANNEL", "L1~1429~6~0~Olympus Prime")
+		pump(50)
+		eq(To("Max Ran", "RL~P~L1~1429~6~"), 2, "the same layer after KING_REFRESH")
+	end)
+end)

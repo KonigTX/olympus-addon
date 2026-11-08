@@ -113,6 +113,7 @@ local seen = {}      -- origin .. "|" .. text -> when
 local lastVerifyAsk = -math.huge
 local snapshotTransfers = {}
 local crownSent = {} -- "r:" reporter or "x:" relay (lower) -> when the King's crown last went to it
+local crownLayer = {} -- (1.5.4) "l:" relay (lower) -> the King's layer word last whispered to it
 local seenCount = 0
 local pending = {}   -- (1.4.4) what waits for the first relay to answer: { parts, logged, done, key, urgent, options }
 local holding = false -- a timer runs to send what waits anyway after PING_WAIT
@@ -376,14 +377,19 @@ local function CrownToRelays(parts, pick)
 		-- (His presence, T1~o every King.PRESENCE_EVERY, goes the same way, on its own gap slot: a
 		-- relay never pings another, so the other relays' guilds heard it from nobody.)
 		local presence = type(p) == "string" and p:match("^T1~o~%d+~") ~= nil
-		if type(p) == "string" and (p:match("^T1~[PQ]~") or presence) then
+		-- (And his layer, L1 or L0: when it changes, else once each KING_REFRESH, as relays hand it on.)
+		local layer = type(p) == "string" and p:match("^L[01]~") ~= nil
+		if type(p) == "string" and (p:match("^T1~[PQ]~") or presence or layer) then
 			for _, n in ipairs(Relay.Names(false)) do
 				local to = Lower(n)
-				local slot = (presence and "o:" or "x:") .. to
-				if to ~= mine and to ~= picked and (offline[to] or 0) <= now and (presence or CrownDue(slot, p, now)) then
+				local slot = (presence and "o:" or layer and "l:" or "x:") .. to
+				local due = presence or (layer and (crownLayer[slot] ~= p or now - (crownSent[slot] or -math.huge) >= Relay.KING_REFRESH))
+					or (not layer and CrownDue(slot, p, now))
+				if to ~= mine and to ~= picked and (offline[to] or 0) <= now and due then
+					if layer then crownLayer[slot] = p end
 					crownSent[slot] = now
 					Quiet(n)
-					ns.Comm.Whisper(n, "RL~P~" .. p, (presence and "presence " or "crown ") .. to, true, false)
+					ns.Comm.Whisper(n, "RL~P~" .. p, (presence and "presence " or layer and "layer " or "crown ") .. to, true, false)
 				end
 			end
 		end
@@ -749,6 +755,24 @@ local function KingPresence(origin, body)
 	return #body <= 64 and body:match("^T1~o~%d+~") ~= nil and ns.IsKingCharacter ~= nil and ns.IsKingCharacter(origin) == true
 end
 Relay.KingPresence = KingPresence
+-- (The layer hop on Forever, after 1.5.3.) The King's own layer word (L1, or L0 when he hides it,
+-- from his pinned character: the relay is believed about its origin) reaches every reporter outside
+-- the trickle: once when it changes, and again at most every KING_REFRESH for each reporter, so a
+-- guild's members learn where to ask for his layer without his minute-by-minute repeats costing a
+-- whisper per reporter each minute. With 34 reporters: 34 whispers a change, under 7 a minute else.
+Relay.KING_REFRESH = 300
+local kingSent = {} -- reporter name (lower) -> { body, at }: the King's layer word last sent to him
+local function KingLayer(origin, body, name, now)
+	if type(body) ~= "string" or not body:find("^L[01]~") or type(ns.IsKingCharacter) ~= "function"
+		or not ns.IsKingCharacter(origin) then return false end
+	local key = name:lower()
+	local last = kingSent[key]
+	if last and last.body == body and now - last.at < Relay.KING_REFRESH then return false end
+	kingSent[key] = { body = body, at = now }
+	return true
+end
+Relay.ResetKingSent = function() wipe(kingSent) end -- (tests)
+
 local function ToReporters(flag, origin, body, sender)
 	local now = Now()
 	if Crown(origin, body) then
@@ -791,7 +815,7 @@ local function ToReporters(flag, origin, body, sender)
 			pieces = pieces or Envelope("RM", "RM~" .. flag .. "~" .. origin .. "~" .. body)
 			-- (1.5.0) Another client's word that is not a chat line: within the reporter's trickle
 			-- (REPORTER_RATE) or not sent to him; the relay's own words and chat lines always.
-			if flag == "L" or own or snapshot or presence or Afford(r.name, #pieces, now) then
+			if flag == "L" or own or snapshot or presence or KingLayer(origin, body, r.name, now) or Afford(r.name, #pieces, now) then
 				stats.forwarded = stats.forwarded + 1
 				Quiet(r.name) -- (a reporter gone offline since: the server's line out of the chat)
 				-- A word that is not a chat line is keyed by its origin, kind and reporter: a newer
@@ -1104,7 +1128,7 @@ function Relay.Reset()
 	wipe(offline); wipe(verified); wipe(pinged); wipe(reporters); wipe(seen); wipe(pending); wipe(budget)
 	seenCount, lastRegister, holding, flushing, lastGlobal = 0, -math.huge, false, false, -math.huge
 	lastVerifyAsk = -math.huge
-	wipe(snapshotTransfers); wipe(crownSent)
+	wipe(snapshotTransfers); wipe(crownSent); wipe(kingSent); wipe(crownLayer)
 	crownBucket.tokens, crownBucket.at = 0, -math.huge
 	wipe(sets); wipe(drip)
 	dripSince, dripping = nil, false
