@@ -2018,26 +2018,60 @@ local function Against(words, i)
 	return false
 end
 
-local federation, federationSize = {}, 0 -- [name] = true|false, asked often: kept
-local function Federation(guild)
+-- (1.5.4) On the Horde, a guild is Olympus's by its name's last word too: the banter words the
+-- community calls the Horde's races by (the beta's King guild was <Mudhutters>, its master's
+-- character Duskmonkey Boneback), beside the Olympus-word rule and the signed ^guilds^Horde^ list.
+-- Each is WoW-lore banter about a Horde race (orc, troll, tauren, Forsaken, blood elf); the author
+-- owns this list and edits it before a release. Read on the Horde alone, from the name's last word
+-- (letters only, in lower case, a trailing s or es taken off), the whole name when it is one word;
+-- a name against Olympus (Against) or a guild the High Council removed is still none.
+ns.HORDE_NAME_WORDS = { "mudhutter", "greenskin", "peon", "grunt", "tusker", "cow", "bovine", "moo", "boneback",
+	"rotter", "corpse", "zombie", "deader", "pointyear", "twig", "savage", "roach" }
+-- [side][name] = true|false, asked often: kept (1.5.4: each side's own answers, the Horde's words
+-- counting there alone).
+local federation, federationSize = { Alliance = {}, Horde = {} }, { Alliance = 0, Horde = 0 }
+local hordeWords -- { list = ns.HORDE_NAME_WORDS as read, set = { [word] = true } }
+local function HordeWords()
+	local list = type(ns.HORDE_NAME_WORDS) == "table" and ns.HORDE_NAME_WORDS or NO_PINS
+	local m = hordeWords
+	if not m or m.list ~= list then
+		local set = {}
+		for _, w in ipairs(list) do if type(w) == "string" then set[w:lower()] = true end end
+		m = { list = list, set = set }
+		hordeWords = m
+		federation.Horde, federationSize.Horde = {}, 0 -- (the Horde's answers were the old list's)
+	end
+	return m.set
+end
+local function Federation(guild, horde)
 	local words = {}
 	for word in guild:lower():gsub("0", "o"):gsub("1", "l"):gmatch("%a+") do words[#words + 1] = word end
 	for i, word in ipairs(words) do
 		if (word:find("olympus", 1, true) or OlympusWord(Sounds(word))) and not Against(words, i) then return true end
 	end
+	if horde and #words > 0 and not Against(words, #words) then
+		local set, last = HordeWords(), words[#words]
+		return set[last] == true or set[last:match("^(.-)s$") or ""] == true or set[last:match("^(.-)es$") or ""] == true
+	end
 	return false
+end
+-- The name rule, cached, for our side.
+local function Named(guild)
+	local side = ns.faction == "Horde" and "Horde" or "Alliance"
+	if side == "Horde" then HordeWords() end -- (a changed word list empties the Horde's answers)
+	local known = federation[side][guild]
+	if known == nil then
+		known = Federation(guild, side == "Horde")
+		if federationSize[side] >= 2000 then federation[side], federationSize[side] = {}, 0 end
+		federation[side][guild], federationSize[side] = known, federationSize[side] + 1
+	end
+	return known
 end
 
 -- The name rule alone (cached): what IsFederation says without the King's guild or the signed list.
 function ns.NamedOlympus(guild)
 	if type(guild) ~= "string" or guild == "" then return false end
-	local known = federation[guild]
-	if known == nil then
-		known = Federation(guild)
-		if federationSize >= 2000 then federation, federationSize = {}, 0 end
-		federation[guild], federationSize = known, federationSize + 1
-	end
-	return known
+	return Named(guild)
 end
 
 function ns.IsFederation(guild)
@@ -2048,13 +2082,7 @@ function ns.IsFederation(guild)
 	if ns.IsApprovedGuild(guild) then return true end
 	-- A guild the High Council removed (1.1.5), whatever its name.
 	if ns.IsRemovedGuild(guild) then return false end
-	local known = federation[guild]
-	if known == nil then
-		known = Federation(guild)
-		if federationSize >= 2000 then federation, federationSize = {}, 0 end
-		federation[guild], federationSize = known, federationSize + 1
-	end
-	return known
+	return Named(guild)
 end
 
 -- 1.2.5.1: the Olympus Accord (Accord.lua), Olympus's terms of use, accepted once per game account

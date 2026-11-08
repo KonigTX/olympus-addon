@@ -297,6 +297,47 @@ test("federation filter against 250 misspellings and 400 look-alike guild names 
 	eq(table.concat(wrong, ", "), "")
 end)
 
+-- 1.5.4 (the author, 2026-11-08): on the Horde a guild is Olympus's by its name's last word too, one
+-- of the community's banter words for the Horde's races (ns.HORDE_NAME_WORDS; <Mudhutters>, the beta's
+-- King guild, is one), beside the Olympus-word rule and the signed list. The Alliance is unchanged.
+-- Fails before: none of these names counted, on either side.
+test("federation filter (1.5.4): on the Horde a guild named by a Horde-race banter word last is Olympus's; not on the Alliance, not against Olympus, not a one-word name off the list, not a removed guild; the Olympus words still count", function()
+	local saved = { faction = ns.faction, removed = ns.REMOVED_BUILTIN.Horde }
+	local ok, err = pcall(function()
+		ns.faction = "Horde"
+		for _, name in ipairs({ "Dusk Bonebacks", "Mudhutters", "The Mudhutter", "Iron Greenskins", "Lazy Peons", "Dead Corpses",
+			"Night Roaches", "Mud Hut Zombies", "MOO", "Boneback" }) do
+			eq(ns.IsFederation(name), true, name); eq(ns.NamedOlympus(name), true, name)
+		end
+		for _, name in ipairs({ "Boneback Haters", "Deplorables", "Anti Mudhutters", "Kill the Greenskins", "Mudhutter Legion",
+			"Bonebacks of Ruin", "Olympia", "Greenskinss" }) do
+			eq(ns.IsFederation(name), false, name); eq(ns.NamedOlympus(name), false, name)
+		end
+		eq(ns.IsFederation("Olympus Horde"), true, "the Olympus words as before"); eq(ns.IsFederation("Sons of Olimpvs"), true)
+		-- The High Council's removal still wins (a Horde list; the addon ships none).
+		ns.REMOVED_BUILTIN.Horde = { realm = ns.KING_REALM, "Dusk Bonebacks" }
+		eq(ns.IsFederation("Dusk Bonebacks"), false, "removed"); eq(ns.NamedOlympus("Dusk Bonebacks"), true, "by its name still")
+		ns.REMOVED_BUILTIN.Horde = nil
+		eq(ns.IsFederation("Dusk Bonebacks"), true)
+		-- The author's list edited (a word taken off): the Horde's answers follow it.
+		local words = ns.HORDE_NAME_WORDS
+		ns.HORDE_NAME_WORDS = { "greenskin" }
+		eq(ns.IsFederation("Dusk Bonebacks"), false, "off the list"); eq(ns.IsFederation("Iron Greenskins"), true)
+		ns.HORDE_NAME_WORDS = words
+		eq(ns.IsFederation("Dusk Bonebacks"), true)
+		-- The Alliance: none of the words count there, and <Mudhutters> is nobody's.
+		ns.faction = "Alliance"
+		for _, name in ipairs({ "Dusk Bonebacks", "Mudhutters", "The Mudhutter", "Iron Greenskins", "MOO" }) do
+			eq(ns.IsFederation(name), false, name .. " on the Alliance"); eq(ns.NamedOlympus(name), false, name)
+		end
+		eq(ns.IsFederation("Olympus Horde"), true)
+		ns.faction = "Horde"
+		eq(ns.IsFederation("Dusk Bonebacks"), true, "each side's answers kept apart")
+	end)
+	ns.faction, ns.REMOVED_BUILTIN.Horde = saved.faction, saved.removed
+	if not ok then error(err, 0) end
+end)
+
 test("WoW: Forever names: first name and surname, never taken for a realm", function()
 	local saved = { UnitFullName = UnitFullName, GetUnitName = GetUnitName, realm = ns.realm, split = ns.splitNames, CurrentRealm = ns.CurrentRealm }
 	local ok, err = pcall(function()
