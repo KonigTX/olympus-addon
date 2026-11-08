@@ -52,6 +52,8 @@ Relay.REPORTER_FOR = 600     -- a relay keeps a reporter this long past its last
 Relay.SEEN_FOR = 300         -- a message taken is remembered this long (a second copy counts once)
 Relay.SEEN_MAX = 2000
 Relay.MAX_RELAYS = 40
+Relay.MAX_GUILD_NAME = 48   -- (1.5.4) bytes: the game's 24 letters, accented ones taking 2, in a registration (RR)
+Relay.MAX_REPORTERS = 400   -- (1.5.4) guilds a relay keeps a reporter for
 Relay.VERIFY_ASK_EVERY = 180 -- one recovery ask across the signed relays, never per reporter
 Relay.SNAPSHOT_WINDOW = 60  -- at most one bounded snapshot transfer per signed origin in this window
 Relay.LAUNCH_PINS = { ForeverPvE = { "Developus Olympicus", "Asmongold Thereal" }, ForeverPvP = { "Twalin Firebraid", "Elrond Oaklance" } }
@@ -779,8 +781,25 @@ function Relay.HandleIn(dist, sender, text)
 	end
 	local guild = body:match("^RR~(.+)$")
 	if guild then
-		local had = reporters[guild:lower()]
-		reporters[guild:lower()] = { name = ns.FullName(sender), t = now, guild = guild }
+		-- (1.5.4, a player's security report of 1.5.3) A registration was taken from any whisperer,
+		-- for any number of guilds, of any length: one character could take every guild's feed.
+		-- A guild's name as the game allows it (at most MAX_GUILD_NAME, no separator), one guild
+		-- per reporter (a new one leaves his old one), and at most MAX_REPORTERS guilds.
+		local who, key = ns.FullName(sender), guild:lower()
+		if #guild > Relay.MAX_GUILD_NAME or guild:find("[~|%c]") then
+			stats.dropped = stats.dropped + 1
+			return true
+		end
+		local count = 0
+		for g, r in pairs(reporters) do
+			if r.name == who and g ~= key then reporters[g] = nil else count = count + 1 end
+		end
+		if not reporters[key] and count >= Relay.MAX_REPORTERS then
+			stats.dropped = stats.dropped + 1
+			return true
+		end
+		local had = reporters[key]
+		reporters[key] = { name = who, t = now, guild = guild }
 		stats.registered = stats.registered + 1
 		if not had or had.name ~= ns.FullName(sender) then ns.Log("relay: %s's reporter is %s", guild, tostring(sender)) end
 		return true
