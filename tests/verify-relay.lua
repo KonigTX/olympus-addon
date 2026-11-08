@@ -266,17 +266,25 @@ test("verification recovery: cross-relay asks are bounded, never sent to reporte
 			As(hub, hub.deliver, "WHISPER", "Asker " .. i .. "-Realm", "RL~P~GV~1~Q~0~0~0")
 		end
 		Flush()
-		eq(#hub.sentOf("RX~P~"), 1, "one across request per cadence, not one per client")
-		eq(#hub.sentOf("RM~"), 0); eq(#other.sentOf("RM~"), 0)
-		eq(#other.sentOf("RX~"), 0, "incoming RX asks never circulate")
+		-- (1.5.4) Asks cross as RW to every relay not left out (RX reached only relays that had
+		-- answered our pings, which a relay never sends on Forever: tests/verify-mesh.lua).
+		local function Asks() return #hub.sentOf("RW~P~Asker") end
+		eq(Asks(), 1, "one across request per cadence, not one per client")
+		local function ToReporter(n, name)
+			local k = 0
+			for _, p in ipairs(n.sent) do if p.msg:find("^RM~") and ns.ShortName(p.target or "") == ns.ShortName(name) then k = k + 1 end end
+			return k
+		end
+		eq(#hub.sentOf("RM~"), 0); eq(ToReporter(other, "Reporter Two-Realm"), 0, "nor to the other relay's reporters")
+		eq(#other.sentOf("RX~") + #other.sentOf("RW~P~Asker"), 0, "incoming asks never circulate")
 		As(hub, hub.c.Verify.Ask); Flush()
 		eq(#hub.sentOf("RM~"), 0, "the relay's own ask stays off guild reporters too")
 		Advance(301)
 		As(hub, hub.deliver, "WHISPER", "Asker 1-Realm", "RL~P~GV~1~Q~0~0~0")
 		Flush()
-		eq(#hub.sentOf("RX~P~"), 2, "the same inventory can recover again after dedupe expiry")
+		eq(Asks(), 2, "the same inventory can recover again after dedupe expiry")
 		Advance(301)
 		As(hub, hub.deliver, "WHISPER", "Asker 1-Realm", "RL~P~GV~1~Q~not-a-query")
-		Flush(); eq(#hub.sentOf("RX~P~"), 2, "malformed asks never cross")
+		Flush(); eq(Asks(), 2, "malformed asks never cross")
 	end)
 end)

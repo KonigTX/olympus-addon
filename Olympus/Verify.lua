@@ -65,6 +65,7 @@ Verify.TICK = 60                 -- the guilds seen and the notices, every minut
 Verify.ASK_AFTER, Verify.ASK_SPREAD = 25, 35 -- the login's ask, 25 to 60 s after it
 Verify.ASK_EVERY = 30 * 60       -- and every half hour
 Verify.ANSWER_GAP = 180          -- a verifier's client answers asks this often at most
+Verify.RELAY_ANSWER_GAP = 900    -- (1.5.4) and each relay that asked (relays first agree among themselves) this often
 Verify.REQUEST_GAP = 300         -- a guild master's queued request, kept across reloads
 Verify.REVOKE_KEEP = 30 * 86400  -- a revocation is kept (and relayed) this long
 Verify.START_KEEP = 90 * 86400   -- a guild's start, this long after it was last seen or heard
@@ -72,7 +73,8 @@ Verify.SEEN_KEEP = 30 * 86400    -- a guild's own first sighting, this long afte
 Verify.MAX = 400                 -- words kept (past it: the oldest revocations, then the oldest approvals)
 Verify.MAX_STARTS = 600          -- starts kept, and first sightings (past it: the longest unseen go)
 Verify.MAX_ROWS = 240            -- rows in one answer
-Verify.MAX_BYTES = ns.Codec.CHUNK * ns.Codec.MAX_CHUNKS
+-- (1.5.4: room left for the relay's envelope, "RM~P~<verifier>~", around a direct answer.)
+Verify.MAX_BYTES = ns.Codec.CHUNK * ns.Codec.MAX_CHUNKS - 96
 Verify.EPOCH = 1767225600        -- 2026-01-01: no word or start is older
 Verify.AHEAD = 300               -- a time further ahead of the server's clock is not taken
 Verify.SHOWN_MAX = 5             -- guilds named in one notice line to the verifiers
@@ -480,19 +482,32 @@ function Verify.Payload(now, coverage)
 end
 
 local lastSent, pending = -math.huge, false
-function Verify.SendSnapshot()
+local answeredRelay = {} -- (1.5.4) a relay that asked (folded name) -> when we answered it
+-- (1.5.4) Where the relay runs (Forever) an answer goes to the one client that asked
+-- (Relay.Direct), which hands it to its guild: the whole store to every reporter of the relay
+-- never got through its queue. Elsewhere, on the channel as before.
+local function Direct()
+	local R = ns.Relay
+	return type(R) == "table" and type(R.On) == "function" and R.On() == true and type(R.Direct) == "function"
+end
+function Verify.SendSnapshot(target, toRelay)
 	if Quiet() or not ns.IsMember() or not Verify.Trusted(ns.me) then return false end
 	local payload, n = Verify.Payload()
 	if n == 0 then return false end
-	local key = "verify-snapshot"
-	local ok = ns.Comm.SendChunked(payload, false, "CHANNEL", nil, { owner = Verify, key = key,
-		permit = function(_, guardKey, dist, target)
-			if guardKey ~= key or dist ~= "CHANNEL" or target ~= nil then return false, "lane" end
-			if not Verify.Trusted(ns.me) then return false, "trust" end
-			return true
-		end })
+	local ok
+	if Direct() then
+		ok = type(target) == "string" and ns.Relay.Direct(target, payload, "verify answer " .. Key(target)) == true
+	else
+		local key = "verify-snapshot"
+		ok = ns.Comm.SendChunked(payload, false, "CHANNEL", nil, { owner = Verify, key = key,
+			permit = function(_, guardKey, dist, target)
+				if guardKey ~= key or dist ~= "CHANNEL" or target ~= nil then return false, "lane" end
+				if not Verify.Trusted(ns.me) then return false, "trust" end
+				return true
+			end })
+	end
 	if ok then
-		lastSent = Verify.Clock()
+		if not toRelay then lastSent = Verify.Clock() end
 		stats.answered = stats.answered + 1
 	end
 	return ok
@@ -500,9 +515,15 @@ end
 
 -- An ask heard: a verifier's client with different contents answers after 2-9 s, unless another
 -- verifier delivered every row we would send. A smaller answer must not silence missing decisions.
-local function AnswerAsk(body, now)
+-- (1.5.4) A relay that asked is answered on its own gap (RELAY_ANSWER_GAP each), whatever the
+-- clients' asks: the relays agree among themselves first, then each answers its own clients.
+local function AnswerAsk(body, now, sender)
 	if Quiet() or not ns.IsMember() or not Verify.Trusted(ns.me) then return true end
-	if pending or now - lastSent < Verify.ANSWER_GAP then return true end
+	local R = ns.Relay
+	local toRelay = Direct() and type(sender) == "string" and R.IsRelay(sender) == true
+	if toRelay then
+		if now - (answeredRelay[Key(sender)] or -math.huge) < Verify.RELAY_ANSWER_GAP then return true end
+	elseif pending or now - lastSent < Verify.ANSWER_GAP then return true end
 	local mine, _, _, fingerprint = Verify.Digest()
 	if mine == 0 then return true end
 	local n, theirs, theirSum, theirFingerprint = tostring(body or ""):match("^(%d+)~(%d+)~(%d+)~(%x+)$")
@@ -511,6 +532,11 @@ local function AnswerAsk(body, now)
 	if not n or n > Verify.MAX + Verify.MAX_STARTS or theirs > now + Verify.AHEAD
 		or theirSum >= 2147483648 or (theirFingerprint and #theirFingerprint ~= 64) then return false end
 	if fingerprint and fingerprint == theirFingerprint then return true end
+	if toRelay then
+		answeredRelay[Key(sender)] = now
+		ns.After(Verify.random(2, 9), "verify answer", function() Verify.SendSnapshot(sender, true) end)
+		return true
+	end
 	-- A legacy ask cannot prove that it holds our words, even with equal counts.
 	-- ANSWER_GAP and the delayed/coalesced answer still bound recovery traffic.
 	local request = {}
@@ -522,7 +548,7 @@ local function AnswerAsk(body, now)
 			local _, _, covered = Verify.Payload(nil, request.coverage)
 			if covered then return end
 		end
-		Verify.SendSnapshot()
+		Verify.SendSnapshot(sender)
 	end)
 	return true
 end
@@ -542,7 +568,7 @@ function Verify.Handle(dist, sender, text)
 	if tonumber(ver) ~= Verify.PROTOCOL then return false end
 	local now = Verify.Clock()
 	sender = ns.FullName(sender)
-	if kind == "Q" then return AnswerAsk(body, now) end
+	if kind == "Q" then return AnswerAsk(body, now, sender) end
 	-- A word or a relay: from a verifier's own client alone (the server stamps the sender).
 	if not Verify.Trusted(sender) then
 		stats.refused = stats.refused + 1

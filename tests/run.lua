@@ -7763,7 +7763,10 @@ test("1.5.2 verification relay: approvals, revocations and snapshots reach guild
 		eq(#forwarded, 3, "the guild reporter receives each decision and recovery snapshot")
 		eq(#sentOf("RX~L~" .. origin .. "~GV~1~"), 3, "other signed relays receive them too")
 		eq(#sentOf("RM~P~" .. origin .. "~GV~1~Q~"), 0, "periodic asks stay off guild reporters")
-		eq(#sentOf("RX~P~" .. origin .. "~GV~1~Q~"), 1, "a bounded ask reaches the other signed relay")
+		-- (1.5.4) The ask crosses as RW, to every relay not left out: RX went only to relays that had
+		-- answered a ping of ours, and on Forever a relay never pings another (tests/verify-mesh.lua).
+		eq(#sentOf("RW~P~" .. origin .. "~GV~1~Q~"), 1, "a bounded ask reaches the other signed relay")
+		eq(#sentOf("RX~P~" .. origin .. "~GV~1~Q~"), 0, "never as RX")
 		local receiver, receive = RelayWorld("Zed Far-Realm", "Olympus Zeus")
 		local heard = {}
 		receiver.Comm.Handle("GV", function(dist, sender, text) heard[#heard + 1] = { dist = dist, sender = sender, text = text } end)
@@ -7780,6 +7783,7 @@ test("1.5.2 verification relay: approvals, revocations and snapshots reach guild
 end)
 
 assert(loadfile(ROOT .. "tests/verify-relay.lua"))(ns, test, eq, RelayWorld, ADDON_DIR)
+assert(loadfile(ROOT .. "tests/verify-mesh.lua"))(ns, test, eq, RelayWorld, ADDON_DIR)
 
 -- 1.5.0 (the dev's relay: 51 reporters, every guild's three-piece report to each, 2,700 pieces a
 -- minute against 200 sent). Fails before: every word to every reporter, no snapshot of the relay's.

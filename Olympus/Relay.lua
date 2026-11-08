@@ -63,6 +63,14 @@ Relay.LAUNCH_PINS = { ForeverPvE = { "Developus Olympicus", "Asmongold Thereal" 
 -- go on to every reporter. Verification asks additionally cross signed relays at a bounded
 -- cadence, without reaching reporters: the selected relay may not be the verifier holding a word.
 Relay.NO_FORWARD = { H3 = true, Q1 = true, HQ = true, P1 = true, W4 = true, GV = true, CG = true }
+-- (1.5.4) Guild verification between relays. A relay's own client counts itself as answered
+-- (Pick), so it never pings the others and never learns that one answered: Across and the 1.5.2
+-- crossing of verification asks went to nobody, and every verifier (the King, the High Council, the
+-- author: each a relay) was an island. Verification alone now crosses, as RW, to every relay not
+-- left out, answered or not: a verifier's decision (once, to each relay's reporters after), a
+-- relay's own ask, one client's ask every VERIFY_ASK_EVERY, and a verifier's answer to a relay that
+-- asked. RW never marks a relay as answered (verified), so no other word starts crossing (the census
+-- alone would be every word a relay hears, times every other relay); older relays ignore the type.
 -- (1.5.0) What one reporter can be sent of other clients' words that are not chat lines: pieces
 -- a minute (REPORTER_RATE). 51 guilds reporting every three minutes, three pieces each, to 51
 -- reporters is 2,700 pieces a minute; a relay sends 200. So each reporter gets a trickle of the
@@ -644,6 +652,50 @@ local function VerificationAsk(body)
 		or body:match("^GV~1~Q~%d+~%d+~%d+~%x+$") ~= nil
 end
 
+-- (1.5.4) A verifier's approval or revocation, and whether its origin is a verifier as this relay
+-- knows them (Verify.Trusted): only such a decision is fanned out and crossed.
+local function Decision(body) return type(body) == "string" and body:match("^GV~1~[AR]~") ~= nil end
+local function Signed(origin)
+	local V = ns.Verify
+	return type(V) == "table" and type(V.Trusted) == "function" and V.Trusted(origin) == true
+end
+
+-- (1.5.4) Verification to every other relay not left out (RW), answered or not (see the top); the
+-- origin, when a relay, is not sent its own word. Never marks a relay as answered. Urgent: a few
+-- short whispers, rare (a decision, a relay's half-hourly ask, one client's ask each
+-- VERIFY_ASK_EVERY), never evicted behind the reports.
+local function ToRelays(flag, origin, body)
+	local now = Now()
+	local mine, from = ns.ShortName(ns.me or ""):lower(), ns.ShortName(origin):lower()
+	local pieces
+	for _, name in ipairs(Relay.Names(false)) do
+		local key = name:lower()
+		if key ~= mine and key ~= from and (offline[key] or 0) <= now then
+			pieces = pieces or Envelope("RW", "RW~" .. flag .. "~" .. origin .. "~" .. body)
+			stats.verifyAcross = (stats.verifyAcross or 0) + 1
+			Quiet(name)
+			if #pieces == 1 then ns.Comm.Whisper(name, pieces[1], nil, true, false)
+			else ns.Comm.SendBatch("WHISPER", pieces, nil, name, true) end
+		end
+	end
+end
+
+-- (1.5.4) A verifier's answer to the one client that asked, never to every reporter: a whole store
+-- (up to MAX_CHUNKS pieces) to each of 30-60 reporters never got through a relay's queue of
+-- MAX_QUEUE parts. A relay that asked takes it as RW; any other client as RM from its relay, and
+-- hands it to its guild once (HandleRelayed). One urgent transfer. True when queued.
+function Relay.Direct(target, body, key)
+	if not Relay.On() or not Relay.IsRelay(ns.me) or type(target) ~= "string" or target == "" or type(body) ~= "string" then return false end
+	if ns.ShortName(target):lower() == ns.ShortName(ns.me or ""):lower() then return false end
+	local kind = Relay.IsRelay(target) and "RW" or "RM"
+	local pieces = Envelope(kind, kind .. "~P~" .. ns.me .. "~" .. body)
+	if #pieces == 0 or #pieces > ns.Codec.MAX_CHUNKS then return false end
+	stats.direct = (stats.direct or 0) + 1
+	Quiet(target)
+	if #pieces == 1 then return ns.Comm.Whisper(target, pieces[1], key, true, false) ~= false end
+	return ns.Comm.SendBatch("WHISPER", pieces, key, target, true) ~= false
+end
+
 -- Hop 1 heard (we are a relay): a ping is answered, a registration kept, anything else forwarded
 -- to every guild's reporter (ours included: delivered here and handed to our guild).
 function Relay.HandleIn(dist, sender, text)
@@ -672,12 +724,17 @@ function Relay.HandleIn(dist, sender, text)
 	-- approvals and revocations on Forever's relay-only route. Verify still checks the original
 	-- sender against this origin group's signed authority at the destination.
 	if body:match("^GV~1~[ARS]~") then localOnly = false end
+	-- (1.5.4) A verifier's decision (as this relay knows them) also goes once to every other relay
+	-- (RW), each handing it to its own reporters: no client makes every relay fan out a forged one.
+	if fresh and Decision(body) and Signed(origin) then ToRelays(flag, origin, body) end
 	if localOnly and (origin ~= ns.me or VerificationAsk(body)) then
 		stats.kept = (stats.kept or 0) + 1
 		Deliver(origin, body, flag == "L") -- (heard and answered here, fanned out to nobody)
-		if fresh and VerificationAsk(body) and now - lastVerifyAsk >= Relay.VERIFY_ASK_EVERY then
-			lastVerifyAsk = now
-			Across("P", origin, body)
+		-- (1.5.4) Our own ask always crosses (our client is its own relay: nobody else hears it);
+		-- a client's, one each VERIFY_ASK_EVERY, for a verifier on another relay to answer it.
+		if fresh and VerificationAsk(body) and (origin == ns.me or now - lastVerifyAsk >= Relay.VERIFY_ASK_EVERY) then
+			if origin ~= ns.me then lastVerifyAsk = now end
+			ToRelays("P", origin, body)
 		end
 		return true
 	end
@@ -701,6 +758,28 @@ function Relay.HandleAcross(dist, sender, text)
 	if Remembered(origin, body) then return true end
 	if VerificationAsk(body) then Deliver(origin, body, false); return true end
 	ToReporters(flag, origin, body, sender)
+	return true
+end
+
+-- (1.5.4) Verification between relays heard (RW): from a relay alone, to a relay, GV words alone.
+-- A verifier's decision goes to our reporters and is heard here; an ask is heard here (our verifier
+-- answers whoever asked, Verify.lua); an answer to our own ask is taken here. Never sent across
+-- again, never fanned out as a store, and it marks nobody as answered (see the top).
+function Relay.HandleVerify(dist, sender, text)
+	if dist ~= "WHISPER" or not Relay.On() then return false end
+	local flag, origin, body = tostring(text):match("^RW~([LP])~([^~]+)~(.*)$")
+	if not flag then return false end
+	if not Relay.IsRelay(sender) or not Relay.IsRelay(ns.me) or not body:match("^GV~1~[ARQS]~") then
+		stats.dropped = stats.dropped + 1
+		return false
+	end
+	if Remembered(origin, body) then return true end
+	if Decision(body) then
+		if not Signed(origin) then stats.dropped = stats.dropped + 1 return false end
+		ToReporters(flag, origin, body, sender) -- (heard here too)
+		return true
+	end
+	Deliver(origin, body, false)
 	return true
 end
 
@@ -754,7 +833,8 @@ ns.Comm.Handle("RM", function(...) Relay.HandleRelayed(...) end)
 ns.Comm.Handle("RG", function(...) Relay.HandleGuild(...) end)
 ns.Comm.Handle("RY", function(...) Relay.HandleAck(...) end)
 ns.Comm.Handle("RX", function(...) Relay.HandleAcross(...) end)
-ns.Comm.RelayPieces({ RL = true, RM = true, RG = true, RX = true })
+ns.Comm.Handle("RW", function(...) Relay.HandleVerify(...) end)
+ns.Comm.RelayPieces({ RL = true, RM = true, RG = true, RX = true, RW = true })
 
 -- (1.4.6, the dev's ask) The server's "No player named X is currently playing" for a relay or a
 -- reporter the relay whispered: out of the chat for good, not for a window (Accord.Quiet's ten

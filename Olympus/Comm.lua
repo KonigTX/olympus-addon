@@ -464,7 +464,8 @@ end
 --   logged; any member's ask; a verifier's client's answer with the words and the guilds' starts).
 --   1.4.3, Relay RL RM RG RY RX (Relay.lua: what the channel carried, by whisper where Forever delivers
 --   nothing on it: origin to relay, relay to each guild's reporter, reporter to its guild over GUILD,
---   the relay's answer to a ping, and 1.4.6 a relay's copy to the other relays).
+--   the relay's answer to a ping, and 1.4.6 a relay's copy to the other relays); 1.5.4 RW (guild
+--   verification between relays alone: a verifier's decision, an ask, an answer to a relay's ask).
 local handlers = {}
 -- 1.1 (Moderation.lua): a client the moderators took off (net-off) sends none of what they hide.
 local function Held(msg)
