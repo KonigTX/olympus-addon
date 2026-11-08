@@ -698,15 +698,48 @@ local function SetBatches(flag, origin, set)
 	return batches
 end
 
--- (1.5.4) An integration's profile presentation (ProfileEffects, FX) names its guild, and goes to
--- that guild's reporter alone. Its heartbeat (every 10 s, a 32 s lease) to every reporter was most
--- of what a relay sent: 44 of 353 words on the dev's relay in 142 s, each to 32-36 reporters
--- outside the trickle, about three times the relay's 200 whispers a minute by itself, and the
--- census snapshots waited behind it (the offline harness: complete snapshots per reporter more
--- than doubled without it).
-local function PresentationGuild(body)
-	local guild = type(body) == "string" and body:match("^FX~%d+~%a~[^~]*~%d+~%d+~%d+~([^~]+)")
-	return guild and Lower(guild) or nil
+-- (1.5.4) An integration's profile presentation (ProfileEffects, FX) names its guild. A presenter's
+-- own words (S, and its stop X) go to that guild's reporter alone. Their heartbeat (every 10 s, a
+-- 32 s lease) to every reporter was most of what a relay sent: 44 of 353 words on the dev's relay
+-- in 142 s, each to 32-36 reporters outside the trickle, about three times the relay's 200 whispers
+-- a minute by itself, and the census snapshots waited behind it (the offline harness: complete
+-- snapshots per reporter more than doubled without it).
+-- The issuer's grant (G) and close (C) name the issuer's own guild, yet a member of any guild
+-- presents only under a grant he holds: scoped like the rest, no other guild ever got one (the
+-- review of the 1.5.4 candidate). A close goes to every reporter at once. A grant (its issuer beats
+-- every 10 s) goes to every reporter at most once each GRANT_EVERY per origin, and to the named
+-- guild's reporter alone in between; where names split a heard grant lives
+-- ProfileEffects.SESSION_TTL_RELAYED, past two such beats.
+Relay.GRANT_EVERY = 60
+Relay.GRANT_ORIGINS = 64 -- origins whose last grant to every reporter a relay remembers
+local grantSent = {} -- origin (short name, lower) -> when its grant last went to every reporter
+-- Whether this origin's grant goes to every reporter now (and noted so). Keyed by the short name:
+-- a name is one across a Forever family, whichever sub-realm stamped it. Bounded: the stale ones
+-- leave, then the oldest, before a new origin is kept.
+local function GrantToAll(origin, now)
+	local key = Lower(ns.ShortName(origin))
+	if now - (grantSent[key] or -math.huge) < Relay.GRANT_EVERY then return false end
+	if not grantSent[key] then
+		local n, oldest = 0, nil
+		for k, at in pairs(grantSent) do
+			if now - at >= Relay.GRANT_EVERY then grantSent[k] = nil
+			else
+				n = n + 1
+				if not oldest or at < grantSent[oldest] then oldest = k end
+			end
+		end
+		if n >= Relay.GRANT_ORIGINS and oldest then grantSent[oldest] = nil end
+	end
+	grantSent[key] = now
+	return true
+end
+-- The guild (lower) a presentation goes to alone, or nil when it goes to every reporter.
+local function PresentationScope(origin, body, now)
+	if type(body) ~= "string" then return nil end
+	local kind, guild = body:match("^FX~%d+~(%a)~[^~]*~%d+~%d+~%d+~([^~]+)")
+	if not kind then return nil end
+	if kind == "C" or (kind == "G" and GrantToAll(origin, now)) then return nil end
+	return Lower(guild)
 end
 -- (1.5.4) The King's crown to this relay's reporters (KING_GAP above): each at most once a KING_GAP,
 -- the longest waiting first, within the relay's KING_PER_MIN (KING_BURST at once), ahead in the
@@ -782,7 +815,7 @@ local function ToReporters(flag, origin, body, sender)
 		return CrownToReporters(flag, origin, body, now)
 	end
 	local own = ns.FullName(origin) == ns.me
-	local scoped = PresentationGuild(body)
+	local scoped = PresentationScope(origin, body, now)
 	local presence = flag ~= "L" and KingPresence(origin, body)
 	-- Reserve a complete, bounded snapshot from a signed origin. Charging each
 	-- fragment against the four-piece ordinary trickle stranded every larger
@@ -1128,7 +1161,7 @@ function Relay.Reset()
 	wipe(offline); wipe(verified); wipe(pinged); wipe(reporters); wipe(seen); wipe(pending); wipe(budget)
 	seenCount, lastRegister, holding, flushing, lastGlobal = 0, -math.huge, false, false, -math.huge
 	lastVerifyAsk = -math.huge
-	wipe(snapshotTransfers); wipe(crownSent); wipe(kingSent); wipe(crownLayer)
+	wipe(snapshotTransfers); wipe(crownSent); wipe(kingSent); wipe(crownLayer); wipe(grantSent)
 	crownBucket.tokens, crownBucket.at = 0, -math.huge
 	wipe(sets); wipe(drip)
 	dripSince, dripping = nil, false

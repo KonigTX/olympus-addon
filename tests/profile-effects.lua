@@ -310,6 +310,36 @@ test("profile effects: an authenticated close or grant expiry removes member eff
 	end)
 end)
 
+-- The review of the 1.5.4 candidate: on Forever another guild's members hear the issuer's grant by
+-- the relay once each Relay.GRANT_EVERY (60 s; tests/relay-presentation.lua), which a 32 s grant
+-- never outlived. Fails before: the grant heard where names split was gone after 32 s too.
+test("profile effects: a heard grant lives SESSION_TTL_RELAYED (150 s) where names split and SESSION_TTL (32 s) elsewhere; the issuer's own session keeps SESSION_TTL", function()
+	WithWorld(function(w)
+		local issuer = w.client("Council")
+		issuer.splitNames = true
+		local forever, elsewhere = w.client("ForeverMember", false), w.client("Observer", false)
+		forever.splitNames = true
+		w.openFor(issuer, { forever, elsewhere })
+		local E = forever.ProfileEffects
+		eq(E.SESSION_TTL_RELAYED, 150)
+		eq(w.use(issuer, issuer.ProfileEffects.Session).expiresIn, issuer.ProfileEffects.SESSION_TTL, "the issuer's own session, where names split too")
+		eq(w.use(forever, E.Session).expiresIn, E.SESSION_TTL_RELAYED, "a grant heard where names split")
+		eq(w.use(elsewhere, elsewhere.ProfileEffects.Session).expiresIn, elsewhere.ProfileEffects.SESSION_TTL, "a grant heard elsewhere")
+		w.advance(E.SESSION_TTL + 0.1)
+		eq(w.use(elsewhere, elsewhere.ProfileEffects.Session), nil, "elsewhere it ends after SESSION_TTL, as before")
+		eq(w.use(issuer, issuer.ProfileEffects.Session), nil, "the issuer's own session, not renewed, ends after SESSION_TTL")
+		assert(w.use(forever, E.Session), "where names split it is still held")
+		-- A minute and a half after it was heard a member there can still present under it.
+		w.advance(90 - (E.SESSION_TTL + 0.1))
+		assert(w.use(forever, E.Set, "one", "shadow", true, CAPTION))
+		w.advance(E.SESSION_TTL_RELAYED - 90 - 0.1)
+		assert(w.use(forever, E.Session), "held until SESSION_TTL_RELAYED")
+		w.advance(0.2)
+		eq(w.use(forever, E.Session), nil, "and gone after it")
+		eq(w.use(forever, E.Outgoing), nil, "the presentation ends with the grant")
+	end)
+end)
+
 test("profile effects: targeting shows the short non-chat presentation and screenshot start hides it", function()
 	WithWorld(function(w)
 		local issuer = w.client("Council")
