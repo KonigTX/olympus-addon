@@ -343,3 +343,94 @@ test("census family trust: a trusted relay's own look at the other family counts
 	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild, C_ChatInfo = saved.channel, saved.member, saved.guild, saved.inGuild, saved.chat
 	if not ok then error(err, 0) end
 end)
+
+-- The review of the 1.5.4 candidate, beside the test above: clients of a Forever realm group's PvE
+-- family whose Data.lua trusts the two signed councillors, as there.
+local function FamilyWorld(fn)
+	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild, chat = C_ChatInfo }
+	local ok, err = pcall(function()
+		GetChannelName = function() return 0 end
+		ns.IsMember = function() return true end
+		IsInGuild = function() return true end
+		GetGuildInfo = function() return "Olympus II", "Member", 3 end
+		local function Client(me, guild)
+			local N = extra.RelayWorld(me, guild)
+			N.faction, N.db = "Alliance", { blocked = {} }
+			N.rdb.guilds, N.rdb.seen = {}, {}
+			N.Church = { IsLedgerRelay = function(name)
+				local short = ns.ShortName(name or "")
+				return short == "Hildryn Payne" or short == "Max Ran"
+			end }
+			N.QuietPresence = function() return false end
+			assert(loadfile(extra.addon .. "Data.lua"))("Olympus", N)
+			N.group = "ForeverPvE"
+			return N
+		end
+		fn(Client)
+	end)
+	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild, C_ChatInfo = saved.channel, saved.member, saved.guild, saved.inGuild, saved.chat
+	if not ok then error(err, 0) end
+end
+local function PvP(g)
+	for _, r in ipairs(g.rows) do if r.group == "ForeverPvP" and r.faction == "Alliance" then return r end end
+end
+local function Look(N, from, characters, guilds, observed)
+	return N.Data.ReceiveGroupCensus("CHANNEL", from,
+		("CX~1~S~%d~ForeverPvP,Alliance,%d,%d,%d,%d"):format(N.clock, characters, characters, guilds, observed))
+end
+
+-- Fails before: the one-guild look was kept for being newer, and the older 19-guild look was refused
+-- for being older, so the family's count was one guild's until a newer full look came.
+test("census family trust: a trusted one-guild look of the family heard before an older trusted 19-guild look ends with the 19-guild look counted", function()
+	FamilyWorld(function(Client)
+		local K = Client("Kay Near-CAMWOWUS2Realm1PvE", "Olympus Near")
+		local t0 = K.clock
+		Look(K, "Max Ran-CAMWOWUS2Realm1PvE", 151, 1, t0 - 10)
+		eq(assert(PvP(K.Data.Groups())).guilds, 1, "alone, the one-guild look is what is held")
+		Look(K, "Hildryn Payne-CAMWOWUS2Realm1PvE", 3800, 19, t0 - 600)
+		local row = assert(PvP(K.Data.Groups()))
+		eq(row.guilds, 19, "the older 19-guild look replaces it"); eq(row.characters, 3800)
+		eq(row.counted, true); eq(row.src, "relay")
+		K.clock = t0 + 60
+		Look(K, "Max Ran-CAMWOWUS2Realm1PvE", 151, 1, K.clock - 5)
+		eq(assert(PvP(K.Data.Groups())).guilds, 19, "and the one-guild look, newer again, does not take its place back")
+	end)
+end)
+
+-- Fails before: the refused look was noted as heard first (groupHeard), which keeps this client from
+-- saying any look of the family not newer than it, so the councillor stopped saying its own.
+test("census family trust: a councillor's own 19-guild look of the other family is still said after a newer trusted one-guild look of it was refused", function()
+	FamilyWorld(function(Client)
+		local D = Client("Pvp Alt-CAMWOWUS1Realm8PvP", "Olympus Relay")
+		D.group = "ForeverPvP"
+		for i = 1, 19 do D.rdb.guilds["Olympus Pvp " .. i] = { total = 190 + i, online = 20, t = D.clock - 60, from = "CAMWOWUS1Realm8PvP" } end
+		assert(D.Data.RecordGroupCensus())
+		D.me, D.group, D.rdb.guilds = "Hildryn Payne-CAMWOWUS2Realm1PvE", "ForeverPvE", {}
+		assert(tostring(D.Data.GroupCensusPayload()):find("~ForeverPvP,Alliance,", 1, true), "its own look is said")
+		D.clock = D.clock + 30 * 60
+		Look(D, "Max Ran-CAMWOWUS2Realm1PvE", 151, 1, D.clock - 10)
+		local row = assert(PvP(D.Data.Groups()))
+		eq(row.guilds, 19, "the newer one-guild look is refused"); eq(row.src, "own")
+		local said = D.Data.GroupCensusPayload()
+		assert(tostring(said):find("~ForeverPvP,Alliance,", 1, true), "and its own 19-guild look is still said: " .. tostring(said))
+	end)
+end)
+
+-- Fails before: a trusted client said every family row it held in its trusted name, a row it took
+-- from someone else as well (in the session it took it in, what it heard kept it quiet; in a later
+-- one nothing did), so a forged row it took would travel on as a councillor's own word.
+test("census family trust: a councillor that took a row of the family from someone else does not say it, in a later session either", function()
+	FamilyWorld(function(Client)
+		local D = Client("Hildryn Payne-CAMWOWUS2Realm1PvE", "Olympus Relay")
+		local t0 = D.clock
+		Look(D, "Max Ran-CAMWOWUS2Realm1PvE", 3800, 19, t0 - 600)
+		local row = assert(PvP(D.Data.Groups()))
+		eq(row.counted, true); eq(row.src, "relay", "taken from the other councillor")
+		eq(D.Data.GroupCensusPayload(), nil, "not said in its name")
+		-- A later session (a reload): the row is still held, and still not said.
+		assert(loadfile(extra.addon .. "Data.lua"))("Olympus", D)
+		D.clock = t0 + 60
+		eq(assert(PvP(D.Data.Groups())).src, "relay", "still held")
+		eq(D.Data.GroupCensusPayload(), nil, "nor in a later session")
+	end)
+end)

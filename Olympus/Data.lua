@@ -1724,11 +1724,17 @@ local function TakeGroup(row, sender, trusted, now)
 		return true
 	end
 	if trusted then
-		groupHeard[key] = math.max(groupHeard[key] or 0, row.observed)
 		-- (1.5.4) While a look is still counted, a newer trusted one covering under half its guilds
 		-- does not replace it: a client that saw only its own guild there is not the family's count.
-		if type(held) == "table" and now - (tonumber(held.observed) or 0) <= Data.GROUP_COUNT
-			and row.guilds * 2 < (tonumber(held.guilds) or 0) then return false end
+		-- (The review of the 1.5.4 candidate.) Refused before it is noted as heard (groupHeard: a
+		-- refused look silenced this client's own wider one), and the other way round too: a trusted
+		-- look covering more than twice the guilds of the counted one replaces it even when older,
+		-- while it still counts itself (a one-guild look heard first kept out the 19-guild one).
+		local counted = type(held) == "table" and now - (tonumber(held.observed) or 0) <= Data.GROUP_COUNT
+		local heldGuilds = counted and (tonumber(held.guilds) or 0) or 0
+		if row.guilds * 2 < heldGuilds then return false end
+		groupHeard[key] = math.max(groupHeard[key] or 0, row.observed)
+		if counted and heldGuilds * 2 < row.guilds and now - row.observed <= Data.GROUP_COUNT then held = nil end -- (Keep's age check)
 		return Keep(row, "relay", 1)
 	end
 	local who = PersonKey(sender)
@@ -1778,6 +1784,9 @@ end
 -- moderator's alone"): 1.5.2 kept every family out, so no client that never played the other family
 -- ever counted it (the dev, 11-08: "para mim mostra os dados ... não mostra para ninguém"). A row
 -- kept under a plain realm (learned before 1.4.6, a sub-realm's partial view) never travels.
+-- (The review of the 1.5.4 candidate.) And only the trusted client's own look (src "own"): a row it
+-- took from someone else, a forged one among them, is never said again in its trusted name (in a
+-- later session nothing heard suppressed it).
 function Data.GroupCensusPayload(now)
 	now = now or ns.Now()
 	local trusted = GlobalTrusted(ns.me)
@@ -1785,7 +1794,7 @@ function Data.GroupCensusPayload(now)
 	for _, e in pairs(GroupStore()) do
 		local row = type(e) == "table" and GroupRow(e.group, e.faction, e.characters, e.people, e.guilds, e.observed)
 		local key = row and GroupKey(row.faction, row.group)
-		if row and (not ScopedGroup(row.group) or (trusted and e.group == row.group)) and not e.unscoped
+		if row and (not ScopedGroup(row.group) or (trusted and e.group == row.group and e.src == "own")) and not e.unscoped
 			and not (row.group == GroupField(ns.group) and row.faction == OurFaction()) and Listed(row.group)
 			and row.observed > (groupHeard[key] or 0) + Data.FRESH then
 			if not byOrigin[key] or GroupLater(row, byOrigin[key]) then byOrigin[key] = row end
