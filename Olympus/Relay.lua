@@ -578,9 +578,20 @@ local function SetBatches(flag, origin, set)
 	return batches
 end
 
+-- (1.5.4) An integration's profile presentation (ProfileEffects, FX) names its guild, and goes to
+-- that guild's reporter alone. Its heartbeat (every 10 s, a 32 s lease) to every reporter was most
+-- of what a relay sent: 44 of 353 words on the dev's relay in 142 s, each to 32-36 reporters
+-- outside the trickle, about three times the relay's 200 whispers a minute by itself, and the
+-- census snapshots waited behind it (the offline harness: complete snapshots per reporter more
+-- than doubled without it).
+local function PresentationGuild(body)
+	local guild = type(body) == "string" and body:match("^FX~%d+~%a~[^~]*~%d+~%d+~%d+~([^~]+)")
+	return guild and Lower(guild) or nil
+end
 local function ToReporters(flag, origin, body, sender)
 	local now = Now()
 	local own = ns.FullName(origin) == ns.me
+	local scoped = PresentationGuild(body)
 	-- Reserve a complete, bounded snapshot from a signed origin. Charging each
 	-- fragment against the four-piece ordinary trickle stranded every larger
 	-- snapshot mid-transfer. This admits no new authority and does not bypass
@@ -593,6 +604,8 @@ local function ToReporters(flag, origin, body, sender)
 	for g, r in pairs(reporters) do
 		if now - r.t > Relay.REPORTER_FOR then
 			reporters[g] = nil
+		elseif scoped and g ~= scoped then
+			stats.scoped = (stats.scoped or 0) + 1 -- (another guild's presentation: heard here alone)
 		elseif r.name == ns.me then
 			if Deliver(origin, body, flag == "L") then ToGuild(flag, origin, body) end
 		elseif set == false then
