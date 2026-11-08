@@ -197,3 +197,84 @@ test("verify mesh: bounded: verification never makes relays forward everything t
 		eq(late.c.rdb.verify.list[ns.Fold(OTHER)], nil, "and no guild takes it")
 	end)
 end)
+
+-- The review of the 1.5.4 candidate: a verifier's client answered an ask whose origin was a relay's
+-- name on that relay's own gap (Verify.RELAY_ANSWER_GAP, 900 s), and an ask's origin is only a word
+-- in a guild's hand-over (RG), a relay's RM or RX. One guildmate naming each relay in turn got the
+-- whole store sent once per relay named, and the real relay's own ask was then ignored for 900 s.
+-- Only an ask that came across from the relay itself (RW, its name stamped by the server) has the
+-- relay's own gap now. Each fails before.
+local OTHER_RELAYS = { "Hildryn Payne", "Relay Three", "Relay Four", "Relay Five" }
+local function Answers(n)
+	local k = 0
+	for _, p in ipairs(n.sent) do
+		if p.msg:find("^R[WM]~P~[^~]+~GV~1~S~") then k = k + 1 end
+	end
+	return k
+end
+
+test("verify mesh: asks a guildmate hands over (RG) naming relays as their origin get at most one answer each ANSWER_GAP, never one per relay named", function()
+	World(function(Node, As, Flush, Advance)
+		local verifier = Node(HC, "Olympus Crown")
+		for _, n in ipairs(OTHER_RELAYS) do verifier.c.rdb.council.names[n:lower()] = n end -- (all signed relays)
+		eq(As(verifier, verifier.c.Verify.Approve, GUILD, MASTER), true)
+		Flush(); Advance(3600)
+		local before = Answers(verifier)
+		local function Burst(tag)
+			for i, relay in ipairs(OTHER_RELAYS) do
+				eq(verifier.c.Relay.IsRelay(relay), true, relay .. " is a signed relay")
+				As(verifier, verifier.deliver, "GUILD", "Forger Mate-Realm", ("RG~P~%s~GV~1~Q~0~0~%d"):format(relay, tag * 10 + i))
+			end
+			Flush(); Advance(10); Advance(10)
+		end
+		Burst(1)
+		eq(Answers(verifier) - before, 1, "one answer for the whole burst, not one per relay it named")
+		Advance(60)
+		Burst(2)
+		eq(Answers(verifier) - before, 1, "none more within ANSWER_GAP")
+		Advance(verifier.c.Verify.ANSWER_GAP)
+		Burst(3)
+		eq(Answers(verifier) - before, 2, "one more once ANSWER_GAP passed")
+	end)
+end)
+
+test("verify mesh: a relay's own ask that came across (RW) is answered after a guildmate's burst of asks named that relay", function()
+	World(function(Node, As, Flush, Advance)
+		local verifier = Node(HC, "Olympus Crown")
+		eq(As(verifier, verifier.c.Verify.Approve, GUILD, MASTER), true)
+		Flush(); Advance(3600)
+		for i = 1, 3 do
+			As(verifier, verifier.deliver, "GUILD", "Forger Mate-Realm", ("RG~P~Hildryn Payne~GV~1~Q~0~0~%d"):format(i))
+		end
+		Flush(); Advance(10); Advance(10)
+		local hub = Node(HUB, "Olympus Hearth") -- logs in now: a relay that missed the approval
+		eq(As(hub, hub.c.Verify.Status, GUILD) ~= "verified", true)
+		eq(As(hub, hub.c.Verify.Ask), true)
+		Flush(); Advance(10); Advance(10)
+		eq(As(hub, hub.c.Verify.Status, GUILD), "verified", "its own ask is answered: the forged ones never took its gap")
+		eq(hub.c.rdb.verify.list[ns.Fold(GUILD)].by, HC)
+	end)
+end)
+
+test("verify mesh: a relay whose answer the verifier's client could not send is answered on its next ask, well before RELAY_ANSWER_GAP", function()
+	World(function(Node, As, Flush, Advance)
+		local verifier = Node(HC, "Olympus Crown")
+		eq(As(verifier, verifier.c.Verify.Approve, GUILD, MASTER), true)
+		Flush(); Advance(3600)
+		local hub = Node(HUB, "Olympus Hearth")
+		local direct = verifier.c.Relay.Direct
+		verifier.c.Relay.Direct = function() return false end -- (the answer refused: a full queue, say)
+		local ok, err = pcall(function()
+			eq(As(hub, hub.c.Verify.Ask), true)
+			Flush(); Advance(10); Advance(10)
+		end)
+		verifier.c.Relay.Direct = direct
+		if not ok then error(err, 0) end
+		eq(As(hub, hub.c.Verify.Status, GUILD) ~= "verified", true, "the refused answer never left")
+		-- Its next ask, once its own relay and the verifier's no longer hold the first (Relay.SEEN_FOR).
+		Advance(hub.c.Relay.SEEN_FOR + 1)
+		eq(As(hub, hub.c.Verify.Ask), true)
+		Flush(); Advance(10); Advance(10)
+		eq(As(hub, hub.c.Verify.Status, GUILD), "verified", "answered, not ignored for RELAY_ANSWER_GAP")
+	end)
+end)

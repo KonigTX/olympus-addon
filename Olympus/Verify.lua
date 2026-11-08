@@ -517,10 +517,15 @@ end
 -- verifier delivered every row we would send. A smaller answer must not silence missing decisions.
 -- (1.5.4) A relay that asked is answered on its own gap (RELAY_ANSWER_GAP each), whatever the
 -- clients' asks: the relays agree among themselves first, then each answers its own clients.
+-- (The review of the 1.5.4 candidate.) A relay's ask is one that came across from that relay itself,
+-- its name stamped by the server (Relay.AskedAcross). Any other ask naming a relay as its origin
+-- (a guildmate's RG, a relay's RM or RX carry the origin as a word) is a client's: the one
+-- pending/ANSWER_GAP bound, never a gap per relay it names.
 local function AnswerAsk(body, now, sender)
 	if Quiet() or not ns.IsMember() or not Verify.Trusted(ns.me) then return true end
 	local R = ns.Relay
 	local toRelay = Direct() and type(sender) == "string" and R.IsRelay(sender) == true
+		and type(R.AskedAcross) == "function" and R.AskedAcross(sender) == true
 	if toRelay then
 		if now - (answeredRelay[Key(sender)] or -math.huge) < Verify.RELAY_ANSWER_GAP then return true end
 	elseif pending or now - lastSent < Verify.ANSWER_GAP then return true end
@@ -533,8 +538,13 @@ local function AnswerAsk(body, now, sender)
 		or theirSum >= 2147483648 or (theirFingerprint and #theirFingerprint ~= 64) then return false end
 	if fingerprint and fingerprint == theirFingerprint then return true end
 	if toRelay then
-		answeredRelay[Key(sender)] = now
-		ns.After(Verify.random(2, 9), "verify answer", function() Verify.SendSnapshot(sender, true) end)
+		local key = Key(sender)
+		answeredRelay[key] = now
+		ns.After(Verify.random(2, 9), "verify answer", function()
+			-- (The review of the 1.5.4 candidate.) An answer refused (a full queue, no relay to carry
+			-- it) leaves the relay's gap open: its next ask is answered, not ignored RELAY_ANSWER_GAP.
+			if not Verify.SendSnapshot(sender, true) and answeredRelay[key] == now then answeredRelay[key] = nil end
+		end)
 		return true
 	end
 	-- A legacy ask cannot prove that it holds our words, even with equal counts.

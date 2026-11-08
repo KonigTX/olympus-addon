@@ -1029,6 +1029,16 @@ end
 -- A verifier's decision goes to our reporters and is heard here; an ask is heard here (our verifier
 -- answers whoever asked, Verify.lua); an answer to our own ask is taken here. Never sent across
 -- again, never fanned out as a store, and it marks nobody as answered (see the top).
+-- (The review of the 1.5.4 candidate.) Each relay that asks is answered on its own gap
+-- (Verify.RELAY_ANSWER_GAP), apart from the clients' one ANSWER_GAP. That gap was given to any ask
+-- whose origin was a relay's name, and an ask's origin is a payload's word on RG, RM and RX: one
+-- guildmate naming each relay in turn got the verifier's whole store sent once per relay, and the
+-- real relay's own ask then waited RELAY_ANSWER_GAP. Only an ask that came across here, its relay's
+-- name stamped by the server, is a relay's ask now (Relay.AskedAcross, read by Verify.lua).
+local acrossFrom -- while an ask that came across is heard here: its relay's short name (lower)
+function Relay.AskedAcross(name)
+	return acrossFrom ~= nil and type(name) == "string" and Lower(ns.ShortName(name)) == acrossFrom
+end
 function Relay.HandleVerify(dist, sender, text)
 	if dist ~= "WHISPER" or not Relay.On() then return false end
 	local flag, origin, body = tostring(text):match("^RW~([LP])~([^~]+)~(.*)$")
@@ -1043,7 +1053,10 @@ function Relay.HandleVerify(dist, sender, text)
 		ToReporters(flag, origin, body, sender) -- (heard here too)
 		return true
 	end
-	Deliver(origin, body, false)
+	acrossFrom = Lower(ns.ShortName(sender))
+	local ok, err = pcall(Deliver, origin, body, false)
+	acrossFrom = nil -- (whatever happened: no later ask may pass for this one)
+	if not ok then error(err, 0) end
 	return true
 end
 
