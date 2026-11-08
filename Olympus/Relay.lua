@@ -637,7 +637,11 @@ local function Drip()
 		end
 		table.remove(drip, 1)
 		Quiet(d.name) -- (a reporter gone offline since: the server's line out of the chat)
-		if not d.tried then stats.forwarded, d.tried = stats.forwarded + 1, true end
+		-- (The review of the 1.5.4 candidate.) Its time counts from its first turn, not from when it
+		-- was queued: a batch waits a whole round of reporters (more than SET_WAIT), so one pushed
+		-- out before it began was never put back and its reporter waited another round. Put back
+		-- for SET_WAIT after its first turn, never longer (a retry keeps this time).
+		if not d.tried then stats.forwarded, d.tried, d.t = stats.forwarded + 1, true, Now() end
 		dripSince = Now()
 		-- done runs once, whatever happens. A batch the queue had no room for, or pushed out for
 		-- newer words, goes back to the front while it is fresh; otherwise the next batch goes.
