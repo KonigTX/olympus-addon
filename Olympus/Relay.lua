@@ -527,6 +527,12 @@ end
 local function Deliver(origin, text, logged)
 	-- (1.5.4) The King's crown again (him standing still: the same words every 20 s) renews it.
 	if Seen(origin, text) and not (text:match("^T1~P~") and Crown(origin, text)) then return false end
+	-- (The review of the 1.5.4 candidate.) A layer word (L1, L0: GUILD_TOO) reaches the origin's
+	-- guildmates twice: his own copy over GUILD names him plain (OwnGuild), the relay's copy as the
+	-- relay's client stamped him, "Name-<its sub-realm>". Layers counted him twice, and a reporter
+	-- handed the relay's copy to the guild again. A name is one across a Forever family: one word,
+	-- once, whichever copy came first.
+	if GuildRoute(text) == "too" and origin:find("-", 1, true) and Seen(ns.ShortName(origin), text) then return false end
 	stats.delivered = stats.delivered + 1
 	ns.Comm.Inject("CHANNEL", origin, text, logged)
 	return true
