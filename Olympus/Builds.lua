@@ -50,6 +50,17 @@ local L = ns.L
 --     the list: a listed character that says a release to us directly is cleared here, and that
 --     clearing is shared (a "c" word) so the other keepers' lists clear too; a keeper's clear never
 --     lifts a mark this client made itself.
+--   * The author's ask (the owner's call, the same day). Every PROMPT_EVERY the author's relay client
+--     asks each character it holds as a modified build (its own marks and, being a relay, the list's)
+--     that is online (its hello in his guild, or a word of its that reached his client, refused at
+--     the door, in the last ONLINE_FOR: a locked reporter's registrations every 170 s among them) to
+--     update, with his standard ask: V3 by whisper from his own character (Workshop.AskUpdate), which
+--     every version shows as his update window. Not wrapped in a relay's RM: a reporter delivers an
+--     RM's word as a channel word (Relay.lua's Deliver, Comm.Inject("CHANNEL")) and hands it to its
+--     guild, and Workshop.HandleUpdate drops a V3 that did not come by whisper from the author, on
+--     1.5.1 as here. Once per character a PROMPT_EVERY, PROMPT_MAX a PROMPT_EVERY in all, the longest
+--     unasked first, never while his queue has fewer than PROMPT_ROOM places free (the relay's own
+--     words first; tried again a minute later), never to a character not marked.
 --   * The view: /oly builds, a copyable window (the owner cannot copy chat lines); the right-click
 --     menu's version line, "Olympus <version> (modified build)" (Versions.lua).
 --   BD~1~<reporter's guild>~<name>~<version>~h|a|c~<first>~<last>~<their guild>   GUILD and CHANNEL
@@ -66,7 +77,18 @@ Builds.SILENT_SPAN = 300    -- ...the first and the last at least this far apart
 Builds.SHARE_GAP = 3600     -- a sighting shared again at most this often
 Builds.SHARE_PER_MIN = 6    -- shared words a minute at most, whatever they name
 Builds.KEEP_AT_MOST = 365 * 86400 -- a shared word's times older than this count as now
+Builds.PROMPT_EVERY = 1800  -- the author's update ask to each marked client online at most this often...
+Builds.PROMPT_MAX = 20      -- ...and this many asks in all each PROMPT_EVERY
+Builds.PROMPT_ROOM = 20     -- places his send queue keeps free for the relay's own words (Comm.QueueRoom)
+Builds.ONLINE_FOR = 300     -- a locked client heard at the door this recently counts as online
 
+-- Swappable in tests.
+Builds.after = function(seconds, where, fn) ns.After(seconds, where, fn) end
+
+local heard = {}       -- record key -> when a word of that locked client last reached the door (session)
+local prompted = {}    -- record key -> when the author's update ask last went to that character
+local promptTimes = {} -- when each update ask of the last PROMPT_EVERY went
+local retrying = false -- a retry of Builds.Prompt waits (the queue had no room)
 local lastHello = {}   -- key -> { t, version }: a guild peer's last hello this session (the silent mark's presence)
 local asks = {}        -- key -> { t1, t2, ... }: this client's version checks a peer left unanswered
 local shared = {}      -- key (or "c:" .. key, a clear) -> when this client last shared that
@@ -530,7 +552,80 @@ function Builds.Count()
 	return #(Store() or {})
 end
 
+---------------------------------------------------------------------------
+-- The author's ask to the locked clients online (his relay's client alone)
+---------------------------------------------------------------------------
+
+-- A word of a locked client reached Comm's door (dropped there, or its hello or version answer let
+-- through): it is online now.
+function Builds.Heard(sender)
+	local e = Find(Full(sender))
+	if e then heard[e.key] = ns.Now() end
+end
+
+-- Online, as this client can tell: its hello in our guild lately (Comm.Peers), or a word of its at
+-- the door within ONLINE_FOR.
+function Builds.Online(name, now)
+	local e = type(name) == "string" and Find(Full(name))
+	if not e then return false end
+	now = now or ns.Now()
+	if now - (heard[e.key] or -math.huge) <= Builds.ONLINE_FOR then return true end
+	local C = ns.Comm
+	if C and type(C.Peers) == "function" then
+		for _, n in ipairs(C.Peers()) do
+			local p = Find(Full(n))
+			if p == e then return true end
+		end
+	end
+	return false
+end
+
+-- Every PROMPT_EVERY on the author's relay client (see the top): his update ask to the locked
+-- characters online. How many went.
+function Builds.Prompt(now)
+	now = now or ns.Now()
+	if not (ns.IsAuthorName ~= nil and ns.IsAuthorName(ns.me) == true) or not RelayClient() then return 0 end
+	local W = ns.Workshop
+	if type(W) ~= "table" or W.missing or type(W.AskUpdate) ~= "function" or type(W.Latest) ~= "function" or not W.Latest() then return 0 end
+	local list = Store()
+	if not list then return 0 end
+	for i = #promptTimes, 1, -1 do if now - promptTimes[i] >= Builds.PROMPT_EVERY then table.remove(promptTimes, i) end end
+	local due = {}
+	for _, e in ipairs(list) do
+		if Builds.Quarantined(e.name) and now - (prompted[e.key] or -math.huge) >= Builds.PROMPT_EVERY and Builds.Online(e.name, now) then
+			due[#due + 1] = e
+		end
+	end
+	table.sort(due, function(a, b)
+		local x, y = prompted[a.key] or -math.huge, prompted[b.key] or -math.huge
+		if x ~= y then return x < y end
+		return a.key < b.key
+	end)
+	local C, R, n = ns.Comm, ns.Relay, 0
+	local room = C and type(C.QueueRoom) == "function" and C.QueueRoom() or (Builds.PROMPT_ROOM + Builds.PROMPT_MAX)
+	local budget = math.min(Builds.PROMPT_MAX - #promptTimes, room - Builds.PROMPT_ROOM)
+	for _, e in ipairs(due) do
+		if n >= budget then break end
+		prompted[e.key] = now
+		promptTimes[#promptTimes + 1] = now
+		-- (Gone offline since: the server's "No player named" kept out of his chat, as the relay's.)
+		if type(R) == "table" and type(R.Quiet) == "function" then R.Quiet(e.name) end
+		if W.AskUpdate(e.name) then n = n + 1 end
+	end
+	-- Some waited for room in the queue, not for the hour's budget: once more in a minute.
+	if #due > n and n >= budget and #promptTimes < Builds.PROMPT_MAX and not retrying then
+		retrying = true
+		Builds.after(60, "modified build prompts", function() retrying = false; Builds.Prompt() end)
+	end
+	if n > 0 then ns.Log("modified builds: the author's update ask to %d locked client(s)", n) end
+	return n
+end
+
 function Builds.Reset() -- (tests)
+	for k in pairs(heard) do heard[k] = nil end
+	for k in pairs(prompted) do prompted[k] = nil end
+	for i = #promptTimes, 1, -1 do promptTimes[i] = nil end
+	retrying = false
 	for k in pairs(lastHello) do lastHello[k] = nil end
 	for k in pairs(asks) do asks[k] = nil end
 	for k in pairs(shared) do shared[k] = nil end
@@ -539,3 +634,7 @@ function Builds.Reset() -- (tests)
 end
 
 ns.Comm.Handle("BD", function(...) Builds.HandleShare(...) end)
+ns.On("LOGIN", function()
+	-- (Every client's ticker; Builds.Prompt does something on the author's relay client alone.)
+	ns.Every(Builds.PROMPT_EVERY, "modified build prompts", function() Builds.Prompt() end)
+end)

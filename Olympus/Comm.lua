@@ -2157,9 +2157,12 @@ local function OnAddonMessage(prefix, text, dist, sender, target, zoneChannelID,
 	-- nothing of its reaches a handler, the census or the relay, but its hello and its version answer,
 	-- which clear the mark when they name a release. Our own client is never marked.
 	local B = ns.Builds
-	if B and not B.missing and B.Quarantined(sender) and not B.Passes(text) then
-		stats.quarantined = (stats.quarantined or 0) + 1
-		return
+	if B and not B.missing and B.Quarantined(sender) then
+		B.Heard(sender) -- (online: the author's update ask may go to it, Builds.Prompt)
+		if not B.Passes(text) then
+			stats.quarantined = (stats.quarantined or 0) + 1
+			return
+		end
 	end
 	if not Comm.Admit(sender, GetTime()) then return end
 	stats.recv = stats.recv + 1

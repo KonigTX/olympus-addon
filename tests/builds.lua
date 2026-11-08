@@ -563,12 +563,20 @@ test("1.5.4 modified builds README privacy: both privacy tables name the sightin
 		for _, must in ipairs({ "silent to version checks", "locked out", "drops its words until it announces a release version", "`/oly builds`", "right-click menu" }) do
 			assert(own:find(must, 1, true), path .. ": the own row: " .. must)
 		end
+		local ask
+		for line in privacy:gmatch("[^\n]+") do
+			if line:sub(1, 2) == "| " and line:find("The author's update ask to a modified build (1.5.4)", 1, true) then ask = line end
+		end
+		assert(ask, path .. ": the author's ask's row")
+		for _, must in ipairs({ "that player alone (a whisper from the author's character)", "while it carries the relay", "every 30 minutes", "online (in his guild, or heard by his client in the last 5 minutes)", "20 every 30 minutes at most", "never to anyone else" }) do
+			assert(ask:find(must, 1, true), path .. ": the author's ask's row: " .. must)
+		end
 		local commands = assert(doc:match("\n## Commands\n(.-)\n## "), path .. ": the commands")
 		assert(commands:find("\n| `/oly builds` |", 1, true), path .. ": /oly builds among the commands")
 	end
 	local roadmap = ReadFile(ROOT .. "ROADMAP.md")
 	local line = assert(roadmap:match("\n%- v1%.5%.4 ([^\n]+)"), "the 1.5.4 line")
-	for _, must in ipairs({ "modified build", "`/oly builds`", "locked out", "The relays keep the shared list too" }) do assert(line:find(must, 1, true), "ROADMAP 1.5.4: " .. must) end
+	for _, must in ipairs({ "modified build", "`/oly builds`", "locked out", "The relays keep the shared list too", "The author's relay asks each locked client online to update every 30 minutes" }) do assert(line:find(must, 1, true), "ROADMAP 1.5.4: " .. must) end
 end)
 
 ---------------------------------------------------------------------------
@@ -717,5 +725,131 @@ test("1.5.4 modified builds relays: a relay's character keeps the list and locks
 		eq(#w.dropped, 1, "the registration it may hold goes"); eq(w.dropped[1], "Ann Dark-Realm")
 		w.relayOn = false
 		eq(B.Quarantined("Ann Dark-Realm"), false, "the relay stopped: the list locks nobody here")
+	end)
+end)
+
+---------------------------------------------------------------------------
+-- The author's update ask to the locked clients online (his relay's client)
+---------------------------------------------------------------------------
+
+local AUTHOR = ns.AUTHOR .. "-" .. ns.AUTHOR_REALM -- (the code's author character, as tests/run.lua's AUTHOR_FULL)
+-- fn(w, later) as the author's relay client: Workshop reset, his queue's room w.room (60), the
+-- retries Builds.Prompt schedules in later[].
+local function AsAuthorRelay(fn)
+	WithBuilds(AUTHOR, function(w)
+		local W = ns.Workshop
+		local saved = { room = ns.Comm.QueueRoom, after = B.after }
+		local later = {}
+		local ok, err = pcall(function()
+			W.Reset()
+			w.relays, w.relayOn = { [ns.ShortName(AUTHOR)] = true }, true
+			ns.Comm.QueueRoom = function() return w.room or 60 end
+			B.after = function(s, where, f) later[#later + 1] = { s = s, fn = f } end
+			fn(w, later)
+		end)
+		ns.Comm.QueueRoom, B.after = saved.room, saved.after
+		W.Reset()
+		if not ok then error(err, 0) end
+	end)
+end
+local function AskedTo(w)
+	local out = {}
+	for _, x in ipairs(w.whispered) do
+		if x.msg == "V3~" .. ns.VERSION then out[x.to] = (out[x.to] or 0) + 1 end
+	end
+	return out
+end
+
+test("1.5.4 modified builds prompt: every 30 minutes the author's relay client asks each locked client online to update with his own ask (V3 by whisper from his character), never an unmarked client or one offline, each once every 30 minutes; never from another client, nor from the author's while the relay does not run", function()
+	AsAuthorRelay(function(w)
+		-- A locked reporter heard at the door, a locked guildmate online by its hello, a locked one
+		-- offline, an unmarked one online.
+		B.Hello("Rep One-Realm", "1.5.1-onn.12", w.clock)
+		B.Heard("Rep One-Realm")
+		B.Hello("Mate Two-Realm", "1.5.3-custom", w.clock)
+		B.Hello("Gone Four-Realm", "1.5.1-onn.12", w.clock - 3600)
+		B.Hello("Clean Three-Realm", "1.5.4", w.clock)
+		w.online = { "Mate Two-Realm", "Clean Three-Realm" }
+		eq(B.Prompt(), 2)
+		local asked = AskedTo(w)
+		eq(asked["Rep One-Realm"], 1, "the locked reporter heard at the door"); eq(asked["Mate Two-Realm"], 1, "the locked guildmate online")
+		eq(asked["Gone Four-Realm"], nil, "never one not online"); eq(asked["Clean Three-Realm"], nil, "never an unmarked one")
+		eq(#w.whispered, 2, "nothing else")
+		eq(w.whispered[1].key:sub(1, 10), "askupdate:", "his usual ask (Workshop.AskUpdate)")
+		eq(#w.quieted, 2, "an offline answer kept out of his chat")
+		-- Within the 30 minutes: nothing again, whoever is online.
+		w.clock = w.clock + 600
+		B.Heard("Rep One-Realm")
+		eq(B.Prompt(), 0, "each once every 30 minutes"); eq(#w.whispered, 2)
+		-- 30 minutes on: again.
+		w.clock = w.clock + 1200
+		B.Heard("Rep One-Realm")
+		eq(B.Prompt(), 2)
+		asked = AskedTo(w)
+		eq(asked["Rep One-Realm"], 2); eq(asked["Mate Two-Realm"], 2); eq(asked["Clean Three-Realm"], nil)
+		-- Heard no more (logged off): not asked.
+		w.clock = w.clock + 1800
+		w.online = {}
+		eq(B.Prompt(), 0, "a locked client no longer heard is not asked")
+		-- The relay stops (off Forever): nothing.
+		B.Heard("Rep One-Realm")
+		w.relayOn = false
+		eq(B.Prompt(), 0, "the author's client while it carries no relay")
+	end)
+	WithBuilds("Hildryn Payne-Realm", function(w)
+		w.relays, w.relayOn = { ["Hildryn Payne"] = true }, true
+		B.Hello("Rep One-Realm", "1.5.1-onn.12", w.clock)
+		B.Heard("Rep One-Realm")
+		eq(B.Prompt(), 0, "another relay's client asks nobody"); eq(#w.whispered, 0)
+	end)
+end)
+
+test("1.5.4 modified builds prompt: the author's asks are 20 at most each 30 minutes, the longest unasked first; while his queue keeps fewer than 20 places free beyond them they wait, tried again a minute later", function()
+	AsAuthorRelay(function(w, later)
+		for i = 1, 25 do
+			local name = ("Peer%02d-Realm"):format(i)
+			B.Hello(name, "1.5.1-onn.12", w.clock)
+			w.online[#w.online + 1] = name
+		end
+		eq(B.Prompt(), B.PROMPT_MAX, "20 each 30 minutes")
+		w.clock = w.clock + 600
+		eq(B.Prompt(), 0, "the 5 left wait for the next 30 minutes"); eq(#later, 0, "no retry: the budget, not the queue")
+		w.clock = w.clock + 1200
+		w.whispered = {}
+		eq(B.Prompt(), B.PROMPT_MAX)
+		local asked = AskedTo(w)
+		for i = 21, 25 do eq(asked[("Peer%02d-Realm"):format(i)], 1, "the ones left out last time first: Peer" .. i) end
+		-- A busy queue: 25 places free, 20 kept for the relay's own words, so 5 asks now, the rest a minute later.
+		w.clock = w.clock + 1800
+		w.whispered = {}
+		w.room = 25
+		eq(B.Prompt(), 5, "never into the places the relay keeps")
+		eq(#later, 1, "tried again"); eq(later[1].s, 60)
+		w.room = 60
+		w.clock = w.clock + 60
+		later[1].fn()
+		eq(#w.whispered, B.PROMPT_MAX, "the rest of the 20, a minute later")
+		local seen, twice = {}, 0
+		for _, x in ipairs(w.whispered) do if seen[x.to] then twice = twice + 1 end seen[x.to] = true end
+		eq(twice, 0, "nobody twice")
+	end)
+end)
+
+test("1.5.4 modified builds prompt: Comm's door counts a locked client as online while its words reach it (its refused registration among them), and no longer after five minutes", function()
+	RelaySetup(function()
+		local R, Deliver = Relayed(RELAY)
+		R.clock = 1800000000
+		local one = "Rep One" .. REALM7
+		Deliver("GUILD", one, "H1~1.5.1-onn.12~CAMWOWUS2Realm7PvE~p~~~~R")
+		eq(R.Builds.Quarantined(one), true)
+		R.clock = R.clock + R.Builds.ONLINE_FOR + 1
+		eq(R.Builds.Online(one), false, "its hello is old and nothing of it came since")
+		local before = R.Comm.Stats().quarantined
+		Deliver("WHISPER", one, "RL~P~RR~Guild One")
+		eq(R.Comm.Stats().quarantined, before + 1, "its registration refused at the door")
+		eq(R.Builds.Online(one), true, "and it is online")
+		R.clock = R.clock + R.Builds.ONLINE_FOR + 1
+		eq(R.Builds.Online(one), false, "five minutes on, no longer")
+		eq(R.Builds.Online("Nobody Here" .. REALM7), false, "never one without a record")
 	end)
 end)
