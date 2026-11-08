@@ -266,7 +266,9 @@ test("verify mesh: a relay whose answer the verifier's client could not send is 
 		verifier.c.Relay.Direct = function() return false end -- (the answer refused: a full queue, say)
 		local ok, err = pcall(function()
 			eq(As(hub, hub.c.Verify.Ask), true)
-			Flush(); Advance(10); Advance(10)
+			-- (Refused through every retry: ANSWER_RETRIES, ANSWER_RETRY_EVERY apart.)
+			Flush()
+			for _ = 1, 2 + verifier.c.Verify.ANSWER_RETRIES do Advance(verifier.c.Verify.ANSWER_RETRY_EVERY + 1) end
 		end)
 		verifier.c.Relay.Direct = direct
 		if not ok then error(err, 0) end
@@ -276,5 +278,29 @@ test("verify mesh: a relay whose answer the verifier's client could not send is 
 		eq(As(hub, hub.c.Verify.Ask), true)
 		Flush(); Advance(10); Advance(10)
 		eq(As(hub, hub.c.Verify.Status, GUILD), "verified", "answered, not ignored for RELAY_ANSWER_GAP")
+	end)
+end)
+
+-- The review of the 1.5.4 candidate: a whole store is up to MAX_CHUNKS pieces in one urgent transfer,
+-- and a relay's queue (MAX_QUEUE parts) refused a second one asked for in the same seconds: that
+-- asker got nothing until its next ask, half an hour later. A refused answer is tried again a few
+-- seconds later (ANSWER_RETRY_EVERY), while the first goes out. Fails before (one asker holds none).
+test("verify mesh: a client's ask and a relay's ask answered in the same seconds, each with a whole store (two are more than the queue holds), both reach their askers", function()
+	World(function(Node, As, Flush, Advance)
+		local verifier = Node(HC, "Olympus Crown")
+		for i = 1, 130 do eq(As(verifier, verifier.c.Verify.Approve, ("Olympus Recovery %03d"):format(i), MASTER), true) end
+		Flush(); Advance(3600)
+		local payload, rows = As(verifier, verifier.c.Verify.Payload)
+		local pieces = #verifier.c.Codec.Chunk("RM~P~" .. HC .. "~" .. payload, "1")
+		eq(2 * pieces > verifier.c.Comm.MAX_QUEUE, true, ("two answers of %d pieces are more than the queue holds at once"):format(pieces))
+		-- Both log in now, missing the approvals, and ask in the same moment.
+		local hub = Node(HUB, "Olympus Hearth")
+		local member = Member(Node, As, "Crown Client-Realm", GUILD, verifier)
+		eq(As(member, member.c.Verify.Ask), true)
+		eq(As(hub, hub.c.Verify.Ask), true)
+		Flush()
+		for _ = 1, 4 do Advance(verifier.c.Verify.ANSWER_RETRY_EVERY + 1) end
+		eq(member.c.Verify.Digest() >= rows, true, "the client holds the store")
+		eq(hub.c.Verify.Digest() >= rows, true, "the relay holds the store")
 	end)
 end)

@@ -66,6 +66,7 @@ Verify.ASK_AFTER, Verify.ASK_SPREAD = 25, 35 -- the login's ask, 25 to 60 s afte
 Verify.ASK_EVERY = 30 * 60       -- and every half hour
 Verify.ANSWER_GAP = 180          -- a verifier's client answers asks this often at most
 Verify.RELAY_ANSWER_GAP = 900    -- (1.5.4) and each relay that asked (relays first agree among themselves) this often
+Verify.ANSWER_RETRIES, Verify.ANSWER_RETRY_EVERY = 6, 5 -- (1.5.4) a relay's answer its full queue refused, tried again
 Verify.REQUEST_GAP = 300         -- a guild master's queued request, kept across reloads
 Verify.REVOKE_KEEP = 30 * 86400  -- a revocation is kept (and relayed) this long
 Verify.START_KEEP = 90 * 86400   -- a guild's start, this long after it was last seen or heard
@@ -537,29 +538,47 @@ local function AnswerAsk(body, now, sender)
 	if not n or n > Verify.MAX + Verify.MAX_STARTS or theirs > now + Verify.AHEAD
 		or theirSum >= 2147483648 or (theirFingerprint and #theirFingerprint ~= 64) then return false end
 	if fingerprint and fingerprint == theirFingerprint then return true end
+	-- (The review of the 1.5.4 candidate.) A whole store is up to MAX_CHUNKS pieces, one urgent
+	-- transfer: a relay's queue (MAX_QUEUE parts) refuses a second one asked in the same seconds, and
+	-- that asker got nothing until its next ask (half an hour). Refused, an answer is tried again every
+	-- ANSWER_RETRY_EVERY seconds, ANSWER_RETRIES times, while the first one goes out.
+	local function MayRetry(tries)
+		local R = ns.Relay
+		return tries > 0 and Direct() and type(R.IsRelay) == "function" and R.IsRelay(ns.me) == true
+	end
 	if toRelay then
 		local key = Key(sender)
 		answeredRelay[key] = now
-		ns.After(Verify.random(2, 9), "verify answer", function()
+		local function Answer(tries)
+			if Verify.SendSnapshot(sender, true) then return end
+			if MayRetry(tries) then
+				ns.After(Verify.ANSWER_RETRY_EVERY, "verify answer", function() Answer(tries - 1) end)
 			-- (The review of the 1.5.4 candidate.) An answer refused (a full queue, no relay to carry
 			-- it) leaves the relay's gap open: its next ask is answered, not ignored RELAY_ANSWER_GAP.
-			if not Verify.SendSnapshot(sender, true) and answeredRelay[key] == now then answeredRelay[key] = nil end
-		end)
+			elseif answeredRelay[key] == now then
+				answeredRelay[key] = nil
+			end
+		end
+		ns.After(Verify.random(2, 9), "verify answer", function() Answer(Verify.ANSWER_RETRIES) end)
 		return true
 	end
 	-- A legacy ask cannot prove that it holds our words, even with equal counts.
 	-- ANSWER_GAP and the delayed/coalesced answer still bound recovery traffic.
+	-- (Pending until it is queued or given up: one answer at a time, and another verifier's answer
+	-- heard meanwhile still covers it.)
 	local request = {}
 	pending = request
-	ns.After(Verify.random(2, 9), "verify answer", function()
-		pending = false
-		if Verify.Clock() - lastSent < Verify.ANSWER_GAP then return end
+	local function Answer(tries)
+		if pending ~= request then return end
+		if Verify.Clock() - lastSent < Verify.ANSWER_GAP then pending = false return end
 		if request.coverage then
 			local _, _, covered = Verify.Payload(nil, request.coverage)
-			if covered then return end
+			if covered then pending = false return end
 		end
-		Verify.SendSnapshot(sender)
-	end)
+		if Verify.SendSnapshot(sender) or not MayRetry(tries) then pending = false return end
+		ns.After(Verify.ANSWER_RETRY_EVERY, "verify answer", function() Answer(tries - 1) end)
+	end
+	ns.After(Verify.random(2, 9), "verify answer", function() Answer(Verify.ANSWER_RETRIES) end)
 	return true
 end
 
