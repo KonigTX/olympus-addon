@@ -786,13 +786,28 @@ local function GrantToAll(origin, now)
 	grantSent[key] = now
 	return true
 end
--- The guild (lower) a presentation goes to alone, or nil when it goes to every reporter.
+-- (The review of the 1.5.4 candidate, mixed versions.) A 1.5.3 client keeps a heard grant
+-- ProfileEffects.SESSION_TTL (32 s) wherever it is, so a grant once each GRANT_EVERY left it none for
+-- 28 s of every minute: a 1.5.3 presenter outside the issuer's guild lost his presentation at his
+-- next heartbeat, and a 1.5.3 viewer there saw it come and go. A guild whose member presents (his S
+-- names his guild) hears the grants each beat for PRESENTING_FOR after his last heartbeat, six
+-- whispers a minute per such guild while it lasts; the rest once each GRANT_EVERY as above. A guild
+-- with no reporter here is not noted, so the table holds at most MAX_REPORTERS guilds.
+Relay.PRESENTING_FOR = 64 -- (twice ProfileEffects.LEASE_TTL: a presenter beats every 10 s)
+local presented = {} -- guild (lower) -> when a member's presentation (S) last passed here
+local function Presenting(guild, now) return now - (presented[guild] or -math.huge) < Relay.PRESENTING_FOR end
+-- The guild (lower) a presentation goes to alone, or nil when it goes to every reporter; its kind second.
 local function PresentationScope(origin, body, now)
 	if type(body) ~= "string" then return nil end
 	local kind, guild = body:match("^FX~%d+~(%a)~[^~]*~%d+~%d+~%d+~([^~]+)")
 	if not kind then return nil end
 	if kind == "C" or (kind == "G" and GrantToAll(origin, now)) then return nil end
-	return Lower(guild)
+	guild = Lower(guild)
+	if kind == "S" and reporters[guild] then
+		for g, at in pairs(presented) do if now - at >= Relay.PRESENTING_FOR then presented[g] = nil end end
+		presented[guild] = now
+	end
+	return guild, kind
 end
 -- (1.5.4) The King's crown to this relay's reporters (KING_GAP above): each at most once a KING_GAP,
 -- the longest waiting first, within the relay's KING_PER_MIN (KING_BURST at once), ahead in the
@@ -873,7 +888,7 @@ local function ToReporters(flag, origin, body, sender)
 		if now - r.t <= Relay.REPORTER_FOR then fresh = fresh + 1 end
 	end
 	share = math.min(Relay.REPORTER_RATE, Relay.TRICKLE_PER_MIN / math.max(1, fresh))
-	local scoped = PresentationScope(origin, body, now)
+	local scoped, fxKind = PresentationScope(origin, body, now)
 	local presence = flag ~= "L" and KingPresence(origin, body)
 	-- (The review of the 1.5.4 candidate, mixed versions.) A layer word (L1, L0: GUILD_TOO) names its
 	-- origin plain on the wire, as his own copy over GUILD does (OwnGuild). Stamped here with this
@@ -907,7 +922,7 @@ local function ToReporters(flag, origin, body, sender)
 	for g, r in pairs(reporters) do
 		if now - r.t > Relay.REPORTER_FOR then
 			reporters[g] = nil
-		elseif scoped and g ~= scoped then
+		elseif scoped and g ~= scoped and not (fxKind == "G" and Presenting(g, now)) then
 			stats.scoped = (stats.scoped or 0) + 1 -- (another guild's presentation: heard here alone)
 		elseif r.name == ns.me then
 			if Deliver(origin, body, flag == "L") then ToGuild(flag, wire, body) end
@@ -1261,7 +1276,7 @@ function Relay.Reset()
 	wipe(offline); wipe(verified); wipe(pinged); wipe(reporters); wipe(seen); wipe(pending); wipe(budget)
 	seenCount, lastRegister, holding, flushing, lastGlobal = 0, -math.huge, false, false, -math.huge
 	lastVerifyAsk = -math.huge
-	wipe(snapshotTransfers); wipe(crownSent); wipe(kingSent); wipe(crownLayer); wipe(grantSent)
+	wipe(snapshotTransfers); wipe(crownSent); wipe(kingSent); wipe(crownLayer); wipe(grantSent); wipe(presented)
 	crownBucket.tokens, crownBucket.at = 0, -math.huge
 	wipe(sets); wipe(drip)
 	dripSince, dripping = nil, false
