@@ -3620,16 +3620,19 @@ its changes listed at its top).
   Issue Reporter), bjess9 (CI and the shared checks), hypertectonic (Chattynator's tabs),
   Bernardo Costa / Costafitness (exact layer-hop confirmation and stale-request regressions,
   adapted from PR #51), Rick-laboratory (bounded transport, cancellation and admission
-  regressions, adapted from PR #52), and HTX (the Board's group listings, applications and
-  invites, adapted from PR #62).
+  regressions, adapted from PR #52), HTX (the Board's group listings, applications and
+  invites, adapted from PR #62), and XOData (a relay's snapshot sent whole to each reporter and
+  wrapped once, and guildmates on other Forever sub-realms recognised, from PRs #81 and #82).
 - **Feature requests:** Fernmelder, whose 39 posts became 1.1 (the Fernmelder release);
   shenanigans_ (the nameplate marks), Valdericht (`<OLYMPIAN>`), Pyralis Ashandar (taking
   donations), and FedGuy / Fed Olympus (nameplate-assisted layer hopping).
 - **Art:** Max (the bronze elite borders, drawn over the game's own; the winged one remains the guild masters') and Kaise (the Queen's red, gold and white-winged dragon frame).
 - **Reports from the field:** Riukensei and PartyRockAce (the gamepad UI; PartyRockAce's report
   of the world map blocked in controller mode, fixed in 1.0), Ignitheus (whispers to Forever
-  names), Pyralis Ashandar, the Treasurer (the treasury and the guild bank), and the player who
-  told us WoW had handed him the channel.
+  names), Pyralis Ashandar, the Treasurer (the treasury and the guild bank), the player who
+  told us WoW had handed him the channel, and, for the census on Forever, knomegnome (the relay
+  snapshot's queue loss, #85), fiddlecat (#79's measurements and the blocked channel text),
+  ForMooAz (#79's relay captures) and Legis (the 1.5.1 relay key collision, on CurseForge).
 - Everyone who reported a bug, tested in game or asked for a feature.
 
 ## License
