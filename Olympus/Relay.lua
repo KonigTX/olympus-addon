@@ -117,7 +117,7 @@ local budget = {} -- reporter name (lower) -> { at = when refilled, left = piece
 -- same share a minute in a longer window.)
 Relay.TRICKLE_PER_MIN = 60
 local share = Relay.REPORTER_RATE -- each reporter's whispers a minute (ToReporters sets it)
-local function Afford(name, pieces, now, need)
+local function Afford(name, pieces, now, need, word, first)
 	local most = math.min(Relay.REPORTER_RATE, math.max(3, share))
 	-- (The review of the candidate.) A piece of a word that needs more whispers than an allowance
 	-- holds never reaches the reporter whole: it spends nothing (need: the least the word takes).
@@ -126,7 +126,23 @@ local function Afford(name, pieces, now, need)
 	local b = budget[key]
 	local age = b and now - b.at
 	-- (A clock set back starts a new allowance: the window never froze.)
-	if not b or age < 0 or age >= 60 * most / share then b = { at = now, left = most }; budget[key] = b end
+	if not b or age < 0 or age >= 60 * most / share then
+		b = { at = now, left = most, open = {}, last = b and b.open }; budget[key] = b
+	end
+	if word then
+		-- (The review of the 1.5.4 candidate.) A word in pieces is paid for whole at its first piece
+		-- (need), or refused there; its later pieces pass free once it is paid, in this allowance or
+		-- the one before (a window turning over between two pieces). Charged piece by piece, an
+		-- allowance partly spent let the short last piece through alone, or the full first one: a
+		-- whisper wasted, and at every receiver an assembly that never closed (Comm's "incomplete
+		-- reports"), the report itself never arriving.
+		if not first then return b.open[word] == true or (b.last ~= nil and b.last[word] == true) end
+		if b.open[word] then return true end
+		if b.left < need then return false end
+		b.left = b.left - need
+		b.open[word] = true
+		return true
+	end
 	if b.left < pieces then return false end
 	b.left = b.left - pieces
 	return true
@@ -913,13 +929,15 @@ local function ToReporters(flag, origin, body, sender)
 	-- at all: the pieces before its last are full, and a full piece with its RM label is one or two
 	-- whispers. The least it takes, for Afford: a census report in two pieces (385 bytes) is three
 	-- whispers, which every allowance holds; one in three pieces is five, which none does.
-	local need
+	local need, wordKey, first
 	do
-		local id, n = body:match("^C(%w+):%d+:(%d+):")
+		local id, i, n = body:match("^C(%w+):(%d+):(%d+):")
 		n = tonumber(n)
 		if n and n >= 2 then
 			local label = #("RM~" .. flag .. "~" .. origin .. "~" .. ("C%s:1:%d:"):format(id, n))
 			need = (n - 1) * (label + ns.Codec.CHUNK > 255 and 2 or 1) + 1
+			-- (The word, for Afford to pay for it whole at its first piece and let its others through.)
+			wordKey, first = Lower(origin) .. "#" .. id, tonumber(i) == 1
 		end
 	end
 	local pieces
@@ -954,7 +972,7 @@ local function ToReporters(flag, origin, body, sender)
 			pieces = pieces or Envelope("RM", "RM~" .. flag .. "~" .. wire .. "~" .. body)
 			-- (1.5.0) Another client's word that is not a chat line: within the reporter's trickle
 			-- (REPORTER_RATE) or not sent to him; the relay's own words and chat lines always.
-			if flag == "L" or own or snapshot or presence or KingLayer(origin, body, r.name, now) or Afford(r.name, #pieces, now, need) then
+			if flag == "L" or own or snapshot or presence or KingLayer(origin, body, r.name, now) or Afford(r.name, #pieces, now, need, wordKey, first) then
 				stats.forwarded = stats.forwarded + 1
 				Quiet(r.name) -- (a reporter gone offline since: the server's line out of the chat)
 				-- A word that is not a chat line is keyed by its origin, kind and reporter: a newer

@@ -409,6 +409,61 @@ test("relay trickle (1.5.4): a word in pieces that can never pass whole spends n
 	end)
 end)
 
+-- The review of the 1.5.4 candidate: the trickle charged a word in pieces piece by piece, so with an
+-- allowance partly spent by single words the full first piece (two whispers once wrapped) was refused
+-- and the short last one passed alone, or the first passed and the last was refused: a whisper wasted
+-- per reporter, the report never arriving, and at every receiver an assembly that never closed (/oly
+-- bug's "incomplete reports"). A word in pieces is paid for whole at its first piece, or refused
+-- there, and its later pieces pass free. Fails before (every reporter is sent one piece alone).
+test("relay trickle (1.5.4): a census report in two pieces goes to a reporter whole or not at all when his allowance is partly spent, before its first piece or between its pieces", function()
+	Relayed(function(R, sent, Run)
+		local CENSUS, CLIENT, N = "Census Guy-CAMWOWUS2Realm3PvE", "Some Client-CAMWOWUS2Realm3PvE", 10
+		-- How many reporters were sent the census client's word whole, none of it, or a piece alone,
+		-- read back from the whispers that left (a full piece travels as the relay's own envelope, in two).
+		local function Tally()
+			local whole, none, alone = 0, 0, 0
+			for i = 1, N do
+				local name, outer, got, n = ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), R.Codec.NewAssembler(), 0, nil
+				for _, s in ipairs(sent) do
+					if s.target == name then
+						local rm = s.msg:sub(1, 3) == "RM~" and s.msg or R.Codec.Feed(outer, "relay", s.msg, 0)
+						local k, total = nil, nil
+						if rm then k, total = rm:match("^RM~P~Census Guy%-[^~]+~C%w+:(%d+):(%d+):") end
+						if k then got, n = got + 1, tonumber(total) end
+					end
+				end
+				if got == 0 then none = none + 1 elseif got == n then whole = whole + 1 else alone = alone + 1 end
+			end
+			return whole, none, alone
+		end
+		local function Register()
+			R.Relay.Reset(); wipe(sent)
+			for i = 1, N do R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i)) end
+			R.clock = R.clock + 120 -- (every allowance full: REPORTER_RATE, with ten reporters)
+		end
+		-- Three single words first, each allowance down to one whisper; then the report, piece by piece
+		-- as the origin's pump sends it.
+		Register()
+		for k = 1, 3 do R.Relay.HandleIn("WHISPER", CLIENT, ("RL~P~X2~%d~a word"):format(k)); Run(2) end
+		local report = R.Codec.Chunk("R2~" .. ("r"):rep(382), "7")
+		eq(#report, 2, "a 385-byte census report is two pieces")
+		for _, p in ipairs(report) do R.Relay.HandleIn("WHISPER", CENSUS, "RL~P~" .. p); Run(1) end
+		Run(30)
+		local whole, none, alone = Tally()
+		eq(alone, 0, ("one whisper left: no reporter is sent a piece alone (whole %d, none %d, alone %d)"):format(whole, none, alone))
+		eq(none, N, "the report is refused at its first piece for every reporter")
+		-- The first piece on a full allowance, two single words, then the last piece.
+		Register()
+		R.Relay.HandleIn("WHISPER", CENSUS, "RL~P~" .. report[1]); Run(1)
+		for k = 1, 2 do R.Relay.HandleIn("WHISPER", CLIENT, ("RL~P~X2~%d~a word"):format(k)); Run(1) end
+		R.Relay.HandleIn("WHISPER", CENSUS, "RL~P~" .. report[2])
+		Run(30)
+		whole, none, alone = Tally()
+		eq(alone, 0, ("spent between the pieces: no reporter is sent a piece alone (whole %d, none %d, alone %d)"):format(whole, none, alone))
+		eq(whole, N, "the report, paid for at its first piece, reaches every reporter whole")
+	end)
+end)
+
 -- The review of the 1.5.4 candidate: the relay's own word too long for one drip batch (wrapped whole
 -- it is more than MAX_CHUNKS whispers, so each piece goes wrapped alone: two batches) was keyed by its
 -- kind and replaced batch by batch. A newer copy that came while the older's first batch was already
