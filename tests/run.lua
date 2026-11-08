@@ -7261,6 +7261,72 @@ test("1.4.5 the relay: a chat line goes to the sender's own guild at once over G
 	if not ok then error(err, 0) end
 end)
 
+-- The review of the 1.5.4 candidate: a chat line travels both ways (hop 3 from the sender himself,
+-- and the relay's copy), and Deliver took it once by the origin's full name alone. On Forever the
+-- relay's client stamps the bare whisper with its own sub-realm, so the two copies of a guildmate
+-- on another sub-realm than the relay's were two words: his guild saw his line twice (the dev's
+-- saved chat of 2026-11-08 holds lines kept twice under two stamps), his reporter handed the relay's
+-- copy to the guild under the relay's stamp, and a relay client that is its own guild's reporter
+-- handed its own line to the guild twice, then saw it come back from another relay. A chat line is
+-- taken once by the short name, as a layer word is, and the sender's own line is taken as it leaves.
+-- Fails before (two RG over GUILD for one line; the second stamp shown).
+test("1.5.4 the relay: a chat line is taken once whichever sub-realm stamped its copies: a relay client that is its own guild's reporter hands its line to the guild once and takes neither copy that comes back; a guildmate's line heard over GUILD and from the relay is shown once and not handed on again; a guildmate hearing both stamps shows it once", function()
+	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild, realm = ns.realm }
+	local ok, err = pcall(function()
+		GetChannelName = function() return 0 end
+		ns.IsMember = function() return true end
+		IsInGuild = function() return true end
+		GetGuildInfo = function() return "Olympus II", "Member", 3 end
+		ns.realm = "CAMWOWUS2Realm1PvE" -- (the relay's sub-realm: what its client stamps a bare whisper with)
+		local LINE = "M1~W~Olympus II~1~WA~hello from a reporter"
+		local function Guild(sent, origin, line)
+			local n = 0
+			for _, s in ipairs(sent) do if s.dist == "GUILD" and s.msg == "RG~L~" .. origin .. "~" .. line then n = n + 1 end end
+			return n
+		end
+		-- Hildryn's client: a relay, and its own guild's reporter (Comm.Electable prefers a relay's client).
+		local R, rdeliver, rsent, rheard, rpump, rsentOf = RelayWorld("Hildryn Payne-CAMWOWUS2Realm1PvE", "Olympus II")
+		R.Relay.HandleIn("WHISPER", R.me, "RL~P~RR~Olympus II")
+		rdeliver("WHISPER", "Zed Far", "RL~P~RR~Olympus Zeus")
+		eq(R.Comm.SendChat(LINE), true)
+		rpump()
+		eq(Guild(rsent, R.me, LINE), 1, "its own line to the guild once, not again as its own reporter")
+		eq(#rsentOf("RM~L~" .. R.me .. "~"), 1, "and to the other guild's reporter")
+		eq(#rheard, 0, "its own line is not shown to it")
+		-- Its line back from another relay, stamped with that relay's sub-realm: neither shown nor handed on.
+		rdeliver("WHISPER", "Max Ran", "RM~L~Hildryn Payne-CAMWOWUS2Realm4PvE~" .. LINE)
+		rpump()
+		eq(#rheard, 0, "not shown to it under the other stamp")
+		eq(Guild(rsent, "Hildryn Payne-CAMWOWUS2Realm4PvE", LINE), 0, "nor handed to the guild under it")
+		-- A guildmate on Realm7 types a line: his own copy over GUILD at once, his whisper to the relay after
+		-- (the server hands it over bare; the relay's client stamps it with its own sub-realm).
+		local MATE = "M1~W~Olympus II~2~WA~hello from another sub-realm"
+		rdeliver("GUILD", "Mate Numberthree", "RG~L~Mate Numberthree-CAMWOWUS2Realm7PvE~" .. MATE)
+		eq(#rheard, 1, "his guild copy is shown"); eq(rheard[1].sender, "Mate Numberthree-CAMWOWUS2Realm7PvE")
+		rdeliver("WHISPER", "Mate Numberthree", "RL~L~" .. MATE)
+		rpump()
+		eq(#rheard, 1, "the relay's own copy of it is not shown again")
+		eq(Guild(rsent, "Mate Numberthree-CAMWOWUS2Realm1PvE", MATE), 0, "nor handed to the guild, which has the line")
+		eq(#rsentOf("RM~L~Mate Numberthree-CAMWOWUS2Realm1PvE~"), 1, "the other guild's reporter still gets it")
+		-- A reporter that is no relay, on Realm5, hearing the guild copy and then the relay's: once, nothing handed on.
+		ns.realm = "CAMWOWUS2Realm5PvE"
+		local P, pdeliver, psent, pheard, ppump = RelayWorld("Rep Orter-CAMWOWUS2Realm5PvE", "Olympus II")
+		pdeliver("GUILD", "Mate Numberthree", "RG~L~Mate Numberthree-CAMWOWUS2Realm7PvE~" .. MATE)
+		pdeliver("WHISPER", "Hildryn Payne", "RM~L~Mate Numberthree-CAMWOWUS2Realm1PvE~" .. MATE)
+		ppump()
+		eq(#pheard, 1, "the reporter shows the line once")
+		eq(#psent, 0, "and hands the relay's copy to nobody")
+		-- A guildmate hearing both stamps over GUILD (a 1.5.3 reporter hands the relay's copy on): once.
+		local G, gdeliver, _, gheard = RelayWorld("Gil Mate-CAMWOWUS2Realm5PvE", "Olympus II")
+		gdeliver("GUILD", "Rep Orter", "RG~L~Mate Numberthree-CAMWOWUS2Realm1PvE~" .. MATE)
+		gdeliver("GUILD", "Mate Numberthree", "RG~L~Mate Numberthree-CAMWOWUS2Realm7PvE~" .. MATE)
+		eq(#gheard, 1, "the relay's stamp first, his own after: shown once")
+	end)
+	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild, ns.realm = saved.channel, saved.member, saved.guild, saved.inGuild, saved.realm
+	C_ChatInfo = nil
+	if not ok then error(err, 0) end
+end)
+
 -- 1.4.5 (the dev's log, 2026-11-05: a guild's reporter changed every minute). Fails before: on the
 -- channel 400 s without hearing the reporter, the client benched it and elected itself.
 test("1.4.5 the relay: where the relay carries the channel, a reporter never heard on the channel is not left out (the channel delivers nothing there): the election stays", function()

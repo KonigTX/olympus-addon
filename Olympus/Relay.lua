@@ -364,7 +364,7 @@ Relay.Flush = Flush
 
 -- Hop 1: what a module said "on the channel" goes to our relay. parts: the message's pieces as the
 -- channel would carry them (each one whisper). Returns true when handed to the queue.
-local ToGuild -- (below: hop 3)
+local ToGuild, Seen -- (below: hop 3; a word taken once)
 local function PermitParts(parts, options)
 	for _, p in ipairs(parts) do
 		local ok, valid, why = true, true
@@ -477,7 +477,13 @@ function Relay.Out(parts, logged, done, key, urgent, options, anyway)
 			if done then ns.SafeCall("relay done", done, false, why) end
 			return true
 		end
-		for _, p in ipairs(parts) do ToGuild("L", ns.me, p) end
+		-- (The review of the 1.5.4 candidate.) Our line is taken here by our plain name as it leaves,
+		-- as Deliver takes a chat line: the copies that come back, our own client the relay (its
+		-- reporter branch) or another relay's RM naming us as its client stamped us, are this line,
+		-- and were handed to the guild a second time, shown to us again under the other stamp.
+		for _, p in ipairs(parts) do
+			if ToGuild("L", ns.me, p) then Seen(ns.ShortName(ns.me), p) end
+		end
 	end
 	if not sure and not anyway then
 		-- A held message is refused now, as its whispers would be later, when the capability
@@ -568,7 +574,7 @@ local function Remembered(origin, text, now)
 end
 
 -- Taken once: a message by its origin and text (the relay's copy and the guild's count once).
-local function Seen(origin, text)
+Seen = function(origin, text)
 	local now = Now()
 	local key = Lower(origin) .. "|" .. text
 	if Remembered(origin, text, now) then return true end
@@ -591,8 +597,11 @@ local function Deliver(origin, text, logged)
 	-- guildmates twice: his own copy over GUILD names him plain (OwnGuild), the relay's copy as the
 	-- relay's client stamped him, "Name-<its sub-realm>". Layers counted him twice, and a reporter
 	-- handed the relay's copy to the guild again. A name is one across a Forever family: one word,
-	-- once, whichever copy came first.
-	if GuildRoute(text) == "too" and origin:find("-", 1, true) and Seen(ns.ShortName(origin), text) then return false end
+	-- once, whichever copy came first. (The review of the candidate.) A chat line travels both ways
+	-- too (Relay.Out: hop 3 from the sender himself, and the relay's copy): a guildmate on another
+	-- sub-realm than the relay's was shown twice, his reporter handed the relay's copy to the guild
+	-- under the relay's stamp, and the sender saw his own line come back under it.
+	if (GuildRoute(text) == "too" or logged) and origin:find("-", 1, true) and Seen(ns.ShortName(origin), text) then return false end
 	stats.delivered = stats.delivered + 1
 	ns.Comm.Inject("CHANNEL", origin, text, logged)
 	return true
