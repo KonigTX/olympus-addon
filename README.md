@@ -412,6 +412,21 @@ realm than yours, the line says that, even if his layer reaches your channel. Th
 of `/oly status` (and of `/oly bug`) says what your addon knows of him: online and how sure,
 his realm, his layer and his crown, and how long ago each was heard.
 
+**On WoW: Forever (1.5.4, experimental).** Forever splits a realm group into sub-realms, and a
+group invite alone does not move you between them. A guildmate's layer on another sub-realm is
+listed apart from a same-numbered layer on yours, with that server's label (`[Realm5]`), and
+asking for it works the same up to the group: once you are in the helper's group, Olympus tells
+you to log out to the character screen and back in (the others' portraits show dark blue until
+then: you are not with them yet), and to close the game and open it again if that was not enough.
+The pending hop is kept in your saved variables for 15 minutes: back in the game, in the helper's
+group and on his server, the usual confirmation (two different NPCs on the layer) and the leave
+finish it; still on your old server, one line says to restart; out of the group, or 15 minutes
+later, the hop ends with a line and your group is left alone. The helper's addon keeps such a
+guest 15 minutes instead of 90 seconds, and his window says the guest arrives after a relog. Every
+hop entry point is marked experimental, and the first ask of a session (for a layer here, and for
+one on another server) shows the whole flow first, with **Ask** and **Cancel**. `/oly hop
+<UID>@<label>` asks for a listed layer on another server; `/oly hop status` shows the pending hop.
+
 ### Party Guard
 While the King is online, clear whispers asking for a party invite can appear in the Census
 (`/oly partyguard on | off`). The whisper is only a request, never proof of guild membership.

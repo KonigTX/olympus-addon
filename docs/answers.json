@@ -692,6 +692,23 @@
       ]
     },
     {
+      "id": "feat-layer-hop-experimental",
+      "topic": "features",
+      "status": "current (1.5.4)",
+      "questions": [
+        "Why is the layer hop experimental?",
+        "I joined the group but I'm not on the layer",
+        "What does the [Realm5] after a layer mean?"
+      ],
+      "answer": "The hop is experimental: it needs a helper on that layer who can invite. A layer marked with another Forever server ([Realm5]) needs one more step: once in the helper's group, log out and back in, or restart the game; Olympus finishes the hop when you return, within 15 minutes. It does not always work.",
+      "in_game": "Experimental: it needs a helper there. A layer on another Forever server ([Realm5]) needs a logout and login, or a game restart, after you join the group. It does not always work.",
+      "notes": "Hop.lua's relog step (1.5.4): the pending hop is kept in ns.db.hopPending for Hop.RELOG_WINDOW (15 minutes).",
+      "sources": [
+        "README.md: the layer hop section's Forever paragraph",
+        "Hop.lua: BeginRelog, CheckRelog, Hop.Resume"
+      ]
+    },
+    {
       "id": "feat-person-card",
       "topic": "features",
       "status": "current (1.1.1)",

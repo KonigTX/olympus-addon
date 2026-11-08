@@ -2861,7 +2861,14 @@ test("gamepad pass 5: the rest of the list with the gamepad UI on: the Issue Rep
 	eq(Hh.invited, "Asker", "the helper's invite, on its own")
 	GP.Covers("hop-group")
 	hop.Reset()
+	-- (1.5.4) The first ask of a session shows the experimental hop's window: Olympus's own under
+	-- the gamepad UI, no game popup; its Ask button sends the ask.
+	local popupsBefore = Hh.gamePopups or 0
 	hop.Ask(1429, 8, "the King's layer")
+	eq(hop.State(), nil, "nothing asked before the window is answered")
+	local confirm = assert(Hh.ns.Dialog.Find("OLYMPUS_HOP_CONFIRM"), "the experimental hop's window, Olympus's own")
+	eq(Hh.gamePopups or 0, popupsBefore, "no game popup for it")
+	InClick(Hh, function() confirm.buttons[1]:Click() end)
 	local id = hop.State() and hop.State().id
 	assert(id, "asked")
 	hop.HandleOffer("WHISPER", "Bbb-Realm", ("LO~%d~3~5"):format(id))
@@ -2870,6 +2877,42 @@ test("gamepad pass 5: the rest of the list with the gamepad UI on: the Issue Rep
 	hop.OnInvite("Bbb")
 	eq(Hh.accepted, nil, "nothing accepted for the player")
 	GP.Covers("party-invite")
+	-- (1.5.4) A hop to a layer on another Forever sub-realm: in the helper's group, the relog window
+	-- (Olympus's own, no game popup), nothing accepted or left on its own; its Leave group button,
+	-- the player's click, leaves ("hop-group").
+	hop.Reset()
+	hop.confirmed.other = true
+	local realmOf = Hh.ns.Layers.RealmOf
+	Hh.ns.Layers.RealmOf = function(n) if type(n) == "string" and n:find("^Bbb") then return "CAMWOWUS2Realm1PvE" end return realmOf(n) end
+	Hh.ns.Roster.RankOf = function(n) if type(n) == "string" and n:find("^Bbb") then return 3 end return rankOf(n) end -- (the helper is a guildmate)
+	hop.Ask(1429, 8, "a layer there", "CAMWOWUS2Realm1PvE")
+	id = assert(hop.State() and hop.State().id, "asked for the layer there")
+	Hh.Advance(1) -- (the ask leaves through the paced queue: the offers' window opens then)
+	eq(hop.State().phase, "asking", "the ask went out")
+	hop.HandleOffer("WHISPER", "Bbb-Realm", ("LO~%d~0~0"):format(id))
+	eq(hop.State().count, 1, "the guildmate's offer, his hello placing him on that sub-realm, is taken")
+	Hh.now = Hh.now + hop.WINDOW + 1 -- (the offers' window, on the wall clock the hop reads: time())
+	hop.Tick()
+	Hh.Advance(1) -- (the request to him leaves through the queue)
+	eq(hop.State().phase, "requested", "asked him for the invite"); eq(hop.State().helper, "Bbb-Realm")
+	hop.OnInvite("Bbb")
+	eq(Hh.accepted, nil, "nothing accepted for the player under the gamepad UI")
+	eq(hop.State().invitedBy, "Bbb-Realm", "his invite is the player's to accept")
+	Hh.env.IsInGroup, Hh.env.GetNumGroupMembers = function() return true end, function() return 2 end
+	Hh.units.party1 = { name = "Bbb", realm = "Realm", guid = "Player-1-0000BBB1" }
+	popupsBefore = Hh.gamePopups or 0
+	hop.OnRoster()
+	eq(hop.State().phase, "relog", "the relog step, the helper on another sub-realm")
+	assert(type(Hh.ns.db.hopPending) == "table" and Hh.ns.db.hopPending.helper == "Bbb", "the hop kept for the relog")
+	local relog = assert(Hh.ns.Dialog.Find("OLYMPUS_HOP_RELOG"), "the relog window, Olympus's own")
+	eq(Hh.gamePopups or 0, popupsBefore, "no game popup for it")
+	eq(Hh.left, nil, "the group is not left on its own")
+	InClick(Hh, function() relog.buttons[2]:Click() end)
+	eq(Hh.left, true, "Leave group: the player's click leaves")
+	eq(Hh.ns.db.hopPending, nil, "and the kept hop is over")
+	Hh.ns.Layers.RealmOf, Hh.ns.Roster.RankOf = realmOf, rankOf
+	Hh.env.IsInGroup, Hh.env.GetNumGroupMembers = function() return false end, function() return 0 end
+	Hh.units.party1 = nil
 	Check(Hh.ledger, "the layer hop")
 	NoErrors(Hh, "the layer hop")
 

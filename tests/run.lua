@@ -8565,6 +8565,9 @@ local function WithHop(fn)
 	local ok, err = pcall(function()
 		H.Reset()
 		ns.db.layerHelp, ns.db.layerAutoInvite = true, nil -- (1.1: layer help is a yes of its own, #11)
+		-- (1.5.4: the first ask of a session shows the experimental hop's window first; these tests
+		-- are of what follows it. The window has its own tests, tests/hop-forever.lua.)
+		H.confirmed.same, H.confirmed.other = true, true
 		ns.Now = function() return w.clock end
 		ns.Comm.ChannelReady = function() return true end
 		ns.Comm.ChannelName = function() return "OlympusNet" end

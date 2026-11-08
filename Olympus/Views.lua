@@ -2641,12 +2641,14 @@ local function RealmLines(s, q)
 		lines[#lines + 1] = {
 			text = (layer.mine and Green("> ") or "   ") .. Gold(ns.Layers.Name(layer)) .. Grey(("  #%d"):format(layer.zoneUID)),
 			right = L.LAYER_COUNT:format(layer.count),
-			-- Another layer: one click asks the Olympus players there for an invite (Hop.lua).
-			onClick = not layer.mine and function() ns.Hop.Ask(mapID, layer.zoneUID, ns.Layers.Name(layer)) end or nil,
+			-- Another layer: one click asks the Olympus players there for an invite (Hop.lua). (1.5.4) One
+			-- on another Forever sub-realm (layer.realm, its label in the name) ends with the relog step.
+			onClick = not layer.mine and function() ns.Hop.Ask(mapID, layer.zoneUID, ns.Layers.Name(layer), layer.realm) end or nil,
 			tooltip = function(tt)
 				tt:AddLine(ns.Layers.Name(layer), 1, 0.82, 0)
 				if head then tt:AddLine(("%s <%s>"):format(head.name, head.guild or "?"), 1, 1, 1) end
 				if layer.mine then tt:AddLine(L.LAYER_YOU, 0.25, 1, 0.25) else tt:AddLine(L.HOP_ROW_TIP, 0.25, 1, 0.25, true) end
+				if layer.realm then tt:AddLine(L.HOP_ROW_OTHER_REALM:format(ns.Layers.RealmLabel(layer.realm)), 1, 0.6, 0.2, true) end
 				if layer.lastSeen then tt:AddLine(L.HOP_REPORT_AGE:format(ns.Ago(layer.lastSeen)), 0.6, 0.6, 0.6, true) end
 				tt:AddLine(L.LAYER_EXPERIMENTAL, 0.6, 0.6, 0.6, true)
 				-- (1.1.2: "~N with Olympus" is a sample: Layers.lua.)

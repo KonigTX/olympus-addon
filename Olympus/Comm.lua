@@ -166,6 +166,28 @@ function Comm.PeerVersion(name)
 	return version, at
 end
 
+-- (1.5.4, the layer hop across Forever's sub-realms) The realm this guildmate's last hello named
+-- (H1's second field), and when it was heard; nil when none was heard this session or his version
+-- names none ("old"). By the whole name first, else by the short name folded, the newest: on
+-- Forever the server stamps a guildmate's words with the reader's own sub-realm, never his, so his
+-- hello is the one word that says where he plays (Layers.RealmOf, Hop.SubRealmOf).
+function Comm.PeerRealm(name)
+	if type(name) ~= "string" or name == "" then return nil end
+	local full = ns.FullName(ns.Normal(name))
+	local peer, at = nil, nil
+	if peers[full] then
+		peer, at = full, peers[full]
+	else
+		local short = ns.Fold(ns.ShortName(full))
+		for candidate, t in pairs(peers) do
+			if ns.Fold(ns.ShortName(candidate)) == short and (not at or t > at) then peer, at = candidate, t end
+		end
+	end
+	local realm = peer and peerRealm[peer]
+	if type(realm) ~= "string" or realm == "old" then return nil end
+	return realm, at
+end
+
 -- Guild peers counted now, by the realm their hello named.
 local function PeerRealms(now)
 	local out = {}
