@@ -1002,7 +1002,9 @@ function Channels.Send(tier, text, now, keepMute)
 		if severe then return false, severe end
 		text = body or text
 	end
-	text = Codec.SanitizeChat(text)
+	-- (1.5.4) A link's token typed by hand ([Name](item:.../colour), Codec.UnpackLinks) is the link it
+	-- names on every other client: here too, so our own line is what the others see.
+	text = Codec.UnpackLinks(Codec.SanitizeChat(text))
 	if text == "" then
 		ns.Print(L.CHAN_USAGE:format(t.slash, Label(tier)))
 		return false, "empty"

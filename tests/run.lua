@@ -6986,6 +6986,7 @@ local function RelayWorld(me, guild)
 	local function Sent(prefix) local out = {} for _, x in ipairs(sent) do if x.msg:sub(1, #prefix) == prefix then out[#out + 1] = x end end return out end
 	return cns, Deliver, sent, heard, Pump, Sent
 end
+Harness.RelayWorld = RelayWorld -- (1.5.4: the Chat tab's link tests, tests/chat-item-links.lua)
 
 assert(loadfile(ROOT .. "tests/census-relay.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
 assert(loadfile(ROOT .. "tests/hop-forever.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
@@ -54742,6 +54743,10 @@ do
 		debug.setupvalue(send, at, was)
 		if not ok then error(err, 0) end
 	end
+
+	-- (1.5.4: a line's links on the wire and in the Chat tab, tests/chat-item-links.lua.)
+	assert(loadfile(ROOT .. "tests/chat-item-links.lua"))(ns, test, eq, { WithWindow = WithWindow, WithGamepadUI = WithGamepadUI,
+		RelayWorld = Harness.RelayWorld, Line = Line, BubbleWith = BubbleWith, T0 = T0, KeepSendGap = KeepSendGap })
 
 	-- (1.1.5, the author's call: the borders' three tiers. Lords and Captains were silver, Raiders and
 	-- Veterans of our guild bronze until then; now a guild master is bronze, and they the star.)
