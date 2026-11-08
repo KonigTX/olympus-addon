@@ -753,6 +753,62 @@ test("census groups (1.4.0): another group's numbers: a moderator's alone, two p
 	eq(beta.D.ReceiveGroupCensus("WHISPER", "First-Realm", Say(beta, { { "Launchpvp", "Alliance", 10 } })), false, "the channel only")
 end)
 
+-- 1.5.4 (the dev, 2026-11-08: "só para diferenciar, para não cruzar os dados"): each side's numbers
+-- apart. The account-wide store keeps both sides' rows (an account that plays both sees its Horde
+-- rows on the Horde), but a side's page sums and lists its own alone, says its own alone (CX1, CX2)
+-- and gives the Companion its own (tests/bridge-people.lua). Fails before: the Alliance page summed
+-- the Horde row and listed it "(Horde)", the payload carried it (a trusted account that plays both
+-- sides said its Horde look to the Alliance network), and both sides' details were said.
+test("census groups (1.5.4): the Horde apart: a side lists, sums and says its own rows alone; the other side's stay kept for its own characters", function()
+	local w = GroupWorld("Zed Own-CAMWOWUS1Realm8PvP")
+	w.ns.group, w.ns.realm = "ForeverPvP", "CAMWOWUS1Realm8PvP"
+	w.ns.Church = { IsLedgerRelay = function() return true end } -- (a Forever family's row travels from a trusted client alone)
+	w.ns.QuietPresence = function() return false end
+	local t = w.clock - 600
+	w.ns.db.groupCensus = {
+		["Alliance|ForeverPvE"] = { group = "ForeverPvE", faction = "Alliance", characters = 7000, people = 6500, guilds = 7, observed = t, src = "own" },
+		["Horde|ForeverPvE"] = { group = "ForeverPvE", faction = "Horde", characters = 3000, people = 2800, guilds = 3, observed = t, src = "own" },
+	}
+	local g = w.D.Groups()
+	eq(g.characters, 7000, "the Alliance sums its own row alone"); eq(g.people, 6500)
+	eq(#g.rows, 1); eq(g.rows[1].faction, "Alliance"); eq(g.factions.Horde, nil); eq(g.factions.Alliance.characters, 7000)
+	local said = assert(w.D.GroupCensusPayload(), "its own row is said")
+	assert(said:find("~ForeverPvE,Alliance,7000,6500,7,", 1, true), said)
+	assert(not said:find("Horde", 1, true), "the Horde row is not said on the Alliance: " .. said)
+	-- The same account on a Horde character: the reverse; the Alliance row stays kept.
+	w.ns.faction = "Horde"
+	g = w.D.Groups()
+	eq(g.characters, 3000, "the Horde sums its own row alone"); eq(g.people, 2800)
+	eq(#g.rows, 1); eq(g.rows[1].faction, "Horde"); eq(g.factions.Alliance, nil)
+	said = assert(w.D.GroupCensusPayload())
+	assert(said:find("~ForeverPvE,Horde,3000,2800,3,", 1, true), said)
+	assert(not said:find("Alliance", 1, true), "the Alliance row is not said on the Horde: " .. said)
+	eq(w.ns.db.groupCensus["Alliance|ForeverPvE"].characters, 7000, "the other side's row stays kept")
+	eq(w.ns.db.groupCensus["Horde|ForeverPvE"].characters, 3000)
+	-- The details (CX2; groups off Forever, as a Forever family's details never travel): a side's own
+	-- capsules alone, however many turns.
+	w.ns.group, w.ns.realm = "Launchpve", "Launchpve"
+	w.ns.db.groupDetails = {
+		["Alliance|Launchpvp"] = { group = "Launchpvp", faction = "Alliance", observed = w.clock, source = "own",
+			rows = { dawn = { name = "Olympus Dawn", total = 640, online = 20, avg10 = 300, observed = w.clock } } },
+		["Horde|Launchpvp"] = { group = "Launchpvp", faction = "Horde", observed = w.clock, source = "own",
+			rows = { dusk = { name = "Mudhutters Dusk", total = 400, online = 10, avg10 = 200, observed = w.clock } } },
+	}
+	local function Said(side)
+		w.sent = {}
+		for _ = 1, 3 do assert(w.D.SayGroupDetails(), side .. ": its own capsule is said") end
+		local own, other = 0, 0
+		for _, p in ipairs(w.sent) do
+			if p:find("~Launchpvp~" .. side .. "~", 1, true) then own = own + 1 else other = other + 1 end
+		end
+		eq(other, 0, side .. ": the other side's capsule is never said (" .. table.concat(w.sent, " | ") .. ")")
+		eq(own, 3)
+	end
+	Said("Horde")
+	w.ns.faction = "Alliance"
+	Said("Alliance")
+end)
+
 test("census groups (1.4.0): Data.BetaOnLaunch: what the account noted on the beta's realm group, or before 1.4.0 (no group), never applies on a launch group; everything applies on the beta's", function()
 	local D, BETA = ns.Data, "ClassicBetaPvP+ClassicBetaPvP2"
 	eq(D.BetaOnLaunch(BETA, "Launchpvp"), true, "the beta's, on a launch group")

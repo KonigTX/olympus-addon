@@ -1787,15 +1787,20 @@ end
 -- (The review of the 1.5.4 candidate.) And only the trusted client's own look (src "own"): a row it
 -- took from someone else, a forged one among them, is never said again in its trusted name (in a
 -- later session nothing heard suppressed it).
+-- (1.5.4) Our side's rows alone: an account that plays both sides said its Horde look to the
+-- Alliance network and the reverse, so each side's totals held the other's (the dev, 11-08: "só
+-- para diferenciar, para não cruzar os dados"). The other side's rows stay kept, for its own
+-- characters' client (Data.Groups).
 function Data.GroupCensusPayload(now)
 	now = now or ns.Now()
 	local trusted = GlobalTrusted(ns.me)
 	local rows, byOrigin = {}, {}
+	local side = OurFaction()
 	for _, e in pairs(GroupStore()) do
-		local row = type(e) == "table" and GroupRow(e.group, e.faction, e.characters, e.people, e.guilds, e.observed)
+		local row = type(e) == "table" and e.faction == side and GroupRow(e.group, e.faction, e.characters, e.people, e.guilds, e.observed)
 		local key = row and GroupKey(row.faction, row.group)
 		if row and (not ScopedGroup(row.group) or (trusted and e.group == row.group and e.src == "own")) and not e.unscoped
-			and not (row.group == GroupField(ns.group) and row.faction == OurFaction()) and Listed(row.group)
+			and row.group ~= GroupField(ns.group) and Listed(row.group)
 			and row.observed > (groupHeard[key] or 0) + Data.FRESH then
 			if not byOrigin[key] or GroupLater(row, byOrigin[key]) then byOrigin[key] = row end
 		end
@@ -1921,18 +1926,22 @@ function Data.Groups(s, now)
 			observed = snapshot and snapshot.observed or observed, src = snapshot and snapshot.source or "live",
 			w = snapshot and snapshot.witnesses }, true, true)
 	end
+	-- (1.5.4) Our side's rows alone, listed and summed: the other side's are kept in the account-wide
+	-- store for its own characters' client (an account that plays both sides sees its Horde rows on
+	-- the Horde), never on this side's page or in its totals.
+	local side = OurFaction()
 	local kept = {}
 	for _, e in pairs(GroupStore()) do
-		if type(e) == "table" and GroupRow(e.group, e.faction, e.characters, e.people, e.guilds, e.observed) and Listed(e.group) then kept[#kept + 1] = e end
+		if type(e) == "table" and e.faction == side and GroupRow(e.group, e.faction, e.characters, e.people, e.guilds, e.observed) and Listed(e.group) then kept[#kept + 1] = e end
 	end
 	table.sort(kept, GroupLater)
 	for _, e in ipairs(kept) do
-		local ours = GroupField(e.group) == group and e.faction == OurFaction()
+		local ours = GroupField(e.group) == group
 		Add(e, not e.unscoped and now - e.observed <= (ours and Data.TOTAL_KEEP or Data.GROUP_COUNT), ours)
 	end
 	local heard = {}
 	for _, e in pairs(GroupStore("heard")) do
-		if type(e) == "table" and GroupRow(e.group, e.faction, e.characters, e.people, e.guilds, e.observed) and Listed(e.group) then heard[#heard + 1] = e end
+		if type(e) == "table" and e.faction == side and GroupRow(e.group, e.faction, e.characters, e.people, e.guilds, e.observed) and Listed(e.group) then heard[#heard + 1] = e end
 	end
 	table.sort(heard, GroupLater)
 	for _, e in ipairs(heard) do Add(e, false, false) end
@@ -2126,8 +2135,9 @@ function Data.SayGroupDetails()
 	if not GlobalMember() then return false end
 	PruneDetails(ns.Now())
 	local keys = {}
+	-- (1.5.4: our side's capsules alone, as GroupCensusPayload says only our side's rows.)
 	for key, e in pairs(DetailStore()) do
-		if not ScopedGroup(e.group) and not e.unscoped and Listed(e.group) and not (e.group == GroupField(ns.group) and e.faction == OurFaction()) then keys[#keys + 1] = key end
+		if e.faction == OurFaction() and not ScopedGroup(e.group) and not e.unscoped and Listed(e.group) and e.group ~= GroupField(ns.group) then keys[#keys + 1] = key end
 	end
 	if #keys == 0 then return false end
 	table.sort(keys)

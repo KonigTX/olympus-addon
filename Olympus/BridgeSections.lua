@@ -354,19 +354,24 @@ OlympusBridge.RegisterSection("censusOrigins", 1, function()
 	if type(D) ~= "table" or type(D.Groups) ~= "function" then return nil end
 	local groups = D.Groups()
 	local out = { characters = groups.characters, peoplePerOrigin = groups.people, origins = {} }
+	-- (1.5.4) Our side's origins alone, as Data.Groups lists them: the other side's rows this account
+	-- keeps never leave for the Companion from this side's character.
+	local side = ns.faction == "Horde" and "Horde" or "Alliance"
 	for _, r in ipairs(groups.rows or {}) do
 		if #out.origins >= (D.GROUP_MAX or 64) * 2 then break end
-		local entry = { group = r.group, faction = r.faction, characters = r.characters, people = r.people,
-			guildCount = r.guilds, observed = r.observed, source = r.src == "heard" and "relay" or r.src, witnesses = r.w,
-			counted = r.counted, fresh = r.fresh, kind = r.kind, region = r.region,
-			canonicalGroup = r.canonicalGroup, product = r.product, era = r.era, validation = r.validation }
-		if not r.ours and D.GroupGuilds then
-			entry.guilds = D.GroupGuilds(r.group, r.faction)
-			for _, guild in ipairs(entry.guilds) do
-				if guild.source == "heard" then guild.source, guild.counted = "relay", false end
+		if r.faction == side then
+			local entry = { group = r.group, faction = r.faction, characters = r.characters, people = r.people,
+				guildCount = r.guilds, observed = r.observed, source = r.src == "heard" and "relay" or r.src, witnesses = r.w,
+				counted = r.counted, fresh = r.fresh, kind = r.kind, region = r.region,
+				canonicalGroup = r.canonicalGroup, product = r.product, era = r.era, validation = r.validation }
+			if not r.ours and D.GroupGuilds then
+				entry.guilds = D.GroupGuilds(r.group, r.faction)
+				for _, guild in ipairs(entry.guilds) do
+					if guild.source == "heard" then guild.source, guild.counted = "relay", false end
+				end
 			end
+			out.origins[#out.origins + 1] = entry
 		end
-		out.origins[#out.origins + 1] = entry
 	end
 	return out
 end, { values = 30000 })
