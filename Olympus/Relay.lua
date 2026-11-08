@@ -96,10 +96,24 @@ Relay.KING_PER_MIN = 40
 Relay.KING_BURST = 20
 local crownBucket = { tokens = 0, at = -math.huge } -- (on a relay) the crowns it may hand on now
 local budget = {} -- reporter name (lower) -> { at = when refilled, left = pieces }
+-- (The load review of the 1.5.4 candidate.) REPORTER_RATE to each reporter made the trickle grow with
+-- the reporters: 35 of them could take 140 whispers a minute and 80 of them 320, more than a relay
+-- sends in all (200), so the queue was never empty enough for a reporter's whole census snapshot
+-- (the drip waits for room; the offline load model: about one whole snapshot per reporter in 20
+-- minutes at 35 reporters, almost none at 80, and the trickle's own words gained nothing). The
+-- trickle now shares TRICKLE_PER_MIN a minute among the reporters, REPORTER_RATE at most each: an
+-- allowance refilled at its share, holding at most REPORTER_RATE and, at a smaller share, a wrapped
+-- piece (two whispers) still (the model: half again as many whole snapshots at 35 reporters and
+-- five times as many at 80, none left without one at 35; more chat lines and decisions arrive).
+Relay.TRICKLE_PER_MIN = 60
+local share = Relay.REPORTER_RATE -- each reporter's whispers a minute (ToReporters sets it)
 local function Afford(name, pieces, now)
+	local most = math.min(Relay.REPORTER_RATE, math.max(2, share))
 	local key = name:lower()
 	local b = budget[key]
-	if not b or now - b.at >= 60 then b = { at = now, left = Relay.REPORTER_RATE }; budget[key] = b end
+	if not b then b = { at = now, left = most }; budget[key] = b end
+	b.left = math.min(most, b.left + math.max(0, now - b.at) * share / 60)
+	b.at = now
 	if b.left < pieces then return false end
 	b.left = b.left - pieces
 	return true
@@ -825,6 +839,11 @@ local function ToReporters(flag, origin, body, sender)
 		return CrownToReporters(flag, origin, body, now)
 	end
 	local own = ns.FullName(origin) == ns.me
+	local fresh = 0
+	for _, r in pairs(reporters) do
+		if now - r.t <= Relay.REPORTER_FOR then fresh = fresh + 1 end
+	end
+	share = math.min(Relay.REPORTER_RATE, Relay.TRICKLE_PER_MIN / math.max(1, fresh))
 	local scoped = PresentationScope(origin, body, now)
 	local presence = flag ~= "L" and KingPresence(origin, body)
 	-- Reserve a complete, bounded snapshot from a signed origin. Charging each

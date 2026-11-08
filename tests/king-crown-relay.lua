@@ -94,6 +94,10 @@ test("1.5.4 the King's crown: a relay hands it to its reporters outside the tric
 		deliver("WHISPER", KING .. "-Realm", "RL~P~T1~Q~3~Olympus Prime")
 		pump(100)
 		eq(Crowns("~T1~Q~3~"), 3, "hidden at once")
+		-- (The load review of the 1.5.4 candidate: a reporter's allowance refills through the minute, at
+		-- his share of TRICKLE_PER_MIN, no longer all at once a minute after it was spent. So it is spent
+		-- again first, and the word not his finds none: it stays in the trickle.)
+		for i = 1, 4 do deliver("WHISPER", "Census Guy-Realm", ("RL~P~C8:%d:4:%s"):format(i, ("x"):rep(i < 4 and 200 or 10))) end
 		deliver("WHISPER", "Some Body-Realm", "RL~P~T1~P~9~Olympus Prime~1453~100~100")
 		pump(100)
 		eq(Crowns("~T1~P~9~"), 0, "a T1~P not his: in the trickle, spent")

@@ -221,3 +221,45 @@ test("relay fan-out (1.5.4): the relay's own newer word in pieces takes its wait
 		eq(otherSent, REPORTERS, "the word of another kind keeps its own place")
 	end)
 end)
+
+-- The load review of the 1.5.4 candidate: each reporter's trickle of other clients' words
+-- (REPORTER_RATE a minute) grew with the reporters, 320 whispers a minute at 80 of them against the
+-- relay's 200 in all, and the census snapshots never found room in its queue. The reporters now
+-- share TRICKLE_PER_MIN a minute, REPORTER_RATE at most each. Fails before (each of 60 reporters
+-- took REPORTER_RATE a minute).
+test("relay trickle (1.5.4): many reporters share TRICKLE_PER_MIN a minute of other clients' words, the same share each; a few still get REPORTER_RATE each", function()
+	Relayed(function(R)
+		local function Trial(reporters, minutes)
+			R.Relay.Reset()
+			for i = 1, reporters do
+				R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i))
+			end
+			local got, raw = {}, R.Comm.Whisper
+			R.Comm.Whisper = function(target, msg, ...)
+				if tostring(target):find("^Rep Number") and tostring(msg):find("^RM~P~Some Client") then got[target] = (got[target] or 0) + 1 end
+				return raw(target, msg, ...)
+			end
+			for second = 1, minutes * 60 do
+				R.clock = R.clock + 1
+				R.Relay.HandleIn("WHISPER", "Some Client-CAMWOWUS2Realm3PvE", ("RL~P~X1~word %d"):format(second))
+			end
+			R.Comm.Whisper = raw
+			local total, least, most = 0, math.huge, 0
+			for i = 1, reporters do
+				local n = got[("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i)] or 0
+				total, least, most = total + n, math.min(least, n), math.max(most, n)
+			end
+			return total, least, most
+		end
+		local rate, all = R.Relay.REPORTER_RATE, R.Relay.TRICKLE_PER_MIN
+		-- Many: the share is TRICKLE_PER_MIN among them (one whisper each a minute here), plus the
+		-- allowance each starts with (a wrapped piece, two whispers).
+		local total, least, most = Trial(60, 5)
+		eq(total <= all * 5 + 60 * 2, true, ("60 reporters in 5 minutes: %d whispers, at most %d"):format(total, all * 5 + 60 * 2))
+		eq(total >= all * 5 * 0.9, true, ("and the share is spent: %d whispers"):format(total))
+		eq(most - least <= 1, true, ("the same share each: %d to %d"):format(least, most))
+		-- A few: REPORTER_RATE a minute each, as before.
+		total, least, most = Trial(10, 5)
+		eq(least >= rate * 5 and most <= rate * 6, true, ("10 reporters: %d to %d whispers each in 5 minutes"):format(least, most))
+	end)
+end)
