@@ -148,7 +148,9 @@ function Relay.Stats()
 	local relay, sure = Relay.Pick()
 	return { out = stats.out, forwarded = stats.forwarded, delivered = stats.delivered, dropped = stats.dropped,
 		dead = stats.dead, reporters = n, relay = relay, sure = sure == true, pending = #pending, on = Relay.On(),
-		across = stats.across or 0, kept = stats.kept or 0, trickled = stats.trickled or 0 }
+		across = stats.across or 0, kept = stats.kept or 0, trickled = stats.trickled or 0,
+		-- (The review of the 1.5.4 candidate: counted below, returned for /oly status, Diagnostics.lua.)
+		verifyAcross = stats.verifyAcross or 0, direct = stats.direct or 0 }
 end
 
 local function Now() return ns.Now() end
@@ -994,17 +996,20 @@ end
 local function ToRelays(flag, origin, body)
 	local now = Now()
 	local mine, from = ns.ShortName(ns.me or ""):lower(), ns.ShortName(origin):lower()
-	local pieces
+	local pieces, n = nil, 0
 	for _, name in ipairs(Relay.Names(false)) do
 		local key = name:lower()
 		if key ~= mine and key ~= from and (offline[key] or 0) <= now then
 			pieces = pieces or Envelope("RW", "RW~" .. flag .. "~" .. origin .. "~" .. body)
 			stats.verifyAcross = (stats.verifyAcross or 0) + 1
+			n = n + 1
 			Quiet(name)
 			if #pieces == 1 then ns.Comm.Whisper(name, pieces[1], nil, true, false)
 			else ns.Comm.SendBatch("WHISPER", pieces, nil, name, true) end
 		end
 	end
+	-- (The review of the 1.5.4 candidate.) A line for /oly bug: that it crossed, and to how many.
+	if pieces then ns.Log("relay: %s's word (%s) across to %d relays", tostring(origin), body:sub(1, 6), n) end
 end
 
 -- (1.5.4) A verifier's answer to the one client that asked, never to every reporter: a whole store
@@ -1128,6 +1133,8 @@ function Relay.HandleVerify(dist, sender, text)
 		return false
 	end
 	if Remembered(origin, body) then return true end
+	-- (The review of the 1.5.4 candidate.) A line for /oly bug: what came across, from which relay.
+	ns.Log("relay: RW %s from %s, origin %s", body:sub(1, 6), tostring(sender), tostring(origin))
 	if Decision(body) then
 		if not Signed(origin) then stats.dropped = stats.dropped + 1 return false end
 		ToReporters(flag, origin, body, sender) -- (heard here too)

@@ -388,6 +388,23 @@ local function ChannelMembers(name)
 	return ok and n or nil
 end
 
+-- (The review of the 1.5.4 candidate.) The relay's counters (Relay.Stats) and verification's
+-- (Verify.Stats) for /oly status and /oly bug. A relay's log turns the lines /oly bug prints over in
+-- seconds (one line per piece it carries), so what crossed to the other relays (RW), what was
+-- answered direct, and what was asked, answered, unsent (a full queue) or refused (an untrusted
+-- sender's word) is counted here. Read at the call: Relay.lua and Verify.lua load after this file.
+local function RelayLine()
+	local R, V = ns.Relay, ns.Verify
+	if type(R) ~= "table" or type(R.Stats) ~= "function" then return "not loaded" end
+	local s = R.Stats()
+	local v = type(V) == "table" and type(V.Stats) == "function" and V.Stats() or {}
+	local function N(x) return tonumber(x) or 0 end
+	return ("%s  |  out %d  forwarded %d  delivered %d  dropped %d  dead %d  kept %d  trickled %d  reporters %d  pending %d  |  verify across %d  direct %d  asked %d  answered %d  unsent %d  untrusted %d  bad %d"):format(
+		not s.on and "off" or (tostring(s.relay or "none") .. (s.sure and "" or " (unanswered)")),
+		N(s.out), N(s.forwarded), N(s.delivered), N(s.dropped), N(s.dead), N(s.kept), N(s.trickled), N(s.reporters), N(s.pending),
+		N(s.verifyAcross), N(s.direct), N(v.asked), N(v.answered), N(v.unsent), N(v.refused), N(v.bad))
+end
+
 function ns.StatusText()
 	local lines = {}
 	local function add(fmt, ...) lines[#lines + 1] = fmt:format(...) end
@@ -530,6 +547,7 @@ function ns.StatusText()
 	for _ in pairs(ns.rdb.seen or {}) do seen = seen + 1 end
 	add("who: %s  |  guilds seen=%d", ns.Who and ns.Who.StatusLine() or "not loaded", seen)
 	add("hop: %s", ns.Hop and ns.Hop.StatusLine and ns.Hop.StatusLine() or "not loaded")
+	add("relay: %s", RelayLine()) -- (the review of the 1.5.4 candidate: RelayLine above)
 	-- (1.0.0) The King as this client knows him: why his layer can or can't be asked for.
 	add("king: %s", ns.Hop and ns.Hop.KingStatusLine and ns.Hop.KingStatusLine() or "not loaded")
 	-- (1.0.0) The King's Steward as the signed titles list names him here, and the Hands held.
