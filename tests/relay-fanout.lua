@@ -228,6 +228,58 @@ test("relay fan-out (1.5.4): a snapshot batch pushed out of the queue while a ne
 	end)
 end)
 
+-- The review of the 1.5.4 candidate: a batch waits a whole round of reporters, and Drip sent it to the
+-- name DripSet stored without asking whether his guild still had that reporter: one it had replaced
+-- (an older client's election churn, a logout) was sent up to 34 wasted whispers, and when he had
+-- logged off the server's "No player named" line showed in the relay's chat, which QuietLine hides
+-- for current reporters alone. A batch for a name no guild has as its reporter any more is left out.
+-- Fails before (the whole batch goes to the replaced name).
+test("relay fan-out (1.5.4): a drip batch waiting for a reporter his guild has since replaced is not sent to him; the other guild's reporter still gets the snapshot", function()
+	Relayed(function(R, sent, Run)
+		local C = R.Comm
+		local old, new, other = "Rep Alpha-CAMWOWUS2Realm7PvE", "Rep Alphanew-CAMWOWUS2Realm7PvE", "Rep Beta-CAMWOWUS2Realm7PvE"
+		R.Relay.HandleIn("WHISPER", old, "RL~P~RR~Guild Alpha")
+		R.Relay.HandleIn("WHISPER", other, "RL~P~RR~Guild Beta")
+		-- The queue nearly full with whispers to somebody else: both batches wait in the drip.
+		for i = 1, C.MAX_QUEUE - 4 do C.Whisper("Busy Target-CAMWOWUS2Realm7PvE", "X1~busy " .. i, nil, false, false) end
+		local snapshot = "CG~2~S~1~ForeverPvE~Alliance~" .. ("Guild Row,640,40,300,1;"):rep(70)
+		for _, p in ipairs(R.Codec.Chunk(snapshot, "55")) do R.Relay.HandleIn("WHISPER", R.me, "RL~P~" .. p) end
+		eq(C.QueueSize(), C.MAX_QUEUE - 4, "no batch was handed to the queue yet")
+		-- Guild Alpha's new reporter registers before the old one's turn comes.
+		R.Relay.HandleIn("WHISPER", new, "RL~P~RR~Guild Alpha")
+		Run(500)
+		eq(C.QueueSize(), 0, "everything went out")
+		local toOld = 0
+		for _, s in ipairs(sent) do if s.target == old or s.target == ns.ShortName(old) then toOld = toOld + 1 end end
+		eq(toOld, 0, "nothing goes to the reporter his guild replaced")
+		eq(Assembled(R, sent, "Rep Beta-")[snapshot], 1, "the other guild's reporter gets the whole snapshot once")
+	end)
+end)
+
+test("relay fan-out (1.5.4): a drip batch waiting for a reporter whose registration lapsed is not sent to him", function()
+	Relayed(function(R, sent, Run)
+		local C = R.Comm
+		local old, other = "Rep Alpha-CAMWOWUS2Realm7PvE", "Rep Beta-CAMWOWUS2Realm7PvE"
+		R.Relay.HandleIn("WHISPER", old, "RL~P~RR~Guild Alpha")
+		R.Relay.HandleIn("WHISPER", other, "RL~P~RR~Guild Beta")
+		for i = 1, C.MAX_QUEUE - 4 do C.Whisper("Busy Target-CAMWOWUS2Realm7PvE", "X1~busy " .. i, nil, false, false) end
+		local snapshot = "CG~2~S~1~ForeverPvE~Alliance~" .. ("Guild Row,640,40,300,1;"):rep(70)
+		for _, p in ipairs(R.Codec.Chunk(snapshot, "55")) do R.Relay.HandleIn("WHISPER", R.me, "RL~P~" .. p) end
+		eq(C.QueueSize(), C.MAX_QUEUE - 4, "no batch was handed to the queue yet")
+		-- Alpha never registers again; Beta does; another client's word prunes Alpha (ToReporters).
+		R.clock = R.clock + R.Relay.REPORTER_FOR + 1
+		R.Relay.HandleIn("WHISPER", other, "RL~P~RR~Guild Beta")
+		R.Relay.HandleIn("WHISPER", "Some Client-CAMWOWUS2Realm7PvE", "RL~P~X1~a word")
+		eq(R.Relay.Stats().reporters, 1, "Alpha's lapsed registration is gone")
+		Run(500)
+		eq(C.QueueSize(), 0, "everything went out")
+		local toOld = 0
+		for _, s in ipairs(sent) do if s.target == old or s.target == ns.ShortName(old) then toOld = toOld + 1 end end
+		eq(toOld, 0, "nothing goes to the reporter whose registration lapsed")
+		eq(Assembled(R, sent, "Rep Beta-")[snapshot], 1, "the fresh reporter gets the whole snapshot once")
+	end)
+end)
+
 -- The review of the 1.5.4 candidate: the relay's own repeats in pieces (the King's Hands and the
 -- Treasury's words every 300 s, a ranking's repeat) were keyed by their message id, so each repeat
 -- waited in the drip as one more batch behind the rest: on a busy relay the drip grew without end

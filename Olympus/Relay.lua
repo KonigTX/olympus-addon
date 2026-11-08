@@ -684,6 +684,14 @@ local function CollectSet(origin, body, now)
 	return s.pieces
 end
 
+-- (The review of the 1.5.4 candidate.) Whether `name` is some guild's reporter here now (Drip).
+local function StillReporter(name)
+	for _, r in pairs(reporters) do
+		if r.name == name then return true end
+	end
+	return false
+end
+
 -- Sends the next waiting batch, unless one is still in flight. Called again when it is done.
 local function Drip()
 	if dripping then return end
@@ -691,39 +699,47 @@ local function Drip()
 	dripping, dripSince = true, nil
 	while not dripSince and drip[1] do
 		local d = drip[1]
+		-- (The review of the 1.5.4 candidate.) A batch for a name that is no guild's reporter here any
+		-- more (his guild registered another while it waited, HandleIn's RR, or his registration lapsed
+		-- and the next word pruned it, ToReporters) is left out and the next one goes: its whispers
+		-- were wasted, and to a reporter logged off they drew the server's "No player named" line,
+		-- which QuietLine hides for current reporters alone, the Accord's window opened here long past.
+		if not StillReporter(d.name) then
+			table.remove(drip, 1)
 		-- A batch waits for room in the queue: forced in, it would push out the words already
 		-- waiting there (a verifier's approval among them). Tried again in a second.
-		if ns.Comm.QueueRoom() < #d.whispers then
+		elseif ns.Comm.QueueRoom() < #d.whispers then
 			dripSince = Now()
 			ns.After(1, "relay drip", function() dripSince = nil; Drip() end)
 			break
-		end
-		table.remove(drip, 1)
-		Quiet(d.name) -- (a reporter gone offline since: the server's line out of the chat)
-		-- (The review of the 1.5.4 candidate.) Its time counts from its first turn, not from when it
-		-- was queued: a batch waits a whole round of reporters (more than SET_WAIT), so one pushed
-		-- out before it began was never put back and its reporter waited another round. Put back
-		-- for SET_WAIT after its first turn, never longer (a retry keeps this time).
-		if not d.tried then stats.forwarded, d.tried, d.t = stats.forwarded + 1, true, Now() end
-		dripSince = Now()
-		-- done runs once, whatever happens. A batch the queue had no room for, or pushed out for
-		-- newer words, goes back to the front while it is fresh; otherwise the next batch goes.
-		ns.Comm.SendBatch("WHISPER", d.whispers, nil, d.name, false, function(sent, why)
-			if not sent and (why == "full" or why == "dropped") and Now() - d.t < Relay.SET_WAIT then
-				-- (The review of the 1.5.4 candidate.) A newer copy of his word queued while this one
-				-- was in flight (DripSet found no waiting entry to replace and appended it) goes in
-				-- this one's place: he was sent the superseded snapshot now and the newest a whole
-				-- round of reporters later.
-				for i, w in ipairs(drip) do
-					if w.name == d.name and w.word == d.word then d.whispers = w.whispers; table.remove(drip, i); break end
+		else
+			table.remove(drip, 1)
+			Quiet(d.name) -- (a reporter gone offline since: the server's line out of the chat)
+			-- (The review of the 1.5.4 candidate.) Its time counts from its first turn, not from when it
+			-- was queued: a batch waits a whole round of reporters (more than SET_WAIT), so one pushed
+			-- out before it began was never put back and its reporter waited another round. Put back
+			-- for SET_WAIT after its first turn, never longer (a retry keeps this time).
+			if not d.tried then stats.forwarded, d.tried, d.t = stats.forwarded + 1, true, Now() end
+			dripSince = Now()
+			-- done runs once, whatever happens. A batch the queue had no room for, or pushed out for
+			-- newer words, goes back to the front while it is fresh; otherwise the next batch goes.
+			ns.Comm.SendBatch("WHISPER", d.whispers, nil, d.name, false, function(sent, why)
+				if not sent and (why == "full" or why == "dropped") and Now() - d.t < Relay.SET_WAIT then
+					-- (The review of the 1.5.4 candidate.) A newer copy of his word queued while this one
+					-- was in flight (DripSet found no waiting entry to replace and appended it) goes in
+					-- this one's place: he was sent the superseded snapshot now and the newest a whole
+					-- round of reporters later.
+					for i, w in ipairs(drip) do
+						if w.name == d.name and w.word == d.word then d.whispers = w.whispers; table.remove(drip, i); break end
+					end
+					table.insert(drip, 1, d)
+					ns.After(1, "relay drip", function() dripSince = nil; Drip() end)
+					return
 				end
-				table.insert(drip, 1, d)
-				ns.After(1, "relay drip", function() dripSince = nil; Drip() end)
-				return
-			end
-			dripSince = nil
-			Drip()
-		end)
+				dripSince = nil
+				Drip()
+			end)
+		end
 	end
 	dripping = false
 end
