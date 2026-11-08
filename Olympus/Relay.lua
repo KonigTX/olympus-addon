@@ -110,8 +110,11 @@ local budget = {} -- reporter name (lower) -> { at = when refilled, left = piece
 -- look in one chunk or any full piece, never found room beside the short ones.)
 Relay.TRICKLE_PER_MIN = 60
 local share = Relay.REPORTER_RATE -- each reporter's whispers a minute (ToReporters sets it)
-local function Afford(name, pieces, now)
+local function Afford(name, pieces, now, need)
 	local most = math.min(Relay.REPORTER_RATE, math.max(2, share))
+	-- (The review of the candidate.) A piece of a word that needs more whispers than an allowance
+	-- holds never reaches the reporter whole: it spends nothing (need: the least the word takes).
+	if need and need > most then return false end
 	local key = name:lower()
 	local b = budget[key]
 	local age = b and now - b.at
@@ -857,6 +860,19 @@ local function ToReporters(flag, origin, body, sender)
 	-- A trickle-exempt word in pieces goes to the other reporters as a whole set (above).
 	local set, batches
 	if (own or snapshot) and flag ~= "L" then set = CollectSet(origin, body, now) end
+	-- (The review of the candidate.) Another client's word in pieces passes the trickle whole or not
+	-- at all: the pieces before its last are full, and a full piece with its RM label is one or two
+	-- whispers. The least it takes, for Afford: a census report in two pieces (385 bytes) is three
+	-- whispers, which an allowance of two (more than 20 reporters) never holds.
+	local need
+	do
+		local id, n = body:match("^C(%w+):%d+:(%d+):")
+		n = tonumber(n)
+		if n and n >= 2 then
+			local label = #("RM~" .. flag .. "~" .. origin .. "~" .. ("C%s:1:%d:"):format(id, n))
+			need = (n - 1) * (label + ns.Codec.CHUNK > 255 and 2 or 1) + 1
+		end
+	end
 	local pieces
 	for g, r in pairs(reporters) do
 		if now - r.t > Relay.REPORTER_FOR then
@@ -886,7 +902,7 @@ local function ToReporters(flag, origin, body, sender)
 			pieces = pieces or Envelope("RM", "RM~" .. flag .. "~" .. origin .. "~" .. body)
 			-- (1.5.0) Another client's word that is not a chat line: within the reporter's trickle
 			-- (REPORTER_RATE) or not sent to him; the relay's own words and chat lines always.
-			if flag == "L" or own or snapshot or presence or KingLayer(origin, body, r.name, now) or Afford(r.name, #pieces, now) then
+			if flag == "L" or own or snapshot or presence or KingLayer(origin, body, r.name, now) or Afford(r.name, #pieces, now, need) then
 				stats.forwarded = stats.forwarded + 1
 				Quiet(r.name) -- (a reporter gone offline since: the server's line out of the chat)
 				-- A word that is not a chat line is keyed by its origin, kind and reporter: a newer

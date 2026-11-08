@@ -343,3 +343,55 @@ test("relay trickle (1.5.4): a clock set back starts a reporter's new allowance"
 		eq(got, R.Relay.REPORTER_RATE + 1, "a new allowance after the clock went back")
 	end)
 end)
+
+-- The review of the 1.5.4 candidate: another client's word in pieces passes the trickle whole or not
+-- at all. With 35 reporters an allowance holds two whispers; a census report in two pieces (385 bytes:
+-- its full first piece and its RM label are two whispers, its last one more) can never reach a reporter
+-- whole, yet its first piece took the allowance and the single words after it went to nobody. A last
+-- piece alone (its first ones refused before) took a single word's place the same way. Fails before.
+test("relay trickle (1.5.4): a word in pieces that can never pass whole spends nothing, and the single words after it still pass", function()
+	Relayed(function(R)
+		R.Relay.Reset()
+		for i = 1, 35 do
+			R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i))
+		end
+		R.clock = R.clock + 120 -- (every allowance full)
+		local pieces, words, raw, rawBatch = 0, {}, R.Comm.Whisper, R.Comm.SendBatch
+		local function Note(msg)
+			msg = tostring(msg)
+			if msg:find("^RM~P~Census Guy%-") then pieces = pieces + 1 end
+			local w = msg:match("^RM~P~Some Client%-[^~]+~X2~(%d)~")
+			if w then words[w] = (words[w] or 0) + 1 end
+		end
+		local function Watch()
+			R.Comm.Whisper = function(target, msg, ...) Note(msg); return raw(target, msg, ...) end
+			R.Comm.SendBatch = function(dist, list, key, target, ...)
+				-- (a wrapped piece goes as the relay's own envelope in pieces: the first carries the label)
+				if dist == "WHISPER" and type(list) == "table" and list[1] then Note(tostring(list[1]):match("^C%w+:1:%d+:(.*)$")) end
+				return rawBatch(dist, list, key, target, ...)
+			end
+		end
+		Watch()
+		local report = R.Codec.Chunk("R2~" .. ("r"):rep(382), "7")
+		eq(#report, 2, "a 385-byte census report is two pieces")
+		for _, p in ipairs(report) do R.Relay.HandleIn("WHISPER", "Census Guy-CAMWOWUS2Realm3PvE", "RL~P~" .. p) end
+		R.Relay.HandleIn("WHISPER", "Census Guy-CAMWOWUS2Realm3PvE", "RL~P~C8:3:3:" .. ("x"):rep(40))
+		R.Relay.HandleIn("WHISPER", "Some Client-CAMWOWUS2Realm3PvE", "RL~P~X2~1~a word")
+		R.Relay.HandleIn("WHISPER", "Some Client-CAMWOWUS2Realm3PvE", "RL~P~X2~2~a word")
+		R.Comm.Whisper, R.Comm.SendBatch = raw, rawBatch
+		eq(pieces, 0, "no piece of a word that can never pass whole is sent")
+		eq(words["1"] or 0, 35, "the first single word reaches every reporter")
+		eq(words["2"] or 0, 35, "and so does the second")
+		-- A few reporters (an allowance of REPORTER_RATE): the same report still passes whole.
+		R.Relay.Reset()
+		for i = 1, 10 do
+			R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i))
+		end
+		R.clock = R.clock + 120
+		pieces = 0
+		Watch()
+		for _, p in ipairs(R.Codec.Chunk("R2~" .. ("s"):rep(382), "9")) do R.Relay.HandleIn("WHISPER", "Census Guy-CAMWOWUS2Realm3PvE", "RL~P~" .. p) end
+		R.Comm.Whisper, R.Comm.SendBatch = raw, rawBatch
+		eq(pieces, 20, "with 10 reporters both pieces of the report go to each")
+	end)
+end)
