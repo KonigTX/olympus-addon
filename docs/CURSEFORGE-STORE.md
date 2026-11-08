@@ -29,10 +29,9 @@ master and the officers of the Horde guild named exactly "Olympus", if there is 
 
 ## Recent versions
 
+- **1.5.4**: On Forever the census reaches every guild: a relay sends each reporter its snapshot whole, one reporter at a time and wrapped once (XOData, PRs #81 and #82), keeps census reports in pieces, sends an integration's presentation to its own guild alone and keeps one guild per reporter; a guild elects one reporter across sub-realms and lanes; the channel-text fallback the game blocked is gone. Guild verifications cross relays (RW) and each ask is answered to the client that asked. A trusted client's other-family totals count again. The signed King's crown, presence and layer reach every relay's guilds, and he shows online from his guild's report. Layer-hop asks go to the asker's own guild over GUILD. Dues History skips a Treasurer known offline (ArithmeticLogic, PR #86).
 - **1.5.3**: Temporarily pause overdue verification notices for guild members. Guild master reminders, verification deadlines, approvals and High Council follow-up continue. Existing clients need this update to stop their local notice.
 - **1.5.2**: While no relay of the High Council answers, a guild's census report goes as its reporter's own text in the joined channel (which Forever delivers to everyone in it) and everyone takes it from there, so the census keeps moving in a realm family whose relays are offline; a relay's copy later is the same report again. The dev's second PvP character is a launch pin of that family. A family's store also drops another family's counts-only rows at open, a plain Forever realm's group row counts as its family's server (never "another" beside it), and its ruleset is its family's.
-- **1.3.3**: Deliberate site export: an optional Site Aggregate folder writes a masked own-guild count for the
-  Olympus website on /oly site export and /reload, never uploads, and empties at the next logout or reload.
 
 Every version's notes are in the [GitHub releases](https://github.com/dnl-gentile/olympus-addon/releases). This page is the short one for CurseForge: the [README](https://github.com/dnl-gentile/olympus-addon#olympus) has every section in full.
 

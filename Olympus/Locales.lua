@@ -209,6 +209,24 @@ Stored or relayed numbers are observations, not a promise that every guild is on
 Please close and reopen the game after updating. Thank you for the reports and for helping test.
 
 Long live the King. Long live Olympus.]==]
+-- 1.5.4 (on Forever the census reaches every guild: a relay's snapshot whole to each reporter, guild
+-- verification across relays, the signed King's crown, presence and layer to every relay's guilds).
+L.LETTER_1_5_4_TITLE, L.LETTER_1_5_4_HEAD, L.LETTER_1_5_4_SIGNED, L.LETTER_1_5_4_LINK = "The census reaches every guild", "The census reaches every guild", L.LETTER_1_5_2_SIGNED, L.LETTER_1_5_2_LINK
+L.LETTER_1_5_4 = [==[Your Majesty. Soldiers of Olympus.
+
+Version 1.5.4 fixes how Olympus travels between guilds on Forever:
+
+- {guild} The census: the relays now send each guild the whole picture at once instead of losing it on the way, so you should see every guild that reports, not only your own. It works once the relay characters (the High Council's, the King's and mine) run this version.
+- {crown} The King: his crown on the map and his online status now reach every guild, whichever guild he plays in. His layer reaches you too, so you can ask to join it.
+- {watch} Guild verifications reach every relay and every guild, and a client that missed an approval gets it back when it asks.
+- {team} Guildmates on other Forever servers are recognised: their Olympus chat is no longer dropped, and their names show plain.
+- {star} PvP and PvE totals reported by the High Council now count for everyone, not only for those who played there.
+- {guild} Layer hop: your ask goes straight to your own guild, so a guildmate on the layer you want can invite you.
+- {team} When no relay answers, the census waits for one instead of trying to post in the channel, which the game blocked.
+
+Please close and reopen the game after updating. Thank you to everyone who measured and reported the census problems on GitHub, CurseForge and Discord.
+
+Long live the King. Long live Olympus.]==]
 L.LETTER_1_3_3_TITLE = "Your guild on the website"
 L.LETTER_1_3_3 = [==[Version 1.3.3.
 
@@ -330,6 +348,22 @@ A versão 1.5.2 se concentra no censo, nos rankings e nos problemas que vocês r
 Números armazenados ou retransmitidos são observações, não uma promessa de que todas as guildas estão online ou já foram contadas. A página de detalhes mostra o que sabemos e quando foi observado.
 
 Feche e reabra o jogo depois de atualizar. Obrigado pelos relatos e pela ajuda nos testes.
+
+Vida longa ao Rei. Vida longa ao Olympus.]==]
+	L.LETTER_1_5_4_TITLE, L.LETTER_1_5_4_HEAD, L.LETTER_1_5_4_SIGNED, L.LETTER_1_5_4_LINK = "O censo chega a todas as guildas", "O censo chega a todas as guildas", L.LETTER_1_5_2_SIGNED, L.LETTER_1_5_2_LINK
+	L.LETTER_1_5_4 = [==[Sua Majestade. Soldados do Olympus.
+
+A versão 1.5.4 corrige como o Olympus circula entre as guildas no Forever:
+
+- {guild} O censo: os relays agora mandam a cada guilda o quadro inteiro de uma vez, em vez de perdê-lo no caminho, então você deve ver todas as guildas que reportam, não só a sua. Funciona quando os personagens relay (os do High Council, o do Rei e os meus) estiverem nesta versão.
+- {crown} O Rei: a coroa no mapa e o status online dele agora chegam a todas as guildas, seja qual for a guilda em que ele joga. A camada dele também chega, para você pedir para entrar nela.
+- {watch} As verificações de guilda chegam a todos os relays e a todas as guildas, e quem perdeu uma aprovação a recebe de volta quando pede.
+- {team} Colegas de guilda em outros servidores do Forever são reconhecidos: o chat do Olympus deles não é mais descartado, e os nomes aparecem sem o servidor.
+- {star} Os totais de PvP e PvE informados pelo High Council agora contam para todos, não só para quem jogou lá.
+- {guild} Layer hop: o seu pedido vai direto para a sua guilda, para que um colega na camada que você quer possa te convidar.
+- {team} Quando nenhum relay responde, o censo espera por um em vez de tentar postar no canal, o que o jogo bloqueava.
+
+Feche e abra o jogo de novo depois de atualizar. Obrigado a todos que mediram e relataram os problemas do censo no GitHub, no CurseForge e no Discord.
 
 Vida longa ao Rei. Vida longa ao Olympus.]==]
 	L.LETTER_1_3_3_TITLE = "Sua guilda no site"
