@@ -148,7 +148,9 @@ function Relay.Stats()
 	local relay, sure = Relay.Pick()
 	return { out = stats.out, forwarded = stats.forwarded, delivered = stats.delivered, dropped = stats.dropped,
 		dead = stats.dead, reporters = n, relay = relay, sure = sure == true, pending = #pending, on = Relay.On(),
-		across = stats.across or 0, kept = stats.kept or 0, trickled = stats.trickled or 0 }
+		across = stats.across or 0, kept = stats.kept or 0, trickled = stats.trickled or 0,
+		-- (1.5.4) Lists (LS) admitted to the drip, ones that took a waiting one's place, ones refused.
+		lists = stats.lists or 0, listsReplaced = stats.listsReplaced or 0, listsRefused = stats.listsRefused or 0 }
 end
 
 local function Now() return ns.Now() end
@@ -664,6 +666,93 @@ local function CollectSet(origin, body, now)
 	return s.pieces
 end
 
+-- (1.5.4) A list (LS, Comm.SendList: the Church's public rows first) in pieces from any origin is
+-- collected whole too and handed to each reporter whole, keyed by its origin and kind, so a newer
+-- list takes a waiting one's place. Piece by piece it passed the trickle whole or not at all, which
+-- with many reporters is not at all (need, in ToReporters), and the Church's rows, one word each
+-- before, reached a reporter one to four of twenty-two. Bounded, so a member cannot fill the drip or
+-- starve the census snapshots: from one origin, one list of a kind each LIST_EVERY (a second within
+-- it only takes the place of batches of the first still waiting: a reporter already served keeps
+-- the first, and with none waiting it is refused); LIST_MAX_PIECES pieces at most (2.2 KB: the
+-- Church's 22 rows with the longest names Forever gives take nine); LIST_OPEN sets collecting at
+-- once; and from everyone together, the whispers the drip will spend on a list (a piece and its
+-- label to each reporter): LIST_RATE a minute for each reporter the relay holds (the Church's list
+-- every half hour is 0.2), LIST_BURST for each at once (the largest list, wrapped, to everyone once).
+-- A count of lists a minute bounded nothing: one list to 35 reporters is 175 whispers, and the
+-- offline load model gave the census half its snapshots under a flood of one list a minute from
+-- three characters. Past any bound the pieces go through the trickle as any client's word in
+-- pieces. A list in one piece is one word of the trickle, keyed by its kind (ListKind). Admitted at
+-- its first piece: a set that never completes spent its place (SET_WAIT), a late first piece opens
+-- nothing. The relay's own lists and a signed snapshot keep their own way (own, snapshot:
+-- unbounded, as before).
+Relay.LIST_EVERY = 120
+Relay.LIST_MAX_PIECES = 10
+Relay.LIST_OPEN = 16
+Relay.LIST_RATE = 0.25
+Relay.LIST_BURST = 11 -- (LIST_MAX_PIECES + 1)
+local listAdmitted = {} -- origin (short, lower) .. " " .. kind -> when its last list was admitted
+local listBucket = { tokens = math.huge, at = nil } -- the whispers lists may spend now (full at the start)
+local listSets = {}     -- origin#id -> { kind, replace, t }: the list sets being collected
+-- "LS~<kind>" for a list, whole or its first piece, else nil: the queue's and the drip's key.
+local function ListKind(text)
+	local kind = text:match("^LS~1~(%u%w)~") or text:match("^C%w+:1:1:LS~1~(%u%w)~")
+	return kind and ("LS~" .. kind) or nil
+end
+-- Whether a batch keyed `word` (and a batch number) waits in the drip.
+local function DripWaiting(word)
+	for _, d in ipairs(drip) do
+		if d.word:sub(1, #word + 1) == word .. " " then return true end
+	end
+	return false
+end
+-- The list set this piece belongs to, admitted here or now ({ kind, replace }); nil when it is not a
+-- list's piece or is not admitted (then the trickle, as before). reporters: how many it goes to.
+local function ListSet(origin, body, now, reporters)
+	local id, i, n, head = body:match("^C(%w+):(%d+):(%d+):(.*)$")
+	i, n = tonumber(i), tonumber(n)
+	if not id or n < 2 or n > ns.Codec.MAX_CHUNKS then return nil end
+	local open = 0
+	for key, s in pairs(listSets) do
+		if now - s.t > Relay.SET_WAIT then listSets[key] = nil else open = open + 1 end
+	end
+	local key = Lower(origin) .. "#" .. id
+	local s = listSets[key]
+	if s then return s end
+	if i ~= 1 then return nil end
+	local kind = head:match("^LS~1~(%u%w)~")
+	if not kind then return nil end
+	if n > Relay.LIST_MAX_PIECES or open >= Relay.LIST_OPEN then
+		stats.listsRefused = (stats.listsRefused or 0) + 1
+		return nil
+	end
+	local okey = Lower(ns.ShortName(origin)) .. " " .. kind
+	local replace = now - (listAdmitted[okey] or -math.huge) < Relay.LIST_EVERY
+	if replace then
+		if not DripWaiting(Lower(origin) .. " LS~" .. kind) then
+			stats.listsRefused = (stats.listsRefused or 0) + 1
+			return nil
+		end
+		stats.listsReplaced = (stats.listsReplaced or 0) + 1
+	else
+		-- (The whispers it will take: the list wrapped once is a whisper more than its pieces, to
+		-- each reporter. A clock set back refills nothing.)
+		local b, cost = listBucket, (n + 1) * (reporters or 0)
+		local passed = b.at and math.max(0, now - b.at) or 0
+		b.tokens = math.min(Relay.LIST_BURST * (reporters or 0), b.tokens + passed * Relay.LIST_RATE * (reporters or 0) / 60)
+		b.at = now
+		if b.tokens < cost then
+			stats.listsRefused = (stats.listsRefused or 0) + 1
+			return nil
+		end
+		b.tokens = b.tokens - cost
+		listAdmitted[okey] = now
+		stats.lists = (stats.lists or 0) + 1
+	end
+	s = { kind = kind, replace = replace, t = now }
+	listSets[key] = s
+	return s
+end
+
 -- Sends the next waiting batch, unless one is still in flight. Called again when it is done.
 local function Drip()
 	if dripping then return end
@@ -702,14 +791,17 @@ local function Drip()
 end
 
 -- Queues a whole set for one reporter. A newer copy of the same word for him replaces one still
--- waiting, so a busy relay sends the latest snapshot, never a backlog.
-local function DripSet(name, word, whispers)
+-- waiting, so a busy relay sends the latest snapshot, never a backlog. (1.5.4) waitingOnly: a copy
+-- that may only take a waiting one's place (a list within its origin's LIST_EVERY, ListSet above)
+-- is not queued where none waits.
+local function DripSet(name, word, whispers, waitingOnly)
 	for _, d in ipairs(drip) do
 		if d.name == name and d.word == word then
 			d.whispers = whispers
 			return Drip()
 		end
 	end
+	if waitingOnly then return end
 	drip[#drip + 1] = { name = name, word = word, whispers = whispers, t = Now() }
 	Drip()
 end
@@ -881,8 +973,10 @@ local function ToReporters(flag, origin, body, sender)
 	-- Comm's queue/throughput limits; malformed or unreserved parts use the trickle.
 	local snapshot = SnapshotPart(origin, body, now)
 	-- A trickle-exempt word in pieces goes to the other reporters as a whole set (above).
+	-- (1.5.4) And a list's pieces from any origin, within ListSet's bounds.
 	local set, batches
-	if (own or snapshot) and flag ~= "L" then set = CollectSet(origin, body, now) end
+	local list = flag ~= "L" and not own and not snapshot and ListSet(origin, body, now, fresh) or nil
+	if ((own or snapshot) and flag ~= "L") or list then set = CollectSet(origin, body, now) end
 	-- (The review of the candidate.) Another client's word in pieces passes the trickle whole or not
 	-- at all: the pieces before its last are full, and a full piece with its RM label is one or two
 	-- whispers. The least it takes, for Afford: a census report in two pieces (385 bytes) is three
@@ -920,10 +1014,12 @@ local function ToReporters(flag, origin, body, sender)
 			-- (The review of the candidate.) Only a word in one batch: replaced batch by batch, a word
 			-- too long for one (its envelope past MAX_CHUNKS whispers) mixed halves of two copies, or
 			-- had its newer copy split by a whole round of reporters; each copy goes whole instead.
-			local kind = head and (head:match("^(%u%w~%d+~S)~") or head:match("^(R[12])~")
+			-- (1.5.4) A list by its kind (ListKind: "LS~NR"), any origin's: a newer list of the kind
+			-- takes the waiting one's place, two kinds keep their own.
+			local kind = head and (head:match("^(%u%w~%d+~S)~") or head:match("^(R[12])~") or ListKind(head)
 				or (own and #batches == 1 and head:match("^%u%w~") and QueueWord(head)))
 			local word = Lower(origin) .. " " .. (kind or ("#" .. tostring(id)))
-			for k, batch in ipairs(batches) do DripSet(r.name, word .. " " .. k, batch) end
+			for k, batch in ipairs(batches) do DripSet(r.name, word .. " " .. k, batch, list ~= nil and list.replace) end
 		else
 			pieces = pieces or Envelope("RM", "RM~" .. flag .. "~" .. origin .. "~" .. body)
 			-- (1.5.0) Another client's word that is not a chat line: within the reporter's trickle
@@ -933,8 +1029,9 @@ local function ToReporters(flag, origin, body, sender)
 				Quiet(r.name) -- (a reporter gone offline since: the server's line out of the chat)
 				-- A word that is not a chat line is keyed by its origin, kind and reporter: a newer
 				-- census of the same guild takes the waiting one's place in the queue (Comm's keyed
-				-- jobs), so a busy relay sends the latest, never a backlog.
-				local word = presence and "T1~o" or QueueWord(body)
+				-- jobs), so a busy relay sends the latest, never a backlog. (1.5.4) A list in one
+				-- piece by its kind (ListKind), so two kinds' lists never take each other's place.
+				local word = presence and "T1~o" or ListKind(body) or QueueWord(body)
 				local key = flag ~= "L" and ("relay " .. r.name .. " " .. Lower(origin) .. " " .. word) or nil
 				if #pieces == 1 then ns.Comm.Whisper(r.name, pieces[1], key, presence, false)
 				else ns.Comm.SendBatch("WHISPER", pieces, key, r.name, presence) end
@@ -1257,6 +1354,8 @@ function Relay.Reset()
 	wipe(snapshotTransfers); wipe(crownSent); wipe(kingSent); wipe(crownLayer); wipe(grantSent)
 	crownBucket.tokens, crownBucket.at = 0, -math.huge
 	wipe(sets); wipe(drip)
+	wipe(listAdmitted); wipe(listSets)
+	listBucket.tokens, listBucket.at = math.huge, nil
 	dripSince, dripping = nil, false
 	for k in pairs(stats) do stats[k] = 0 end
 end

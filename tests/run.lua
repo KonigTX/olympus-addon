@@ -6991,6 +6991,8 @@ Harness.RelayWorld = RelayWorld -- (1.5.4: the Chat tab's link tests, tests/chat
 assert(loadfile(ROOT .. "tests/census-relay.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
 assert(loadfile(ROOT .. "tests/hop-forever.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
 assert(loadfile(ROOT .. "tests/relay-fanout.lua"))(ns, test, eq, { RelayWorld = RelayWorld })
+-- 1.5.4: lists as one word by the relay (Comm.SendList, LS), the Church's public rows first.
+assert(loadfile(ROOT .. "tests/relay-lists.lua"))(ns, test, eq, { RelayWorld = RelayWorld, FreshComm = FreshComm, addon = ADDON_DIR, ROOT = ROOT })
 assert(loadfile(ROOT .. "tests/relay-presentation.lua"))(ns, test, eq, { RelayWorld = RelayWorld })
 assert(loadfile(ROOT .. "tests/roster-subrealm.lua"))(ns, test, eq)
 assert(loadfile(ROOT .. "tests/king-crown-relay.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })

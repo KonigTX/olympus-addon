@@ -2264,9 +2264,12 @@ function Count.SendPublic(now)
 	if not open or not Church.IsDesk() or Church.IsKing(ns.me) or Off() or not SettledSinceLogin() or not Count.Settled() then return false end
 	local t = ns.Now()
 	if lastPublicAt == at and t - lastPublic < Count.PUBLIC_EVERY then return false end
-	-- (Its rows go together: only with room for all of them past what the chat and the census keep.)
-	if ns.Comm.QueueRoom() < Count.SEND_ROOM + 2 * Count.PUBLIC_ROWS + 2 then return false end
-	lastPublic, lastPublicAt = t, at
+	-- (1.5.4) Both rankings' rows as one list (Comm.SendList): the same rows in the same order, and
+	-- where the relay carries the channel one word to every reporter whole, where one by one they
+	-- reached a reporter one to four of twenty-two (Comm.lua); where the channel works each row goes
+	-- as before. One list, not one a ranking: the relay admits one list of a kind from an origin each
+	-- Relay.LIST_EVERY, and the second of a pair sent together took the first's place or was refused.
+	local rows = {}
 	for _, list in ipairs({ "a", "m" }) do
 		local all = {}
 		for _, row in ipairs(Count.Ranking(list, "a")) do all[row.key] = row.score end
@@ -2274,12 +2277,16 @@ function Count.SendPublic(now)
 		for _, row in ipairs(Count.Ranking(list, "m")) do
 			if row.pub and n < Count.PUBLIC_ROWS then
 				n = n + 1
-				ns.Comm.Send("CHANNEL", ("NR~1~p~%s~%s~%d~%s~%d~%d"):format(B36(at), list, n, row.name, Ten(row.score), Ten(all[row.key] or 0)),
-					nil, false, false)
+				rows[#rows + 1] = ("NR~1~p~%s~%s~%d~%s~%d~%d"):format(B36(at), list, n, row.name, Ten(row.score), Ten(all[row.key] or 0))
 			end
 		end
-		ns.Comm.Send("CHANNEL", ("NR~1~n~%s~%s~%d"):format(B36(at), list, n), nil, false, false)
+		rows[#rows + 1] = ("NR~1~n~%s~%s~%d"):format(B36(at), list, n)
 	end
+	-- (Its rows go together: only with room for all of them, the list's pieces or its rows one by
+	-- one, past what the chat and the census keep.)
+	if ns.Comm.QueueRoom() < Count.SEND_ROOM + ns.Comm.ListRoom("NR", rows) then return false end
+	lastPublic, lastPublicAt = t, at
+	ns.Comm.SendList("NR", rows)
 	return true
 end
 

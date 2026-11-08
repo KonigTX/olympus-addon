@@ -133,6 +133,14 @@ function World:Client(name, opts)
 		Handle = function(kind, fn) cl.handlers[kind] = fn end,
 		Send = function(dist, msg, _, _, logged) return w:Queue(cl, dist, msg, nil, logged) end,
 		Whisper = function(target, msg, _, _, logged) return w:Queue(cl, "WHISPER", msg, target, logged) end,
+		-- (1.5.4) A list of words of one kind (Comm.SendList): this world's channel works, so each
+		-- word goes on its own, as Comm sends them where the channel works.
+		SendList = function(_, words)
+			local all = true
+			for _, word in ipairs(words) do if not w:Queue(cl, "CHANNEL", word, nil, false) then all = false end end
+			return all
+		end,
+		ListRoom = function(_, words) return #words end,
 		QueueRoom = function() return w.room or 60 end,
 		Hash36 = ns.Comm.Hash36,
 		PeerCount = function() return cl.peers end,
