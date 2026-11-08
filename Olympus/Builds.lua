@@ -12,8 +12,8 @@ local L = ns.L
 --   * Detection. A peer's announced version (its hello over GUILD, Comm.lua's H1; its answer to a
 --     version check, Versions.lua's V8) that is no release form marks a modified build: a release
 --     is x.y.z or x.y.z.w, and the author's own arena test builds say x.y.z-test.N (never modified;
---     their hello says the base version anyway). Anything else ("1.5.1-onn.12", "1.5.3-custom", an
---     empty or non-numeric version where the field is there) is modified.
+--     their hello says the base version anyway). Anything else ("1.5.1-<suffix>", "1.5.3-custom",
+--     an empty or non-numeric version where the field is there) is modified.
 --   * A weaker mark, "silent to version checks" (shown, never a lock): a guildmate whose hello names
 --     a release that answers version checks (1.1.2 and newer), and who answered none of SILENT_ASKS
 --     checks of this client spread over SILENT_SPAN at least, with a hello of his heard between each
@@ -229,7 +229,10 @@ local Share, ShareClear
 local function Observe(full, version, how, now, by, first, guild)
 	if full == ns.me then return nil end
 	local e = Find(full)
-	if by ~= nil and e and e.by == nil then return e end -- (ours stands: what we saw ourselves)
+	-- Ours stands (what we saw ourselves) while it locks; the silent mark never blocks a sighting, and
+	-- once the character announced a release to us, a reporter's sighting newer than that is taken (it
+	-- went back to a modified build).
+	if by ~= nil and e and e.by == nil and e.how ~= "silent" and (e.locked ~= false or now <= (e.releaseAt or 0)) then return e end
 	if not e then e = Add(full, now) end
 	if not e then return nil end
 	local was = e.locked
@@ -238,8 +241,9 @@ local function Observe(full, version, how, now, by, first, guild)
 	e.first = e.first or now
 	if guild and guild ~= "" then e.guild = guild end
 	e.by = by
+	e.release, e.releaseAt = nil, nil
 	if by == nil then
-		e.release, e.releaseAt = nil, nil
+		e.cleared = nil
 		e.locked = true
 		if was ~= true then
 			ns.Log("modified build: %s runs %s (%s): locked out", full, e.version, how)
@@ -300,9 +304,12 @@ function Builds.Answer(sender, version)
 end
 
 -- The strong mark: this client saw `name` announce a modified build and heard no release since.
--- Never our own client, never from a shared word, never from the silent mark.
+-- Never our own client, never from the silent mark, never from a shared word but on a relay's
+-- client (below). (Asked of every word at Comm's door: nothing to do while the record is empty.)
 function Builds.Quarantined(name)
 	if type(name) ~= "string" or name == "" then return false end
+	local list = Store()
+	if not list or not list[1] then return false end
 	local full = Full(name)
 	if full == ns.me then return false end
 	local e = Find(full)

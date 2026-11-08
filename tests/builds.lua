@@ -880,3 +880,36 @@ test("1.5.4 modified builds wording: the menu line, the person card, a check's l
 		end
 	end)
 end)
+
+test("1.5.4 modified builds guild: a silent mark never keeps out a guild master's sighting of the same character; on a relay, a reporter's sighting newer than the release a character announced to it locks it again, an older one does not", function()
+	WithBuilds("Tester-Realm", function(w)
+		w.ranks["Lord Hale-Realm"] = 0
+		w.hellos["Ann Dark"] = "1.5.3"
+		local t1 = w.clock
+		B.Hello("Ann Dark-Realm", "1.5.3", w.clock)
+		for i = 0, 2 do
+			w.clock = t1 + i * 150 + 10; eq(V.Check("Ann Dark-Realm"), true); w.Run()
+			w.clock = t1 + i * 150 + 100; B.Hello("Ann Dark-Realm", "1.5.3", w.clock)
+		end
+		assert(B.Silent("Ann Dark-Realm"), "the silent mark")
+		B.HandleShare("GUILD", "Lord Hale-Realm", Word("Ann Dark-Realm", "1.5.1-onn.12", "h", w.clock, w.clock))
+		local e = B.Modified("Ann Dark-Realm")
+		assert(e, "the guild master's sighting is kept over the silent mark"); eq(e.by, "Lord Hale-Realm"); eq(e.version, "1.5.1-onn.12")
+		assert(B.Silent("Ann Dark-Realm"), "the silent mark still shown")
+	end, { rank = 0 })
+	WithBuilds("Hildryn Payne-Realm", function(w)
+		w.relays, w.relayOn = { ["Hildryn Payne"] = true, ["Max Ran"] = true }, true
+		B.Hello("Bob Light-Realm", "1.5.1-onn.12", w.clock)
+		eq(B.Quarantined("Bob Light-Realm"), true)
+		w.clock = w.clock + 600
+		B.Hello("Bob Light-Realm", "1.5.4", w.clock)
+		eq(B.Quarantined("Bob Light-Realm"), false, "a release announced to us")
+		local released = w.clock
+		B.HandleShare("CHANNEL", "Max Ran-Realm", Word("Bob Light-Realm", "1.5.1-onn.12", "h", released - 300, released - 60, ""))
+		eq(B.Quarantined("Bob Light-Realm"), false, "a sighting older than the release: ours stands")
+		w.clock = w.clock + 600
+		B.HandleShare("CHANNEL", "Max Ran-Realm", Word("Bob Light-Realm", "1.5.1-onn.12", "h", released + 300, w.clock, ""))
+		eq(B.Quarantined("Bob Light-Realm"), true, "a newer sighting: back on a modified build, locked again")
+		eq(B.Modified("Bob Light-Realm").by, "Max Ran-Realm")
+	end)
+end)
