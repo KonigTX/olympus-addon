@@ -29,15 +29,37 @@ test("a stalled report is still dropped", function()
 	eq(type(sample), "string")
 end)
 
+-- (1.5.4 review: pieces 50 s apart keep the sliding window alive, so only the cap can drop it.)
 test("a drip-fed report expires at ASM_MAX_AGE", function()
 	local asm = Codec.NewAssembler()
 	local parts = Codec.Chunk(string.rep("z", Codec.CHUNK * 9 + 1), "3")
 	eq(#parts, 10)
-	local now = 0
-	for i = 1, 4 do
-		Codec.Feed(asm, "Slow-OtherRealm", parts[i], now)
-		now = now + 50
-		Codec.Gc(asm, now)
+	for i = 1, 7 do
+		local at = (i - 1) * 50
+		Codec.Feed(asm, "Slow-OtherRealm", parts[i], at)
+		if i < 7 then eq(Codec.Gc(asm, at + 1), 0, "still arriving at " .. at .. " s") end
 	end
-	eq(Codec.Gc(asm, Codec.ASM_MAX_AGE + 1), 1)
+	eq(Codec.Gc(asm, Codec.ASM_MAX_AGE + 1), 1, "open past ASM_MAX_AGE since its first piece")
+end)
+
+-- (1.5.4 review: Room still closes the stranger's message opened first, as 1.2.1 says.)
+test("a stranger's message opened first is the one closed for room, however recently it grew", function()
+	local asm = Codec.NewAssembler()
+	local function Piece(fill, id, i) return Codec.Chunk(string.rep(fill, Codec.CHUNK * 3), id)[i] end
+	local saved = Codec.OPEN_MAX
+	Codec.OPEN_MAX = 2
+	local ok, err = pcall(function()
+		Codec.Feed(asm, "Stranger-OtherRealm", Piece("a", "4", 1), 0)
+		Codec.Feed(asm, "Stranger-OtherRealm", Piece("b", "5", 1), 10)
+		Codec.Feed(asm, "Stranger-OtherRealm", Piece("a", "4", 2), 20) -- the first one grew last
+		Codec.Feed(asm, "Another-OtherRealm", Piece("c", "6", 1), 30) -- the buffer is full: room is made
+	end)
+	Codec.OPEN_MAX = saved
+	if not ok then error(err, 0) end
+	local left = {}
+	for key in pairs(asm.buf) do left[#left + 1] = key end
+	table.sort(left)
+	local all = table.concat(left, ",")
+	eq(all:find("#4", 1, true), nil, "the message opened first went, though it grew last: " .. all)
+	eq(all:find("#5", 1, true) ~= nil, true, "the later one stays: " .. all)
 end)

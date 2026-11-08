@@ -645,6 +645,8 @@ function Codec.Trusted(sender)
 	return ok and yes == true
 end
 
+-- When a message's first piece came (1.5.4: Feed moves e.t to its newest piece, e.first keeps this).
+local function Opened(e) return e.first or e.t end
 -- One open message of a stranger's closed for `sender`'s (who holds `mine`): true when one went.
 local function Room(asm, sender, trusted, mine)
 	if not trusted and asm.none == (asm.changes or 0) and mine >= (asm.noneFor or 0) then return false end
@@ -653,7 +655,7 @@ local function Room(asm, sender, trusted, mine)
 		if e.trusted == nil then e.trusted = Codec.Trusted(e.sender) end
 		if not e.trusted and e.sender ~= sender then
 			local o = oldest[e.sender]
-			if not o or e.t < asm.buf[o].t or (e.t == asm.buf[o].t and key < o) then oldest[e.sender] = key end
+			if not o or Opened(e) < Opened(asm.buf[o]) or (Opened(e) == Opened(asm.buf[o]) and key < o) then oldest[e.sender] = key end
 		end
 	end
 	local victim, most
@@ -661,7 +663,7 @@ local function Room(asm, sender, trusted, mine)
 		local held = asm.bySender[who] or 0
 		if trusted or held > mine + 1 then
 			local e, v = asm.buf[key], victim and asm.buf[victim]
-			if not victim or held > most or (held == most and (e.t < v.t or (e.t == v.t and key < victim))) then victim, most = key, held end
+			if not victim or held > most or (held == most and (Opened(e) < Opened(v) or (Opened(e) == Opened(v) and key < victim))) then victim, most = key, held end
 		end
 	end
 	if not victim then
@@ -726,8 +728,10 @@ function Codec.Close(asm, key)
 	asm.changes = (asm.changes or 0) + 1
 end
 
--- Drops assemblies older than 60 s (70 s above 30 parts), with an incomplete sample
--- ("sender#id 2/3") so lost chunks show up in the diagnostics.
+-- Drops an assembly whose newest piece is older than 60 s (70 s above 30 parts), or that has been
+-- open ASM_MAX_AGE since its first piece, with an incomplete sample ("sender#id 2/3") so lost
+-- chunks show up in the diagnostics. Comm runs it once a minute, so an assembly can live up to
+-- ASM_MAX_AGE plus that minute.
 function Codec.Gc(asm, now)
 	local dropped, sample = 0, nil
 	for k, e in pairs(asm.buf) do
