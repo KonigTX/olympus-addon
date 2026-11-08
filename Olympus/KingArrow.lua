@@ -321,7 +321,7 @@ function Arrow.Target()
 	local K = ns.King
 	local at = K and K.Location and K.Location()
 	local now = ns.Now()
-	local expire = K and tonumber(K.LOCATION_EXPIRE) or 45
+	local expire = K and tonumber(K.LocationExpire and K.LocationExpire() or K.LOCATION_EXPIRE) or 45
 	if type(at) ~= "table" or not Fresh(at.t, now, expire) then return nil, "offline" end
 	if not CleanSender(at.from) or not (ns.IsKingCharacter and ns.IsKingCharacter(at.from)) then return nil, "identity" end
 	if ns.me and ns.FullName(ns.me) == ns.FullName(at.from) then return nil, "self" end

@@ -96,11 +96,14 @@ end
 -- would obey the powers the Throne gave that character. (1.3.4) Nor where the author's signed
 -- launch list reaches and names no King for our side yet (ns.LaunchListHeld): on a launch realm group the
 -- first to found a guild of that name is nobody's King.
+-- (1.4.3, launch night: the signed King's character is the King whatever his rank or guild; on
+-- the live realms he holds a council rank in another Olympus guild and leads none named Olympus.)
+local function SignedLaunchKing()
+	return ns.splitNames == true and ns.LaunchListHeld ~= nil and ns.LaunchListHeld() and ns.KingCharacter() ~= nil
+end
 function King.IsKing()
 	if not ns.IsMember() then return false end
-	-- (1.4.3, launch night: the signed King's character is the King whatever his rank or guild; on
-	-- the live realms he holds a council rank in the King's guild and does not lead it.)
-	if ns.splitNames == true and ns.LaunchListHeld and ns.LaunchListHeld() and ns.KingCharacter() ~= nil then return ns.IsKingCharacter(ns.me) end
+	if SignedLaunchKing() then return ns.IsKingCharacter(ns.me) end
 	local guild, _, rank = GetGuildInfo("player")
 	if not (ns.IsKingGuild(guild) and rank == 0) then return false end
 	return (ns.KingCharacter() == nil and not ns.LaunchListHeld()) or ns.IsKingCharacter(ns.me)
@@ -159,7 +162,9 @@ function King.SetsLists() return King.IsKing() or King.IsSteward() end
 -- (the Horde, until his name is known) nobody's commands are obeyed; soft: what only shows
 -- (his position, his name on the lines) still comes from the census there (Data.KnownRank).
 local function KingSender(sender, guild, soft)
-	if not ns.IsKingGuild(guild) then return false end
+	-- (1.5.4) His signed name alone where the launch list names him (SignedLaunchKing): on Forever's
+	-- live realms no guild is named Olympus, so every client dropped each word of his, his crown first.
+	if not ns.IsKingGuild(guild) and not SignedLaunchKing() then return false end
 	if ns.KingCharacter() then
 		if not ns.IsKingCharacter(sender) then return false end
 		ns.LearnKingRealm(sender) -- (the Horde's, while unknown: from the server's name)
@@ -1137,6 +1142,10 @@ StaticPopupDialogs["OLYMPUS_AGENDA_CALL"] = {
 King.LOCATION_EVERY = 5      -- seconds between sends while moving
 King.LOCATION_STILL = 20     -- standing still, repeated this often (for late logins)
 King.LOCATION_EXPIRE = 45    -- a crown with no news this long is removed
+-- (1.5.4) Where names split (Forever) the crown comes by the relays, which hand each guild's reporter
+-- his newest one at a bounded pace (Relay.KING_GAP, Relay.KING_PER_MIN): kept this long there.
+King.LOCATION_EXPIRE_RELAYED = 180
+function King.LocationExpire() return ns.splitNames == true and King.LOCATION_EXPIRE_RELAYED or King.LOCATION_EXPIRE end
 
 local kingAt                 -- where the King is, for everyone: { name, id, mapID, x, y, t }
 local locationId = NewId()
@@ -1262,7 +1271,7 @@ end
 function King.RefreshCrown()
 	if not Pins then return end
 	local world = ns.WorldMapIcons(Pins, King) -- gp:worldmap-icons
-	if kingAt and ns.Now() - kingAt.t > King.LOCATION_EXPIRE then kingAt = nil end
+	if kingAt and ns.Now() - kingAt.t > King.LocationExpire() then kingAt = nil end
 	local WC = ns.WatchChat
 	local barred = WC and not WC.missing and WC.Barred and WC.Barred("locations")
 	if not kingAt or barred then
@@ -1299,7 +1308,7 @@ end
 
 -- Where the King is, while he shares it: { name, id, mapID, x, y, t } or nil.
 function King.Location()
-	if kingAt and ns.Now() - kingAt.t > King.LOCATION_EXPIRE then return nil end
+	if kingAt and ns.Now() - kingAt.t > King.LocationExpire() then return nil end
 	-- 1.1.6: a sanctioned player (WatchChat.Barred "locations") sees neither the King's crown nor
 	-- his arrow, and asks for no layer of his, while it lasts.
 	local WC = ns.WatchChat

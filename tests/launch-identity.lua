@@ -510,3 +510,50 @@ test("1.3.4 channel owner: a ban seen on the author's characters the signed list
 	assert(not all:find(ns.AUTHOR, 1, true), "the code's beta author is not of this realm group: " .. all)
 	assert(not all:find(ns.KING_CHARACTER.Alliance, 1, true), "nor the code's King: " .. all)
 end)
+
+---------------------------------------------------------------------------
+-- 1.5.4: the signed King's crown on the map, from whatever guild he plays in. On Forever's live
+-- realms the signed King is an officer of another Olympus guild (there is no guild named Olympus):
+-- his own client takes him for the King there (King.IsKing, 1.4.3), and every receiver must take
+-- his position (T1~P) and its withdrawal (T1~Q) by his signed name too. A namesake on another realm
+-- group, or anyone else in his guild, still moves no crown.
+---------------------------------------------------------------------------
+test("1.5.4 the signed King's crown: on a launch realm group his position reaches the army whatever guild he plays in", function()
+	local saved = { split = ns.splitNames, now = ns.Now }
+	local clock = 2000000
+	local ok, err = pcall(function()
+		ns.Now = function() return clock end
+		WithWorld("Launchrealm", "Alliance", LAUNCH_A, function()
+			ns.splitNames = true
+			ns.King.Reset()
+			eq(ns.IsKingGuild("Olympus Prime"), false, "the King's guild on the live realms is not named Olympus")
+			ns.King.HandleCommand("CHANNEL", KING, "T1~P~7~Olympus Prime~1453~420~510")
+			local at = ns.King.Location()
+			assert(at, "the signed King's crown from Olympus Prime")
+			eq(at.from, KING); eq(at.mapID, 1453); eq(at.x, 0.42); eq(at.y, 0.51)
+			ns.King.HandleCommand("CHANNEL", "Crown Owl-Launchtwo", "T1~P~8~Olympus Prime~1429~100~100")
+			eq(ns.King.Location().mapID, 1453, "a namesake on another realm group moves no crown")
+			ns.King.HandleCommand("CHANNEL", "Hand Steward-Launchrealm", "T1~P~9~Olympus Prime~1429~100~100")
+			eq(ns.King.Location().mapID, 1453, "nor his Steward")
+			-- The relays hand it on at a bounded pace (Relay.KING_GAP): the crown is kept longer there.
+			clock = clock + 100
+			assert(ns.King.Location(), "kept past the beta's 45 s where the relays carry it")
+			ns.King.HandleCommand("CHANNEL", "Crown Owl-Launchtwo", "T1~Q~7~Olympus Prime")
+			assert(ns.King.Location(), "nor does a namesake take it off")
+			ns.King.HandleCommand("CHANNEL", KING, "T1~Q~7~Olympus Prime")
+			eq(ns.King.Location(), nil, "the King's own withdrawal takes it off")
+			ns.King.HandleCommand("CHANNEL", KING, "T1~P~8~Olympus Prime~1453~420~510")
+			clock = clock + ns.King.LOCATION_EXPIRE_RELAYED + 1
+			eq(ns.King.Location(), nil, "and with no news it goes on its own")
+			-- Where names do not split (the beta, Era), the King's guild is still the one named Olympus.
+			ns.splitNames = false
+			ns.King.HandleCommand("CHANNEL", KING, "T1~P~9~Olympus Prime~1453~420~510")
+			eq(ns.King.Location(), nil, "off Forever, a crown from another guild is not his")
+			ns.King.HandleCommand("CHANNEL", KING, "T1~P~9~Olympus~1453~420~510")
+			assert(ns.King.Location(), "from Olympus, as before")
+		end)
+	end)
+	ns.splitNames, ns.Now = saved.split, saved.now
+	ns.King.Reset()
+	if not ok then error(err, 0) end
+end)

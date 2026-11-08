@@ -81,6 +81,20 @@ Relay.NO_FORWARD = { H3 = true, Q1 = true, HQ = true, P1 = true, W4 = true, GV =
 -- GLOBAL_EVERY and exempt from the trickle, as the relay's own words all are.
 Relay.REPORTER_RATE = 4
 Relay.GLOBAL_EVERY = 120
+-- (1.5.4) The King's crown (King.lua: T1~P where he is, T1~Q hidden again; his client says it every
+-- 5 s while he moves, every 20 s while he stands) is what every member's map and minimap arrow
+-- follow, and it reached nobody: his client, a relay itself, takes its own words to its own
+-- reporters alone (relays hear one another only once one pinged the other); any other relay held
+-- it in the trickle behind the guilds' reports; and his standing still was a second copy (Seen).
+-- Now his client also whispers each crown to every other relay not left out, once each KING_GAP
+-- at most; each relay hands the newest to its reporters, each once each KING_GAP at most and the
+-- longest waiting first, KING_PER_MIN a minute in all (KING_BURST at once), ahead of the queue's
+-- other words so a busy relay neither drops nor delays it; a repeat renews it wherever it arrives;
+-- "hidden" goes to all at once. Clients keep it King.LOCATION_EXPIRE_RELAYED, past the slowest pace.
+Relay.KING_GAP = 30
+Relay.KING_PER_MIN = 40
+Relay.KING_BURST = 20
+local crownBucket = { tokens = 0, at = -math.huge } -- (on a relay) the crowns it may hand on now
 local budget = {} -- reporter name (lower) -> { at = when refilled, left = pieces }
 local function Afford(name, pieces, now)
 	local key = name:lower()
@@ -98,6 +112,7 @@ local reporters = {} -- (on a relay) guild name (lower) -> { name = "First Surna
 local seen = {}      -- origin .. "|" .. text -> when
 local lastVerifyAsk = -math.huge
 local snapshotTransfers = {}
+local crownSent = {} -- "r:" reporter or "x:" relay (lower) -> when the King's crown last went to it
 local seenCount = 0
 local pending = {}   -- (1.4.4) what waits for the first relay to answer: { parts, logged, done, key, urgent, options }
 local holding = false -- a timer runs to send what waits anyway after PING_WAIT
@@ -114,6 +129,16 @@ end
 
 local function Now() return ns.Now() end
 local function Lower(s) return type(s) == "string" and s:lower() or "" end
+
+-- (1.5.4) The King's crown, by his signed name (KING_GAP above), and whether one more is due to `to`.
+local function Crown(origin, body)
+	if type(body) ~= "string" or not body:match("^T1~[PQ]~") then return false end
+	return type(origin) == "string" and ns.IsKingCharacter ~= nil and ns.IsKingCharacter(ns.FullName(origin)) == true
+end
+local function Hide(body) return body:match("^T1~Q~") ~= nil end
+local function CrownDue(to, body, now)
+	return Hide(body) or now - (crownSent[to] or -math.huge) >= Relay.KING_GAP
+end
 
 -- Where it runs: where the game splits names (Forever), unless switched off for a test.
 function Relay.On()
@@ -342,6 +367,24 @@ local function OwnGuild(original, done, key, urgent, options)
 	return ns.Comm.Send("GUILD", wrapped, key and ("guild " .. key) or nil, urgent, false, done, pass) ~= false
 end
 
+-- (1.5.4) The King's own crown, to every other relay not left out: one whisper each, once each
+-- KING_GAP at most, ahead of his queue's other words; the relay picked has it by the usual hop below.
+local function CrownToRelays(parts, pick)
+	if not (ns.me and ns.IsKingCharacter and ns.IsKingCharacter(ns.me)) then return end
+	local now, mine, picked = Now(), Lower(ns.ShortName(ns.me)), Lower(pick)
+	for _, p in ipairs(parts) do
+		if type(p) == "string" and p:match("^T1~[PQ]~") then
+			for _, n in ipairs(Relay.Names(false)) do
+				local to = Lower(n)
+				if to ~= mine and to ~= picked and (offline[to] or 0) <= now and CrownDue("x:" .. to, p, now) then
+					crownSent["x:" .. to] = now
+					Quiet(n)
+					ns.Comm.Whisper(n, "RL~P~" .. p, "crown " .. to, true, false)
+				end
+			end
+		end
+	end
+end
 function Relay.Out(parts, logged, done, key, urgent, options, anyway)
 	if not anyway and not logged and #parts == 1 and IsInGuild() then
 		local route = GuildRoute(parts[1])
@@ -353,6 +396,7 @@ function Relay.Out(parts, logged, done, key, urgent, options, anyway)
 	end
 	local relay, sure = Relay.Pick()
 	if not relay then return false end
+	if not anyway then CrownToRelays(parts, relay) end
 	-- (1.4.5) A chat line reaches the sender's own guild at once, over GUILD, as hop 3 from himself,
 	-- whatever the relays do (one dead, none answered yet): guildmates take it once (Seen), and
 	-- the relay's copy that comes back later counts once too. The relay still carries it to the
@@ -471,7 +515,8 @@ end
 
 -- The last hop on this client: the message as if it had come on the channel from its origin.
 local function Deliver(origin, text, logged)
-	if Seen(origin, text) then return false end
+	-- (1.5.4) The King's crown again (him standing still: the same words every 20 s) renews it.
+	if Seen(origin, text) and not (text:match("^T1~P~") and Crown(origin, text)) then return false end
 	stats.delivered = stats.delivered + 1
 	ns.Comm.Inject("CHANNEL", origin, text, logged)
 	return true
@@ -490,7 +535,8 @@ end
 local function QueueWord(body)
 	-- Fragment i and fragment i+1 are both required. Coalescing them by the first
 	-- two bytes (C1, etc.) discarded all but the last before the queue could send.
-	return body:match("^(C[^:]+:%d+):%d+:") or body:sub(1, 2)
+	-- (1.5.4) The Throne's kinds apart too: the King's newest crown never takes a waiting call's place.
+	return body:match("^(C[^:]+:%d+):%d+:") or body:match("^(T1~%a)~") or body:sub(1, 2)
 end
 
 local function SnapshotPart(origin, body, now)
@@ -652,8 +698,52 @@ local function PresentationGuild(body)
 	local guild = type(body) == "string" and body:match("^FX~%d+~%a~[^~]*~%d+~%d+~%d+~([^~]+)")
 	return guild and Lower(guild) or nil
 end
+-- (1.5.4) The King's crown to this relay's reporters (KING_GAP above): each at most once a KING_GAP,
+-- the longest waiting first, within the relay's KING_PER_MIN (KING_BURST at once), ahead in the
+-- queue; "hidden" to all at once. Heard here too.
+local function CrownToReporters(flag, origin, body, now)
+	local hide, due = Hide(body), {}
+	for g, r in pairs(reporters) do
+		if now - r.t > Relay.REPORTER_FOR then reporters[g] = nil
+		elseif CrownDue("r:" .. Lower(r.name), body, now) then due[#due + 1] = r end
+	end
+	local function Last(r) return crownSent["r:" .. Lower(r.name)] or -math.huge end
+	table.sort(due, function(a, b) return Last(a) < Last(b) end)
+	local b = crownBucket
+	b.tokens = math.min(Relay.KING_BURST, b.tokens + math.max(0, now - b.at) * Relay.KING_PER_MIN / 60)
+	b.at = now
+	local pieces, heard, ahead = nil, nil, 0
+	for _, r in ipairs(due) do
+		if r.name == ns.me then
+			crownSent["r:" .. Lower(r.name)] = now
+			heard = Deliver(origin, body, false)
+			ToGuild(flag, origin, body)
+		elseif hide or b.tokens >= 1 then
+			if not hide then b.tokens = b.tokens - 1 end
+			crownSent["r:" .. Lower(r.name)] = now
+			pieces = pieces or Envelope("RM", "RM~" .. flag .. "~" .. origin .. "~" .. body)
+			stats.forwarded = stats.forwarded + 1
+			Quiet(r.name)
+			-- (A "hidden" to more than KING_BURST reporters: the rest in line, never past the queue's room.)
+			local urgent = ahead < Relay.KING_BURST
+			ahead = ahead + 1
+			local key = "relay " .. r.name .. " " .. Lower(origin) .. " " .. QueueWord(body)
+			if #pieces == 1 then ns.Comm.Whisper(r.name, pieces[1], key, urgent, false)
+			else ns.Comm.SendBatch("WHISPER", pieces, key, r.name, urgent) end
+		else
+			stats.trickled = (stats.trickled or 0) + 1
+		end
+	end
+	if not heard then Deliver(origin, body, false) end
+end
 local function ToReporters(flag, origin, body, sender)
 	local now = Now()
+	if Crown(origin, body) then
+		local n = 0
+		for _ in pairs(reporters) do n = n + 1 end
+		if not Remembered(origin, body) then ns.Log("relay: %s's word (T1) to %d reporters", tostring(sender), n) end
+		return CrownToReporters(flag, origin, body, now)
+	end
 	local own = ns.FullName(origin) == ns.me
 	local scoped = PresentationGuild(body)
 	-- Reserve a complete, bounded snapshot from a signed origin. Charging each
@@ -996,7 +1086,8 @@ function Relay.Reset()
 	wipe(offline); wipe(verified); wipe(pinged); wipe(reporters); wipe(seen); wipe(pending); wipe(budget)
 	seenCount, lastRegister, holding, flushing, lastGlobal = 0, -math.huge, false, false, -math.huge
 	lastVerifyAsk = -math.huge
-	wipe(snapshotTransfers)
+	wipe(snapshotTransfers); wipe(crownSent)
+	crownBucket.tokens, crownBucket.at = 0, -math.huge
 	wipe(sets); wipe(drip)
 	dripSince, dripping = nil, false
 	for k in pairs(stats) do stats[k] = 0 end
