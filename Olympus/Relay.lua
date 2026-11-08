@@ -993,12 +993,26 @@ local function ToReporters(flag, origin, body, sender)
 			-- and the census snapshots waited behind it. Its own word of one kind (as QueueWord keys
 			-- the same word in one whisper) takes the waiting copy's place, as a snapshot does.
 			local id, head = set[1]:match("^C(%w+):%d+:%d+:(.*)$")
-			-- (The review of the candidate.) Only a word in one batch: replaced batch by batch, a word
-			-- too long for one (its envelope past MAX_CHUNKS whispers) mixed halves of two copies, or
-			-- had its newer copy split by a whole round of reporters; each copy goes whole instead.
 			local kind = head and (head:match("^(%u%w~%d+~S)~") or head:match("^(R[12])~")
-				or (own and #batches == 1 and head:match("^%u%w~") and QueueWord(head)))
+				or (own and head:match("^%u%w~") and QueueWord(head)))
 			local word = Lower(origin) .. " " .. (kind or ("#" .. tostring(id)))
+			-- (The review of the candidate.) A word too long for one batch (its envelope past MAX_CHUNKS
+			-- whispers, so each piece goes wrapped alone: two batches), replaced batch by batch, mixed
+			-- halves of two copies where the older copy's first batch was in flight. (Its load review.)
+			-- Keyed by its message id instead, no repeat ever took its waiting copy's place: the drip
+			-- grew without end (70 batches a repeat at 35 reporters, drained at about three a minute)
+			-- and the census snapshots waited behind it, hours stale. A copy takes the waiting one's
+			-- place while every batch of that one still waits; with one in flight it takes the one
+			-- "next" place, which the copy after it takes in turn: at most two copies a reporter, whole.
+			if kind and #batches > 1 then
+				local waiting = 0
+				for _, d in ipairs(drip) do
+					if d.name == r.name and not d.tried then
+						for k = 1, #batches do if d.word == word .. " " .. k then waiting = waiting + 1 end end
+					end
+				end
+				if waiting > 0 and waiting ~= #batches then word = word .. " next" end
+			end
 			for k, batch in ipairs(batches) do DripSet(r.name, word .. " " .. k, batch) end
 		else
 			pieces = pieces or Envelope("RM", "RM~" .. flag .. "~" .. wire .. "~" .. body)

@@ -608,6 +608,65 @@ test("relay fan-out (1.5.4): the relay's own word too long for one drip batch is
 	end)
 end)
 
+-- The review of the 1.5.4 candidate (its load): the relay's own word in pieces whose envelope needs
+-- two drip batches was keyed by its message id, so no repeat ever took its waiting copy's place: on a
+-- busy relay the drip grew without end (70 batches a repeat at 35 reporters, drained at about three a
+-- minute) and the census snapshots waited behind it, hours stale. A repeat takes the waiting copy's
+-- place while every batch of it still waits; with one in flight it takes the one "next" place, which
+-- the repeat after it takes in turn. Fails before (every reporter is sent all four copies).
+test("relay fan-out (1.5.4): the relay's own word too long for one drip batch, repeated: each reporter gets the newest copy whole and at most the one in flight before it, never a backlog", function()
+	Relayed(function(R, sent, Run)
+		local REPORTERS = 6
+		for i = 1, REPORTERS do
+			R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i))
+		end
+		local label = #("RM~P~" .. R.me .. "~")
+		local size = R.Codec.CHUNK * R.Codec.MAX_CHUNKS - label + 1 -- one whisper past MAX_CHUNKS once wrapped whole
+		local function Word(stamp) return (("T9~Olympus~%d~"):format(stamp) .. ("a"):rep(size)):sub(1, size) end
+		-- Four copies in a row (a bank changing: Bank.Share every SHARE_GAP), the first reporter's first
+		-- batch of the first copy in the queue already when the others come.
+		for c = 1, 4 do
+			for _, p in ipairs(R.Codec.Chunk(Word(1794011276 + c), tostring(60 + c))) do R.Relay.HandleIn("WHISPER", R.me, "RL~P~" .. p) end
+		end
+		Run(1500)
+		eq(R.Comm.QueueSize(), 0, "everything went out")
+		local most, least, newest, half = 0, math.huge, 0, 0
+		for i = 1, REPORTERS do
+			local prefix = ("Rep Number%d-"):format(i)
+			local outer, got, total = R.Codec.NewAssembler(), {}, {}
+			for _, s in ipairs(sent) do
+				if s.target and s.target:sub(1, #prefix) == prefix then
+					local rm = s.msg:sub(1, 3) == "RM~" and s.msg or R.Codec.Feed(outer, "relay", s.msg, 0)
+					local body = rm and rm:match("^RM~[LP]~[^~]+~(.*)$")
+					local id, k, n = nil, nil, nil
+					if body then id, k, n = body:match("^C(%w+):(%d+):(%d+):") end
+					if id then
+						got[id] = got[id] or {}
+						got[id][tonumber(k)] = true
+						total[id] = tonumber(n)
+					end
+				end
+			end
+			local whole = 0
+			for id, ks in pairs(got) do
+				local c = 0
+				for _ in pairs(ks) do c = c + 1 end
+				if c == total[id] then
+					whole = whole + 1
+					if id == "64" then newest = newest + 1 end
+				else
+					half = half + 1
+				end
+			end
+			most, least = math.max(most, whole), math.min(least, whole)
+		end
+		eq(half, 0, "no reporter is sent part of a copy")
+		eq(newest, REPORTERS, "every reporter gets the newest copy whole")
+		eq(least, 1, "a reporter not yet served gets the newest copy alone")
+		eq(most <= 2, true, ("the reporter whose first batch was in flight gets that copy and the newest, no more: %d"):format(most))
+	end)
+end)
+
 -- The review of the 1.5.4 candidate: the Treasurer's client (a relay: Relay.Names takes his signed
 -- pins) passes on each of his mail characters' books (TR~<name>~) in one tick (Treasury.Relay), each
 -- as Treasury.Send sends it: in pieces above 250 bytes, else one channel message. Keyed "TR" alone,
