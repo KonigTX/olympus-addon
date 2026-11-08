@@ -1648,7 +1648,13 @@ local function Electable(now)
 		-- Only a peer on our lane: his hello names it (none named: the first lane).
 		local sameLane = (peerLane[name] or 0) == Lane()
 		-- (1.4.3) Where the relay carries the channel, only a peer that carries it too can report.
-		local carries = not (ns.Relay and ns.Relay.On()) or peerRelay[name] == true
+		local relayed = ns.Relay and ns.Relay.On()
+		local carries = not relayed or peerRelay[name] == true
+		-- (1.5.4) And such a peer whatever his sub-realm or lane: the relay reads neither, and GUILD
+		-- reaches the whole guild. Counting them split one guild into a reporter per sub-realm and
+		-- lane, each reporting the same roster and each taking the relay's registration from the
+		-- others (the dev's relay: 9 members of one guild registered in turn).
+		if relayed and carries then ours, sameLane = true, true end
 		if (benched[name] or 0) <= now and (all or ours) and not peerBank[name] and sameLane and carries then pool[name] = t end
 	end
 	return pool

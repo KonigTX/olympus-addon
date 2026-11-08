@@ -7870,6 +7870,31 @@ test("1.4.3 the relay: the election counts only guildmates whose hello carries t
 	if not ok then error(err, 0) end
 end)
 
+-- 1.5.4 (the dev's relay log: 9 members of one guild registered as its reporter in turn): fails
+-- before, a guildmate on another sub-realm or lane was never electable, so each had its own.
+test("1.5.4 the relay: where it carries the census, a guildmate carrying it is electable on any sub-realm and any lane: one reporter for the guild", function()
+	local saved = { channel = GetChannelName, member = ns.IsMember }
+	local ok, err = pcall(function()
+		GetChannelName = function() return 5 end
+		ns.IsMember = function() return true end
+		local ours = { guild = MY_GUILD, total = 1000, online = 300, zones = {} }
+		local cns, Deliver = RelayWorld("Tester-Realm", MY_GUILD)
+		local C = cns.Comm
+		C.loginAt = cns.clock - 1000
+		C.JoinChannel()
+		assert("Aaa" < cns.me)
+		Deliver("GUILD", "Aaa", "H1~1.4.3~OtherRealm~p~~~L2~R")
+		C.MaybeBroadcast(ours)
+		eq(C.isReporter, false, "a guildmate carrying the relay on another sub-realm and lane comes first")
+		Deliver("GUILD", "Aaa", "H1~1.4.2~OtherRealm~p~~~L2")
+		C.MaybeBroadcast(ours)
+		eq(C.isReporter, true, "one not carrying it never keeps us quiet")
+	end)
+	GetChannelName, ns.IsMember = saved.channel, saved.member
+	C_ChatInfo = nil
+	if not ok then error(err, 0) end
+end)
+
 end
 
 test("runner-up: only a 0.7.11+ peer on the reporter's channel", function()
