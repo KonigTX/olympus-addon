@@ -364,19 +364,15 @@ function Relay.Out(parts, logged, done, key, urgent, options, anyway)
 		for _, p in ipairs(parts) do ToGuild("L", ns.me, p) end
 	end
 	if not sure and not anyway then
-		-- Carry can leave through the native channel immediately, before a physical
-		-- whisper queue exists. It must obey the same capability as that queue.
+		-- A held message is refused now, as its whispers would be later, when the capability
+		-- that guards it refuses it (1.5.2 checked it for the text fallback, gone in 1.5.4).
 		local valid, why = PermitParts(parts, options)
 		if not valid then
 			if done then ns.SafeCall("relay done", done, false, why) end
 			return true
 		end
 		-- (1.4.4) No relay answered yet: all pinged at once, the message held for the first answer.
-		-- (1.5.2) And the guild's census report goes as the reporter's own text in the joined channel
-		-- meanwhile (ChatHall.Carry: a family with no relay online, the PvP one while the dev is away),
-		-- which Forever delivers to everyone in it; a relay's copy later is the same report again.
-		local H = ns.ChatHall
-		if type(H) == "table" and type(H.Carry) == "function" then pcall(H.Carry, parts) end
+		-- (1.5.4: no channel text meanwhile; ChatHall.lua says why.)
 		Sweep()
 		Hold(parts, logged, done, key, urgent, options)
 		if not holding then

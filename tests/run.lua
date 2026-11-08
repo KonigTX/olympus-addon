@@ -7547,28 +7547,38 @@ test("verification migration: same-scope legacy stores preserve every decision a
 	if not ok then error(err, 0) end
 end)
 
-test("1.5.2 the relay: while no relay answers, a word's pieces are handed to the chat hall to go as the reporter's own text in the joined channel; once one answered, the relay alone carries them", function()
-	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild }
+-- 1.5.4 (the dev's error log of 2026-11-06, GitHub #79/#85): 1.5.2 handed a word's pieces to the chat
+-- hall while no relay answered, to go as the reporter's own text; Forever blocks that SendChatMessage
+-- from a timer (ADDON_ACTION_BLOCKED) and nothing was ever delivered. Fails before: the hall got it.
+test("1.5.4 the relay: while no relay answers, a word's pieces wait for the first relay that answers and never go to the channel as text; then that relay carries them", function()
+	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild, say = SendChatMessage }
 	local ok, err = pcall(function()
 		GetChannelName = function() return 0 end
 		ns.IsMember = function() return true end
 		IsInGuild = function() return true end
 		GetGuildInfo = function() return "Olympus II", "Member", 3 end
-		local O, odeliver, _, _, opump = RelayWorld("Orig Inal-Realm", "Olympus II")
+		local said = 0
+		SendChatMessage = function() said = said + 1 end
+		local O, odeliver, osent, _, opump = RelayWorld("Orig Inal-Realm", "Olympus II")
 		local carried = {}
 		O.ChatHall = { Carry = function(parts) for _, p in ipairs(parts) do carried[#carried + 1] = p end return #parts end }
 		O.Accord = { Quiet = function() end }
 		O.After = function(_, _, fn) end
 		eq(O.Comm.Send("CHANNEL", "C5:1:1:abc", "k1"), true)
 		opump()
-		eq(table.concat(carried, ","), "C5:1:1:abc", "no relay answered: the hall carries it")
+		eq(#carried, 0, "no relay answered: nothing handed to the chat hall")
+		eq(said, 0, "and no channel text from a send no click started")
 		odeliver("WHISPER", "Max Ran-Realm", "RY~")
 		eq(O.Relay.Stats().sure, true)
-		eq(O.Comm.Send("CHANNEL", "C6:1:1:def", "k2"), true)
 		opump()
-		eq(table.concat(carried, ","), "C5:1:1:abc", "a relay answered: the relay alone")
+		local toRelay = 0
+		for _, sent in ipairs(osent) do
+			if sent.target and ns.ShortName(sent.target) == "Max Ran" and tostring(sent.msg):find("C5:1:1:abc", 1, true) then toRelay = toRelay + 1 end
+		end
+		eq(toRelay, 1, "the first relay that answered carries the held word")
+		eq(#carried, 0); eq(said, 0)
 	end)
-	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild = saved.channel, saved.member, saved.guild, saved.inGuild
+	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild, SendChatMessage = saved.channel, saved.member, saved.guild, saved.inGuild, saved.say
 	C_ChatInfo = nil
 	if not ok then error(err, 0) end
 end)
@@ -7635,13 +7645,12 @@ test("1.5.0 the chat hall: on Forever a tier's chat line leaves as the player's 
 		eq(H.OnChannel("hello there", "Other-Realm", "", "", "", "", 0, 6, "OlympusNet1"), false, "plain text in it")
 		eq(H.OnChannel("EC~room~1~hey", "Other-Realm", "", "", "", "", 0, 6, "OlympusNet1"), false, "another kind")
 		eq(#received, 2)
-		-- (1.5.2) A census report's pieces are carried as text (Relay.Out, no relay answering) and taken.
-		eq(H.Carry({ "C12:1:2:abc", "C12:2:2:def", "H3~hello", "X1~one" }), 2, "the report's pieces alone")
-		eq(#said, 3); eq(said[2].text, "C12:1:2:abc"); eq(said[3].text, "C12:2:2:def"); eq(said[3].target, 6)
-		eq(H.OnChannel("C7:1:1:zzz", "Far Away-Realm", "", "", "", "", 0, 6, "OlympusNet1"), true)
-		eq(#received, 3); eq(received[3].text, "C7:1:1:zzz"); eq(received[3].dist, "CHANNEL")
+		-- (1.5.4) A census report's pieces are no longer carried as text: Forever blocks a timer's
+		-- SendChatMessage (ADDON_ACTION_BLOCKED, GitHub #79/#85), and anyone could type one in.
+		eq(H.Carry, nil, "no text fallback for the census")
+		eq(H.OnChannel("C7:1:1:zzz", "Far Away-Realm", "", "", "", "", 0, 6, "OlympusNet1"), false, "a report's piece typed in is not taken")
 		eq(H.OnChannel("H3~hello", "Far Away-Realm", "", "", "", "", 0, 6, "OlympusNet1"), false, "no other kind")
-		eq(H.Stats().carried, 2)
+		eq(#received, 2); eq(#said, 1, "nothing said but the chat line")
 		-- Off: the chat box gate (the gamepad UI), no channel, off Forever.
 		cns.Gate = { Allowed = function() return false end }
 		eq(H.On(), false); eq(H.Send("M1~A~Olympus II~1~~x"), false)
