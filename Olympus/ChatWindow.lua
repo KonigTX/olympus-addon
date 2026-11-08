@@ -47,6 +47,7 @@ local L = ns.L
 --   ns.EscapeCloses (nothing on UISpecialFrames with the gamepad UI: its X closes it there).
 -- - Links in a line show their tooltip on hover (GameTooltip:SetHyperlink) and go into its own
 --   box with a Shift-click; never SetItemRef, ChatEdit_InsertLink or HandleModifiedItemClick.
+--   1.5.4: an item shows with the name and colour this client's item data gives it (ChatWindow.Relink).
 -- Nothing is drawn while the tab is hidden: a change marks it dirty and it redraws at most every
 -- 0.2 s while shown (the census at most every 5 s); 1.2.1: after a slow redraw, ten times what it
 -- cost (up to 5 s, ChatWindow.RedrawGap), and a bubble whose look did not change is only moved
@@ -665,6 +666,77 @@ local function LinkTip(owner, link)
 	end
 end
 
+-- 1.5.4: an item link in a line as this client's item data has the item: its name and its
+-- quality's colour (C_Item.GetItemInfo on Forever, the global on an older client), in place of
+-- the sender's, which a modified client could write as it liked; the link's own data stays (the
+-- item the tooltip and the click open). An item the client holds no data of yet shows as sent,
+-- the data is asked for once (RequestLoadItemDataByID), and its arrival (GET_ITEM_INFO_RECEIVED,
+-- below) redraws the tab. Worked out once an era for each line that shows (ChatWindow.ViewOf).
+ChatWindow.itemLooks = {} -- item id -> { name, colour } as the client has it, false for none to be had
+ChatWindow.itemsAsked = {} -- item id -> asked the client for its data
+function ChatWindow.ItemLook(id)
+	local itemLooks, itemsAsked = ChatWindow.itemLooks, ChatWindow.itemsAsked
+	local look = itemLooks[id]
+	if look ~= nil then return look or nil end
+	local I = C_Item
+	local get = type(I) == "table" and type(I.GetItemInfo) == "function" and I.GetItemInfo
+		or (type(GetItemInfo) == "function" and GetItemInfo) or nil
+	if not get then
+		itemLooks[id] = false
+		return nil
+	end
+	local ok, name, link = pcall(get, id)
+	if ok and type(name) == "string" and name ~= "" and #name <= 100 and not name:find("[%[%]|%c]") then
+		local colour = type(link) == "string" and (link:match("^|c%x%x%x%x%x%x%x%x") or link:match("^|cn[%w_]+:")) or nil
+		look = { name = name, colour = colour }
+		itemLooks[id] = look
+		return look
+	end
+	if not itemsAsked[id] and type(I) == "table" and type(I.RequestLoadItemDataByID) == "function" then
+		itemsAsked[id] = true
+		pcall(I.RequestLoadItemDataByID, id)
+	end
+	return nil
+end
+function ChatWindow.Relink(text)
+	if type(text) ~= "string" or not text:find("|Hitem:", 1, true) then return text end
+	local Codec = ns.Codec
+	local out, i, n = {}, 1, #text
+	while i <= n do
+		local j = text:find("|", i, true)
+		if not j then
+			out[#out + 1] = text:sub(i)
+			break
+		end
+		if j > i then out[#out + 1] = text:sub(i, j - 1) end
+		local len = text:byte(j + 1) ~= 124 and Codec.LinkAt(text, j) or nil
+		if not len then
+			out[#out + 1] = text:sub(j, j + 1)
+			i = j + 2
+		else
+			local link = text:sub(j, j + len - 1)
+			local colour, data = link:match("^(|c[^|]*)|Hitem:([^|]*)|h%["), nil
+			if colour then data = link:match("^|c[^|]*|Hitem:([^|]*)|h%[") else data = link:match("^|Hitem:([^|]*)|h%[") end
+			local look = data and ChatWindow.ItemLook(tonumber(data:match("^(%d+)")))
+			if look then
+				colour = look.colour or colour
+				link = "|Hitem:" .. data .. "|h[" .. look.name .. "]|h"
+				if colour then link = colour .. link .. "|r" end
+			end
+			out[#out + 1] = link
+			i = j + len
+		end
+	end
+	return table.concat(out)
+end
+-- (GET_ITEM_INFO_RECEIVED, registered with the tab's other events below.)
+function ChatWindow.ItemInfoReceived(id)
+	id = tonumber(id)
+	if not id or not ChatWindow.itemsAsked[id] or ChatWindow.itemLooks[id] then return false end
+	ChatWindow.Changed() -- (a new era: each line's look worked out again at the next redraw)
+	return true
+end
+
 local function NewBubble(pane)
 	local content = pane and pane.content or Content()
 	local ok, b = pcall(CreateFrame, "Frame", nil, content, "BackdropTemplate")
@@ -877,8 +949,10 @@ function ChatWindow.ViewOf(e, hides)
 		v.own = Own(e)
 		v.veiled = not v.own and hides ~= nil and hides(e.text or "") or false
 		local marks = (v.veiled and (Grey(L.FILTER_HIDDEN_MARK) .. " ") or "") .. (v.pending and (Grey(L.CHATWIN_SENDING) .. " ") or "")
-		v.shown = marks .. v.body
-		v.shownRaw = v.raw and (marks .. v.raw) or nil
+		-- (1.5.4: an item link with the name and colour this client's item data gives it, ChatWindow.Relink.)
+		v.shown = marks .. ChatWindow.Relink(v.body)
+		v.shownRaw = v.raw and (marks .. ChatWindow.Relink(v.raw)) or nil
+		v.replyLook = v.replyText and ChatWindow.Relink(v.replyText) or nil
 		v.headed = false
 	end
 	return v
@@ -954,7 +1028,7 @@ local function Bubble(i, e, start, y, maxInner, hides, pane, room)
 	local quoted = not deleted and not hidden and v.reply and ChatWindow.QuoteOf(v, e, ChatWindow.drawing, hides) or nil
 	local text = deleted and ns.WatchChat.DeletedBody() or hidden and Grey(L.CHATWIN_HIDDEN)
 		or (v.reply and not quoted and v.shownRaw) or v.shown
-	local replyWho, replyText = quoted and v.replyWho or nil, quoted and v.replyText or nil
+	local replyWho, replyText = quoted and v.replyWho or nil, quoted and v.replyLook or nil
 	if quoted and quoted.del == true and ns.WatchChat ~= nil and not ns.WatchChat.missing then replyText = ns.WatchChat.DeletedBody() end
 	local bodyFont, bodySize, bodyFlags = ChatWindow.FontOf(b.body)
 	local whoFont, whoSize, whoFlags = ChatWindow.FontOf(b.who)
@@ -4357,6 +4431,7 @@ function ChatWindow.Reset()
 	dirty, dataPending, lastData = false, false, -math.huge
 	ChatWindow.lastCost, ChatWindow.sinceDraw = 0, 0
 	unread, notes, ChatWindow.drafts = {}, {}, {}
+	ChatWindow.Wipe(ChatWindow.itemLooks); ChatWindow.Wipe(ChatWindow.itemsAsked)
 	revealed = setmetatable({}, { __mode = "k" })
 	stick, newCount, lastAt, quiet, acc, want = true, 0, 0, false, 0, nil
 	settings = false
@@ -4481,6 +4556,8 @@ ns.RegisterEvent("UPDATE_BINDINGS", function()
 end)
 ns.RegisterEvent("UI_SCALE_CHANGED", function() ChatWindow.ForgetLooks() end)
 ns.RegisterEvent("DISPLAY_SIZE_CHANGED", function() ChatWindow.ForgetLooks() end)
+-- (1.5.4) An item a line's link named, whose data the tab asked the client for, arrived.
+ns.RegisterEvent("GET_ITEM_INFO_RECEIVED", function(id) ChatWindow.ItemInfoReceived(id) end)
 -- The switch between mouse and keyboard and the gamepad UI (Blizzard_SharedXML/InputUtil.lua's
 -- event, as Borders.lua reads it; not on every client): to the gamepad UI the key goes back to the
 -- game at the switch, the one binding change made there; back, bound at once while the tab shows.

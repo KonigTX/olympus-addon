@@ -171,3 +171,59 @@ test("1.5.4 chat links at the sender: a line with a link leaves without a pipe, 
 	if not ok then error(err, 0) end
 end)
 
+-- The Chat tab's stand-ins for the client's item data and link window, for the two tests below.
+local function WithItemData(fn)
+	local savedItem, savedRef, savedInfo, savedShift = rawget(_G, "C_Item"), rawget(_G, "SetItemRef"), rawget(_G, "GetItemInfo"), IsShiftKeyDown
+	local ok, err = pcall(function()
+		local known = { [14342] = { "Mooncloth", ITEM } }
+		local asked, refs = {}, {}
+		GetItemInfo = nil
+		C_Item = {
+			GetItemInfo = function(id) local k = known[tonumber(id)] if k then return k[1], k[2], 2 end end,
+			IsItemDataCachedByID = function(id) return known[tonumber(id)] ~= nil end,
+			RequestLoadItemDataByID = function(id) asked[#asked + 1] = tonumber(id) end,
+		}
+		SetItemRef = function(link, text, button) refs[#refs + 1] = { link = link, text = text, button = button } end
+		IsShiftKeyDown = function() return false end
+		fn(known, asked, refs)
+	end)
+	C_Item, SetItemRef, GetItemInfo, IsShiftKeyDown = savedItem, savedRef, savedInfo, savedShift
+	if not ok then error(err, 0) end
+end
+
+test("1.5.4 Chat tab items: a line's item link shows highlighted with the name and colour the client's item data gives it, whatever the line said; an item unknown to the client shows as sent, is asked for once, and the tab redraws when its data arrives; the history keeps the line as sent", function()
+	WithWindow(function(w)
+		WithItemData(function(known, asked)
+			-- A line whose link lies about the item (a modified client): the real name and colour
+			-- show, the link's own data stays (the item the hover and the click open).
+			local lying = "|cffff0000|H" .. LINK .. "|h[Free Gold]|h|r"
+			local unknown = "|cffa335ee|Hitem:77777::::::::60:::::|h[Mystery Blade]|h|r"
+			ns.rdb.chat = { A = {
+				Line(T0, "Aa Bb-Realm", "look " .. ITEM .. " cheap"),
+				Line(T0 + 400, "Cc Dd-Realm", "take " .. lying),
+				Line(T0 + 800, "Ee Ff-Realm", "found " .. unknown),
+				Line(T0 + 1200, "Gg Hh-Realm", "cast " .. SPELL),
+			} }
+			local f = w.CW.Open()
+			assert(f, "open")
+			local b = BubbleWith(f, "[Mooncloth]")
+			assert(b, "the link in its bubble")
+			eq(b.body:GetText(), "look " .. ITEM .. " cheap", "the link as sent: highlighted, its colour")
+			eq(b.hyperlinks, true, "the bubble answers its links"); eq(b.mouse, true)
+			eq(BubbleWith(f, "take ").body:GetText(), "take " .. ITEM, "the client's name and colour, not the sender's words")
+			assert(BubbleWith(f, "[Mystery Blade]"), "an item the client has no data of: as sent, until it comes")
+			eq(#asked, 1); eq(asked[1], 77777, "asked the client for it once")
+			eq(BubbleWith(f, "cast ").body:GetText(), "cast " .. SPELL, "a spell link as sent")
+			-- The data arrives: the tab redraws with its name and colour.
+			known[77777] = { "Mystery Blade of the Deep", "|cff0070dd|Hitem:77777::::::::60:::::|h[Mystery Blade of the Deep]|h|r" }
+			w.event("GET_ITEM_INFO_RECEIVED", 77777, true)
+			f:Fire("OnUpdate", 0.3)
+			eq(BubbleWith(f, "found ").body:GetText(), "found |cff0070dd|Hitem:77777::::::::60:::::|h[Mystery Blade of the Deep]|h|r")
+			f:Fire("OnUpdate", 0.3)
+			eq(#asked, 1, "asked once, for good")
+			-- The history, what moderation and the companion read, holds the lines as sent.
+			eq(ns.rdb.chat.A[2].text, "take " .. lying); eq(ns.rdb.chat.A[3].text, "found " .. unknown)
+		end)
+	end)
+end)
+
