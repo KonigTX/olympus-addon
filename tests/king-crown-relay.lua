@@ -94,13 +94,17 @@ test("1.5.4 the King's crown: a relay hands it to its reporters outside the tric
 		deliver("WHISPER", KING .. "-Realm", "RL~P~T1~Q~3~Olympus Prime")
 		pump(100)
 		eq(Crowns("~T1~Q~3~"), 3, "hidden at once")
-		-- (The load review of the 1.5.4 candidate: a reporter's allowance refills through the minute, at
-		-- his share of TRICKLE_PER_MIN, no longer all at once a minute after it was spent. So it is spent
-		-- again first, and the word not his finds none: it stays in the trickle.)
+		-- (The review of the 1.5.4 candidate.) Past KING_GAP, so a crown would go to every reporter now,
+		-- and past each reporter's allowance window, so it is whole again: spent first, the word not his
+		-- must find none and stay in the trickle, never take the crown's way. Before, it came at the
+		-- second of the hidden word, when no crown was due: it passed whichever way it went.
+		H.clock = H.clock + H.Relay.KING_GAP
 		for i = 1, 4 do deliver("WHISPER", "Census Guy-Realm", ("RL~P~C8:%d:4:%s"):format(i, ("x"):rep(i < 4 and 200 or 10))) end
+		local trickled = H.Relay.Stats().trickled or 0
 		deliver("WHISPER", "Some Body-Realm", "RL~P~T1~P~9~Olympus Prime~1453~100~100")
 		pump(100)
-		eq(Crowns("~T1~P~9~"), 0, "a T1~P not his: in the trickle, spent")
+		eq(Crowns("~T1~P~9~"), 0, "a T1~P not his: in the trickle, spent, though a crown would go now")
+		eq((H.Relay.Stats().trickled or 0) - trickled, 3, "held back by each reporter's trickle")
 	end)
 	Guarded(function()
 		-- Sixty reporters, the King's crown every 5 s for ten minutes: KING_PER_MIN a minute in all
