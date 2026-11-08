@@ -33,16 +33,27 @@ local L = ns.L
 --     makes a guild master or an officer, or a councillor, the King or the author; kept with the
 --     reporter's name; never a lock. A plain member's client sends none and keeps none.
 --   * The lock. A client this one saw announce a modified build (the strong mark alone: never a
---     shared word, never the silent mark, never our own client) is locked out at Comm's door:
+--     shared word but on a relay's client, below; never the silent mark, never our own client) is
+--     locked out at Comm's door:
 --     nothing it says reaches a handler, the census or a relay here, but its hello and its version
 --     answer, which clear the mark when they name a release (the sighting stays in the record). A
 --     relay takes no registration from it and drops one it holds (Relay.lua); the arena's words
 --     from it are refused (ArenaNet.lua). Its lines in the Olympus chat go the way of /oly block's:
 --     dropped at the same door. What it sees of us is unchanged (the owner's call: nothing hidden
 --     from them, nothing but the code).
+--   * The relays (the owner's call, the same day). A relay's client (Relay.IsRelay(ns.me)) keeps the
+--     reporters' records as a guild master does, and acts on a listed character as on one it saw
+--     itself: no registration taken, one held dropped, nothing forwarded, its RL words dropped. The
+--     records cross between the relays as the guild verifications do (RW, Relay.lua): a word a
+--     relay hears from its clients goes once to every other relay, which hands it to its reporters;
+--     a word from a relay or the author is trusted as a guild master's. Our own observation beats
+--     the list: a listed character that says a release to us directly is cleared here, and that
+--     clearing is shared (a "c" word) so the other keepers' lists clear too; a keeper's clear never
+--     lifts a mark this client made itself.
 --   * The view: /oly builds, a copyable window (the owner cannot copy chat lines); the right-click
---     menu's version line, "Olympus 1.5.1-onn.12 (modified build)" (Versions.lua).
---   BD~1~<reporter's guild>~<name>~<version>~h|a~<first>~<last>~<their guild>   GUILD and CHANNEL
+--     menu's version line, "Olympus <version> (modified build)" (Versions.lua).
+--   BD~1~<reporter's guild>~<name>~<version>~h|a|c~<first>~<last>~<their guild>   GUILD and CHANNEL
+--   (h the hello, a a version answer, c the character announced the release <version> to the sender)
 
 local Builds = {}
 ns.Builds = Builds
@@ -58,7 +69,7 @@ Builds.KEEP_AT_MOST = 365 * 86400 -- a shared word's times older than this count
 
 local lastHello = {}   -- key -> { t, version }: a guild peer's last hello this session (the silent mark's presence)
 local asks = {}        -- key -> { t1, t2, ... }: this client's version checks a peer left unanswered
-local shared = {}      -- key -> when this client last shared that sighting
+local shared = {}      -- key (or "c:" .. key, a clear) -> when this client last shared that
 local shareTimes = {}  -- this client's shared words in the last minute
 local indexed, byKey, byShort -- the store the index was built for, and the index
 
@@ -155,18 +166,32 @@ end
 -- Sightings and the lock
 ---------------------------------------------------------------------------
 
+-- This client is a relay's (Relay.lua: a signed councillor's, the author's, the King's or the
+-- Treasurer's character) while the relay runs (Forever): it keeps the list and acts on it.
+local function RelayClient()
+	local R = ns.Relay
+	return type(R) == "table" and not R.missing and type(R.On) == "function" and R.On() == true
+		and type(R.IsRelay) == "function" and R.IsRelay(ns.me) == true
+end
+Builds.RelayClient = RelayClient
+local function IsRelayName(name)
+	local R = ns.Relay
+	return type(R) == "table" and not R.missing and type(R.IsRelay) == "function" and R.IsRelay(name) == true
+end
+
 local function Privy()
 	if type(ns.me) ~= "string" then return false end
 	if ns.Roster and ns.Roster.IsOfficer and ns.Roster.IsOfficer() then return true end
 	return (ns.IsHighCouncillor ~= nil and ns.IsHighCouncillor(ns.me) == true)
 		or (ns.IsAuthorName ~= nil and ns.IsAuthorName(ns.me) == true)
 		or (ns.IsKingCharacter ~= nil and ns.IsKingCharacter(ns.me) == true)
+		or RelayClient()
 end
 -- Who sends and keeps the shared list: a guild master or an officer (our own rank, the server's),
--- a councillor, the author or the King. Plain members neither.
+-- a councillor, the author, the King, and a relay's client. Plain members neither.
 Builds.Privy = Privy
 
-local Share
+local Share, ShareClear
 
 -- A sighting of this client's own (by nil), or a reporter's shared one (by: his name).
 local function Observe(full, version, how, now, by, first, guild)
@@ -192,16 +217,32 @@ local function Observe(full, version, how, now, by, first, guild)
 		Share(e, now)
 	else
 		e.locked = nil
+		-- (A reporter saw it on a modified build again after a clear: the clear is over.)
+		if e.cleared and now > (e.cleared.at or 0) then e.cleared = nil end
+		-- A relay's client acts on the list: a registration it holds from the character goes.
+		if RelayClient() and e.cleared == nil then
+			local R = ns.Relay
+			if type(R.DropReporter) == "function" then R.DropReporter(full) end
+		end
 	end
 	return e
 end
 
--- A release announced by a client we hold locked: the lock goes, the sighting stays.
+-- A release announced to us by a client we hold locked, or one the list names: the lock goes, the
+-- sighting stays (ours: release noted; a reporter's: cleared, until a reporter sees it again), and
+-- the keepers of the list are told (ShareClear). Our own observation beats the list.
 local function Cleared(full, version, now)
 	local e = Find(full)
-	if not e or e.by ~= nil or e.locked ~= true then return end
-	e.locked, e.release, e.releaseAt = false, Builds.Clean(version), now
-	ns.Log("modified build: %s now says %s: unlocked", full, e.release)
+	if not e or e.how == "silent" then return end
+	if e.by == nil then
+		if e.locked ~= true then return end
+		e.locked, e.release, e.releaseAt = false, Builds.Clean(version), now
+	else
+		if e.cleared then return end
+		e.cleared = { version = Builds.Clean(version), at = now }
+	end
+	ns.Log("modified build: %s now says %s: unlocked", full, Builds.Clean(version))
+	ShareClear(e, version, now)
 end
 
 -- A guild peer's hello (Comm.lua, H1): version as it says it ("" for none).
@@ -233,7 +274,11 @@ function Builds.Quarantined(name)
 	local full = Full(name)
 	if full == ns.me then return false end
 	local e = Find(full)
-	return e ~= nil and e.by == nil and e.locked == true
+	if not e or e.how == nil or e.how == "silent" then return false end
+	if e.by == nil then return e.locked == true end
+	-- A reporter's record: a relay's client acts on it as on its own (the owner's call), until the
+	-- character announces a release, here or to a keeper who said so.
+	return RelayClient() and e.cleared == nil
 end
 
 -- What a locked client may still say to us: its hello and its version answer (either may name a
@@ -327,15 +372,36 @@ Share = function(e, now)
 	return true
 end
 
+-- The character announced the release `version` to us: the keepers of the list are told (a "c"
+-- word), once an hour per character at most, within the same minute's budget.
+ShareClear = function(e, version, now)
+	if not Privy() then return false end
+	local C = ns.Comm
+	if not (C and C.Send) or (ns.IsMember ~= nil and not ns.IsMember()) then return false end
+	local key = "c:" .. e.key
+	if now - (shared[key] or -math.huge) < Builds.SHARE_GAP then return false end
+	if Recent(shareTimes, 60, now) >= Builds.SHARE_PER_MIN then return false end
+	local mine = GetGuildInfo and GetGuildInfo("player")
+	if type(mine) ~= "string" or mine == "" then return false end
+	local word = ("BD~1~%s~%s~%s~c~%d~%d~%s"):format(mine, e.name, Builds.Clean(version), e.first or now, now, e.guild or "")
+	if #word > 255 then return false end
+	shared[key] = now
+	shareTimes[#shareTimes + 1] = now
+	C.Send("GUILD", word, "buildc:" .. e.key)
+	C.Send("CHANNEL", word, "buildcch:" .. e.key)
+	return true
+end
+
 -- A reporter's word heard: from a guild master or officer (the roster over GUILD, the census on
 -- the channel), a councillor, the King or the author; kept by those who keep the list alone.
 function Builds.HandleShare(dist, sender, text)
 	if dist ~= "GUILD" and dist ~= "CHANNEL" then return end
 	if not Privy() then return end
 	local v, guild, name, version, how, first, last, their =
-		tostring(text or ""):match("^BD~(%d+)~([^~]*)~([^~]+)~([^~]*)~([ha])~(%d+)~(%d+)~?([^~]*)$")
+		tostring(text or ""):match("^BD~(%d+)~([^~]*)~([^~]+)~([^~]*)~([hac])~(%d+)~(%d+)~?([^~]*)$")
 	if v ~= "1" or #name > Builds.NAME_MAX or not name:find("%a") or #guild > 48 or #their > 48 then return end
-	if Release(version) then return end -- (no client shares a release; nothing to keep)
+	-- A sighting names no release (no client shares one); a clear names the release announced.
+	if Release(version) ~= (how == "c") then return end
 	local full = Full(name)
 	if full == "" or full == ns.me then return end
 	local who = Full(sender)
@@ -348,14 +414,25 @@ function Builds.HandleShare(dist, sender, text)
 		rank = ns.Data.AuthorizedRank(who, guild)
 	end
 	local officer = type(rank) == "number" and rank <= (ns.CAPTAIN_RANK or 1)
+	-- (A relay's word is trusted as a guild master's: the owner's call.)
 	if not (officer or (ns.IsHighCouncillor ~= nil and ns.IsHighCouncillor(who) == true)
 		or (ns.IsAuthorName ~= nil and ns.IsAuthorName(who) == true)
-		or (ns.IsKingCharacter ~= nil and ns.IsKingCharacter(who) == true)) then return end
+		or (ns.IsKingCharacter ~= nil and ns.IsKingCharacter(who) == true)
+		or IsRelayName(who)) then return end
 	local now = ns.Now()
 	last = math.min(tonumber(last) or now, now)
 	if now - last > Builds.KEEP_AT_MOST then last = now end
 	first = math.min(tonumber(first) or last, last)
 	if now - first > Builds.KEEP_AT_MOST then first = last end
+	if how == "c" then
+		-- A keeper heard the character announce a release: a reporter's record is cleared (a relay's
+		-- client lets the character back in); a mark this client made itself stands until the
+		-- character says so to us; a sighting newer than the clear stands too.
+		local e = Find(full)
+		if not e or e.by == nil or e.how == "silent" or last < (e.last or 0) then return end
+		if not e.cleared or last > (e.cleared.at or 0) then e.cleared = { version = Builds.Clean(version), at = last, by = who } end
+		return
+	end
 	Observe(full, version, how == "a" and "answer" or "hello", last, who, first, their ~= "" and their or nil)
 end
 
@@ -375,6 +452,8 @@ local function Line(e)
 	local text = ("%s  %s  %s, %s  (%s)"):format(name, tostring(e.version or "?"), How(e), ns.Ago(e.last or 0), By(e))
 	if e.by == nil and e.how ~= "silent" and e.locked == false and e.release then
 		text = text .. "; " .. L.BUILDS_CLEARED:format(e.release)
+	elseif e.by ~= nil and e.cleared then
+		text = text .. "; " .. L.BUILDS_CLEARED:format(tostring(e.cleared.version or "?"))
 	elseif e.silent and e.how ~= "silent" then
 		text = text .. "; " .. L.BUILDS_HOW_SILENT:format(e.silent.n)
 	end
@@ -438,9 +517,11 @@ function Builds.Slash() return Builds.Show() end
 function Builds.Detail(name)
 	local e = Builds.Modified(name)
 	if not e then return nil end
-	if e.by ~= nil then return L.VERSION_DETAIL_SHARED:format(ns.DisplayName(e.by), ns.Ago(e.last or 0)) end
-	local text = (e.how == "answer" and L.VERSION_DETAIL_CHECK or L.VERSION_DETAIL_HELLO):format(ns.Ago(e.last or 0))
-	if e.locked == true then text = text .. "; " .. L.VERSION_DETAIL_LOCKED end
+	local text
+	if e.by ~= nil then text = L.VERSION_DETAIL_SHARED:format(ns.DisplayName(e.by), ns.Ago(e.last or 0))
+	else text = (e.how == "answer" and L.VERSION_DETAIL_CHECK or L.VERSION_DETAIL_HELLO):format(ns.Ago(e.last or 0)) end
+	-- (Locked: ours, or on a relay's client the list's too.)
+	if Builds.Quarantined(e.name) then text = text .. "; " .. L.VERSION_DETAIL_LOCKED end
 	return text
 end
 

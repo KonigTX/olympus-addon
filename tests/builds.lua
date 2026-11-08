@@ -20,14 +20,15 @@ end
 -- in w.timers (w.Run()), a fixed check id, guild hellos as Comm.PeerVersion would give them
 -- (w.hellos[short] = version), who is online (w.online), the ranks the roster and the census give
 -- (w.ranks[full]), the copy windows opened (w.copies), the relay's registrations dropped
--- (w.dropped); a record of its own, nothing kept across tests.
+-- (w.dropped), the relay running (w.relayOn) and its relays (w.relays[short] = true); a record of its
+-- own, nothing kept across tests.
 local function WithBuilds(me, fn, opts)
 	opts = opts or {}
 	local saved = { me = ns.me, now = ns.Now, send = ns.Comm.Send, whisper = ns.Comm.Whisper, peer = ns.Comm.PeerVersion,
 		peers = ns.Comm.Peers, print = ns.Print, after = V.after, random = V.random, ui = ns.UI, builds = ns.db.builds,
 		blocked = ns.db.blocked, council = ns.rdb.council, roster = ns.Roster, guild = GetGuildInfo, inGuild = IsInGuild,
 		friends = C_FriendList, authorized = ns.Data.AuthorizedRank, relay = rawget(ns, "Relay"), member = ns.IsMember, log = ns.Log }
-	local w = { clock = 1800000000, sent = {}, whispered = {}, timers = {}, printed = {}, copies = {}, hellos = {}, online = {}, ranks = {}, dropped = {} }
+	local w = { clock = 1800000000, sent = {}, whispered = {}, timers = {}, printed = {}, copies = {}, hellos = {}, online = {}, ranks = {}, dropped = {}, quieted = {} }
 	local ok, err = pcall(function()
 		B.Reset(); V.Reset()
 		ns.me = me
@@ -59,7 +60,11 @@ local function WithBuilds(me, fn, opts)
 			local r = w.ranks[ns.FullName(ns.Normal(name))]
 			if r and guild ~= "" then return r, "census" end
 		end
-		rawset(ns, "Relay", setmetatable({ DropReporter = function(name) w.dropped[#w.dropped + 1] = name return 0 end }, { __index = saved.relay or {} }))
+		-- (The relay as this client sees it: running when w.relayOn, its relays the short names in w.relays.)
+		rawset(ns, "Relay", setmetatable({ DropReporter = function(name) w.dropped[#w.dropped + 1] = name return 0 end,
+			On = function() return w.relayOn == true end,
+			IsRelay = function(name) return w.relays ~= nil and w.relays[ns.ShortName(ns.FullName(ns.Normal(tostring(name))))] == true end,
+			Quiet = function(name) w.quieted[#w.quieted + 1] = name end }, { __index = saved.relay or {} }))
 		fn(w)
 	end)
 	ns.me, ns.Now, ns.Comm.Send, ns.Comm.Whisper, ns.Comm.PeerVersion, ns.Comm.Peers = saved.me, saved.now, saved.send, saved.whisper, saved.peer, saved.peers
@@ -550,7 +555,8 @@ test("1.5.4 modified builds README privacy: both privacy tables name the sightin
 			end
 		end
 		assert(shared, path .. ": the shared sighting's row")
-		for _, must in ipairs({ "the version string its addon announced", "guild masters and officers of every Olympus guild, the High Council", "once an hour per character", "400 sightings at most, the oldest out", "with the reporter's name", "account-wide" }) do
+		for _, must in ipairs({ "the version string its addon announced", "guild masters and officers of every Olympus guild, the High Council", "once an hour per character", "400 sightings at most, the oldest out", "with the reporter's name", "account-wide",
+			"The relays pass it to one another and lock the character out as if they had seen it themselves, until it announces a release to one of them" }) do
 			assert(shared:find(must, 1, true), path .. ": the shared row: " .. must)
 		end
 		assert(own, path .. ": the own record's row")
@@ -562,5 +568,154 @@ test("1.5.4 modified builds README privacy: both privacy tables name the sightin
 	end
 	local roadmap = ReadFile(ROOT .. "ROADMAP.md")
 	local line = assert(roadmap:match("\n%- v1%.5%.4 ([^\n]+)"), "the 1.5.4 line")
-	for _, must in ipairs({ "modified build", "`/oly builds`", "locked out" }) do assert(line:find(must, 1, true), "ROADMAP 1.5.4: " .. must) end
+	for _, must in ipairs({ "modified build", "`/oly builds`", "locked out", "The relays keep the shared list too" }) do assert(line:find(must, 1, true), "ROADMAP 1.5.4: " .. must) end
+end)
+
+---------------------------------------------------------------------------
+-- The relays keep the list and act on it (the owner's call, the same day)
+---------------------------------------------------------------------------
+
+-- A word of the relay world's sends that carries `needle` (plain), after the n-th send.
+local function Carrying(sent, needle, n)
+	local out = {}
+	for i = (n or 0) + 1, #sent do if sent[i].msg:find(needle, 1, true) then out[#out + 1] = sent[i] end end
+	return out
+end
+local OTHER = "Max Ran-CAMWOWUS2Realm1PvE" -- the world's other relay
+
+test("1.5.4 modified builds relays: a relay's client keeps another relay's word and acts on a listed character as on its own: the registration it held dropped, its RR ignored, its RL words and its words across (RX) forwarded to nobody, nothing forwarded to it; a release it announces to the relay clears it there and the clear is shared, across to the other relay too; a keeper's clear lets a listed character back in, never one the relay marked itself", function()
+	RelaySetup(function()
+		local R, Deliver, sent, _, Pump = Relayed(RELAY)
+		R.clock = 1800000000
+		local one, two, origin = "Rep One" .. REALM7, "Rep Two" .. REALM7, "Some Origin" .. REALM7
+		Deliver("WHISPER", one, "RL~P~RR~Guild One")
+		Deliver("WHISPER", two, "RL~P~RR~Guild Two")
+		eq(R.Relay.Stats().reporters, 2)
+		-- The other relay's word about Rep One crosses to this relay (RW): kept, and acted on.
+		local word = ("BD~1~Olympus Dawn~%s~1.5.1-onn.12~h~%d~%d~Guild One"):format(one, R.clock - 60, R.clock - 60)
+		Deliver("WHISPER", OTHER, "RW~P~" .. OTHER .. "~" .. word)
+		local e = R.Builds.Modified(one)
+		assert(e, "a relay keeps the list"); eq(e.by, OTHER, "a relay's word, trusted as a guild master's")
+		eq(R.Builds.Quarantined(one), true, "and acts on it")
+		eq(R.Relay.Stats().reporters, 1, "the registration it held is dropped")
+		Deliver("WHISPER", one, "RL~P~RR~Guild One")
+		eq(R.Relay.Stats().reporters, 1, "its RR ignored")
+		Pump(30)
+		local n = #sent
+		Deliver("WHISPER", one, "RL~P~X1~from-one")
+		Deliver("WHISPER", OTHER, "RX~P~" .. one .. "~X1~from-one-across")
+		Deliver("WHISPER", origin, "RL~P~X1~from-origin")
+		Pump(30)
+		eq(#Carrying(sent, "from-one", n), 0, "neither its RL word nor its word across is forwarded")
+		local toOne, toTwo = 0, 0
+		for _, s in ipairs(Carrying(sent, "from-origin", n)) do
+			if s.target == one then toOne = toOne + 1 elseif s.target == two then toTwo = toTwo + 1 end
+		end
+		eq(toOne, 0, "nothing forwarded to the listed client"); eq(toTwo, 1, "the other reporter still gets it")
+		-- Rep One announces a release to this relay (its hello): cleared here, back in, and the clear shared.
+		n = #sent
+		Deliver("GUILD", one, "H1~1.5.4~CAMWOWUS2Realm7PvE~p~~~~R")
+		eq(R.Builds.Quarantined(one), false, "our own observation beats the list")
+		Pump(30)
+		local clear = ("BD~1~Olympus II~%s~1.5.4~c~%d~%d~Guild One"):format(one, R.clock - 60, R.clock)
+		local guild, across = 0, 0
+		for _, s in ipairs(Carrying(sent, clear, n)) do
+			if s.dist == "GUILD" and s.msg == clear then guild = guild + 1 end
+			-- (As RW from this relay, or as RL when Pick makes the other relay this guild's: it answered.)
+			if (s.msg:find("^RW~P~") or s.msg:find("^RL~P~")) and tostring(s.target):find("^Max Ran") then across = across + 1 end
+		end
+		eq(guild, 1, "the clear over GUILD"); eq(across, 1, "and across to the other relay")
+		Deliver("WHISPER", one, "RL~P~RR~Guild One")
+		eq(R.Relay.Stats().reporters, 2, "registered again")
+		-- A keeper's clear of a listed character lets it back in; a newer sighting marks it again.
+		local w2 = ("BD~1~Olympus Dawn~%s~1.5.3-custom~h~%d~%d~"):format(two, R.clock - 30, R.clock - 30)
+		Deliver("WHISPER", OTHER, "RW~P~" .. OTHER .. "~" .. w2)
+		eq(R.Builds.Quarantined(two), true)
+		Deliver("WHISPER", OTHER, "RW~P~" .. OTHER .. "~" .. ("BD~1~Olympus Dawn~%s~1.5.4~c~%d~%d~"):format(two, R.clock - 30, R.clock))
+		eq(R.Builds.Quarantined(two), false, "a keeper's clear lets it back in")
+		R.clock = R.clock + 60
+		Deliver("WHISPER", OTHER, "RW~P~" .. OTHER .. "~" .. ("BD~1~Olympus Dawn~%s~1.5.3-custom~h~%d~%d~"):format(two, R.clock - 30, R.clock))
+		eq(R.Builds.Quarantined(two), true, "seen on a modified build after the clear: locked again")
+		-- A mark of the relay's own: a keeper's clear never lifts it.
+		Deliver("GUILD", origin, "H1~1.5.1-onn.12~CAMWOWUS2Realm7PvE~p~~~~R")
+		eq(R.Builds.Quarantined(origin), true)
+		Deliver("WHISPER", OTHER, "RW~P~" .. OTHER .. "~" .. ("BD~1~Olympus Dawn~%s~1.5.4~c~%d~%d~"):format(origin, R.clock, R.clock))
+		eq(R.Builds.Quarantined(origin), true, "only what the character says to us clears our own mark")
+	end)
+end)
+
+test("1.5.4 modified builds relays: a sighting a relay hears from its clients crosses once to every other relay (RW) and goes to its reporters; it is kept where its origin may say it (a relay's, the author's), never from a plain client", function()
+	RelaySetup(function()
+		local R, Deliver, sent, _, Pump = Relayed(RELAY)
+		R.clock = 1800000000
+		local rep, client = "Rep One" .. REALM7, "Some Client" .. REALM7
+		Deliver("WHISPER", rep, "RL~P~RR~Guild One")
+		local word = ("BD~1~Olympus Dawn~%s~1.5.1-onn.12~h~%d~%d~"):format("Ann Dark" .. REALM7, R.clock, R.clock)
+		Deliver("WHISPER", client, "RL~P~" .. word)
+		Pump(30)
+		local function Across()
+			local k = 0
+			for _, s in ipairs(sent) do
+				if s.msg == "RW~P~" .. client .. "~" .. word then k = k + 1; assert(tostring(s.target):find("^Max Ran"), tostring(s.target)) end
+			end
+			return k
+		end
+		eq(Across(), 1, "once to the other relay")
+		local toRep = 0
+		for _, s in ipairs(sent) do if s.target == rep and s.msg == "RM~P~" .. client .. "~" .. word then toRep = toRep + 1 end end
+		eq(toRep, 1, "and to its reporters")
+		eq(R.Builds.Modified("Ann Dark" .. REALM7), nil, "a plain client's word is not kept")
+		Deliver("WHISPER", client, "RL~P~" .. word)
+		Pump(30)
+		eq(Across(), 1, "the same word again: not across again")
+		-- The author's word (by RL, as from any client): kept, and acted on by the relay.
+		R.IsAuthorName = function(n) return ns.ShortName(n) == "Quill Author" end
+		local w2 = ("BD~1~Olympus Dawn~%s~1.5.3-custom~a~%d~%d~"):format("Bob Light" .. REALM7, R.clock, R.clock)
+		Deliver("WHISPER", "Quill Author" .. REALM7, "RL~P~" .. w2)
+		eq(R.Builds.Modified("Bob Light" .. REALM7).by, "Quill Author" .. REALM7, "the author's word is kept")
+		eq(R.Builds.Quarantined("Bob Light" .. REALM7), true, "and acted on")
+		-- A relay's word that comes across is kept, and handed to its reporters (RM).
+		local w3 = ("BD~1~Olympus Dawn~%s~1.5.1-onn.12~h~%d~%d~"):format("Cid Grey" .. REALM7, R.clock, R.clock)
+		local n = #sent
+		Deliver("WHISPER", OTHER, "RW~P~" .. OTHER .. "~" .. w3)
+		Pump(30)
+		eq(R.Builds.Modified("Cid Grey" .. REALM7).by, OTHER)
+		toRep = 0
+		for i = n + 1, #sent do if sent[i].target == rep and sent[i].msg == "RM~P~" .. OTHER .. "~" .. w3 then toRep = toRep + 1 end end
+		eq(toRep, 1, "handed to its reporters")
+	end)
+end)
+
+test("1.5.4 modified builds guild: a reporter neither hears nor hands to its guild a relayed word (RM) whose origin it marked as a modified build", function()
+	RelaySetup(function()
+		local R, Deliver, sent, heard, Pump = Relayed("Member One-Realm")
+		local relay, marked, origin = "Max Ran-Realm", "Mate Two-Realm", "Some Origin-Realm"
+		Deliver("GUILD", marked, "H1~1.5.1-onn.12~Realm~p~~~~R")
+		eq(R.Builds.Quarantined(marked), true)
+		Pump(20)
+		local n = #sent
+		Deliver("WHISPER", relay, "RM~P~" .. marked .. "~X1~relayed")
+		Deliver("WHISPER", relay, "RM~P~" .. origin .. "~X1~relayed-other")
+		Pump(20)
+		local rg = {}
+		for i = n + 1, #sent do if sent[i].msg:find("^RG~") then rg[#rg + 1] = sent[i].msg end end
+		eq(#rg, 1, "only the other origin's word is handed to the guild"); assert(rg[1]:find("relayed-other", 1, true), rg[1])
+		eq(#heard, 1); eq(heard[1].sender, origin)
+	end)
+end)
+
+test("1.5.4 modified builds relays: a relay's character keeps the list and locks a listed character out only while the relay runs (Forever); off it, as any member, it keeps nothing", function()
+	WithBuilds("Max Ran-Realm", function(w)
+		w.relays = { ["Max Ran"] = true, ["Hildryn Payne"] = true }
+		w.relayOn = false
+		B.HandleShare("CHANNEL", "Hildryn Payne-Realm", Word("Ann Dark-Realm", "1.5.1-onn.12", "h", nil, nil, ""))
+		eq(B.Count(), 0, "no relay running: a plain member's client keeps nothing")
+		w.relayOn = true
+		B.HandleShare("CHANNEL", "Hildryn Payne-Realm", Word("Ann Dark-Realm", "1.5.1-onn.12", "h", nil, nil, ""))
+		eq(B.Modified("Ann Dark-Realm").by, "Hildryn Payne-Realm", "the relay keeps another relay's word")
+		eq(B.Quarantined("Ann Dark-Realm"), true, "and locks the character out")
+		eq(#w.dropped, 1, "the registration it may hold goes"); eq(w.dropped[1], "Ann Dark-Realm")
+		w.relayOn = false
+		eq(B.Quarantined("Ann Dark-Realm"), false, "the relay stopped: the list locks nobody here")
+	end)
 end)

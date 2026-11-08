@@ -1189,6 +1189,10 @@ function Relay.HandleIn(dist, sender, text)
 	-- (1.5.4) A verifier's decision (as this relay knows them) also goes once to every other relay
 	-- (RW), each handing it to its own reporters: no client makes every relay fan out a forged one.
 	if fresh and Decision(body) and Signed(origin) then ToRelays(flag, origin, body) end
+	-- (1.5.4) A modified-build sighting or its clear (BD, Builds.lua) heard from one of our clients
+	-- goes once to every other relay too, each handing it to its own reporters; the origin's right to
+	-- say it is checked where it is kept (Builds.HandleShare).
+	if fresh and body:match("^BD~1~") then ToRelays(flag, origin, body) end
 	if localOnly and (origin ~= ns.me or VerificationAsk(body)) then
 		stats.kept = (stats.kept or 0) + 1
 		Deliver(origin, body, flag == "L") -- (heard and answered here, fanned out to nobody)
@@ -1218,6 +1222,8 @@ function Relay.HandleAcross(dist, sender, text)
 	if not Relay.IsRelay(sender) or not Relay.IsRelay(ns.me) then stats.dropped = stats.dropped + 1 return false end
 	verified[ns.ShortName(sender):lower()] = Now()
 	if Remembered(origin, body) then return true end
+	-- (1.5.4) A word of a client marked as a modified build (Builds.lua): forwarded to nobody.
+	if Quarantined(origin) then stats.dropped = stats.dropped + 1 return true end
 	if VerificationAsk(body) then Deliver(origin, body, false); return true end
 	ToReporters(flag, origin, body, sender)
 	return true
@@ -1241,11 +1247,17 @@ function Relay.HandleVerify(dist, sender, text)
 	if dist ~= "WHISPER" or not Relay.On() then return false end
 	local flag, origin, body = tostring(text):match("^RW~([LP])~([^~]+)~(.*)$")
 	if not flag then return false end
-	if not Relay.IsRelay(sender) or not Relay.IsRelay(ns.me) or not body:match("^GV~1~[ARQS]~") then
+	if not Relay.IsRelay(sender) or not Relay.IsRelay(ns.me) or not (body:match("^GV~1~[ARQS]~") or body:match("^BD~1~")) then
 		stats.dropped = stats.dropped + 1
 		return false
 	end
 	if Remembered(origin, body) then return true end
+	-- (1.5.4) A modified-build sighting or its clear crossed from another relay (Builds.lua): to our
+	-- reporters, heard here (its origin checked where it is kept), never sent across again.
+	if body:match("^BD~1~") then
+		ToReporters(flag, origin, body, sender)
+		return true
+	end
 	if Decision(body) then
 		if not Signed(origin) then stats.dropped = stats.dropped + 1 return false end
 		ToReporters(flag, origin, body, sender) -- (heard here too)
@@ -1265,6 +1277,8 @@ function Relay.HandleRelayed(dist, sender, text)
 	if not flag then return false end
 	if not Relay.IsRelay(sender) then stats.dropped = stats.dropped + 1 return false end
 	verified[ns.ShortName(sender):lower()] = Now()
+	-- (1.5.4) A word of a client marked as a modified build (Builds.lua): not heard, not handed on.
+	if Quarantined(origin) then stats.dropped = stats.dropped + 1 return true end
 	if not Remembered(origin, body) then ns.Log("relay: %s's word (%s) by %s", tostring(origin), body:sub(1, 2), tostring(sender)) end
 	if Deliver(origin, body, flag == "L") then ToGuild(flag, origin, body) end
 	return true
