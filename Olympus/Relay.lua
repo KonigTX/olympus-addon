@@ -613,8 +613,14 @@ end
 local function SetWhispers(flag, origin, set)
 	local parts = {}
 	for i, body in ipairs(set) do parts[i] = body:match("^C%w+:%d+:%d+:(.*)$") end
-	local whispers = Envelope("RM", "RM~" .. flag .. "~" .. origin .. "~" .. table.concat(parts))
-	if #parts == #set and #whispers <= ns.Codec.MAX_CHUNKS then return whispers end
+	local word = table.concat(parts)
+	-- (review prototype) Only a word with a type a handler takes whole: a census report (R1, R2)
+	-- is decoded from its pieces alone (Comm's CHANNEL path), so it keeps its pieces.
+	if #parts == #set and word:match("^%u%w~") and not word:match("^R[12]~") then
+		local whispers = Envelope("RM", "RM~" .. flag .. "~" .. origin .. "~" .. word)
+		if #whispers <= ns.Codec.MAX_CHUNKS then return whispers end
+	end
+	local whispers
 	-- (Too long to travel as one word: the pieces as they came, each wrapped on its own.)
 	whispers = {}
 	for _, body in ipairs(set) do
@@ -670,7 +676,12 @@ local function ToReporters(flag, origin, body, sender)
 			-- (Some pieces of the set are still on their way: the whole set goes once they are here.)
 		elseif set then
 			batches = batches or SetBatches(flag, origin, set)
-			local word = Lower(origin) .. " " .. (set[1]:match("^C%w+:%d+:%d+:(..)") or "")
+			-- (review prototype) A newer copy replaces a waiting one only where it supersedes it: the
+			-- same origin's snapshot of one kind, or its census report. Any other word keeps its own
+			-- place (two of the King's T1 words, say, are different words).
+			local id, head = set[1]:match("^C(%w+):%d+:%d+:(.*)$")
+			local kind = head and (head:match("^(%u%w~%d+~S)~") or head:match("^(R[12])~"))
+			local word = Lower(origin) .. " " .. (kind or ("#" .. tostring(id)))
 			for k, batch in ipairs(batches) do DripSet(r.name, word .. " " .. k, batch) end
 		else
 			pieces = pieces or Envelope("RM", "RM~" .. flag .. "~" .. origin .. "~" .. body)

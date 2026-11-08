@@ -70,6 +70,30 @@ local function CensusWorld()
 	return w
 end
 
+-- 1.5.4 (the review of #81 and #82): a full-size snapshot plus the relay's label was 35 pieces, one
+-- past MAX_CHUNKS, so a relay sent it in two batches that a newer snapshot could split.
+test("global census (1.5.4): a full snapshot leaves room for a relay's label, so wrapped once it fits one envelope", function()
+	local source = CensusWorld()
+	local relay = "Council-Realm"
+	source.ns.Church = { IsLedgerRelay = function(name) return name == relay end }
+	source.ns.Alts = nil
+	source.ns.me = relay
+	for i = 1, 200 do
+		source.ns.rdb.guilds[("Olympus Guild Number %03d"):format(i)] = {
+			total = 900 + i, online = 70, avgLevel = 46.2, t = source.clock, st = source.clock, zones = {},
+		}
+	end
+	local C, D = source.ns.Codec, source.D
+	local label = "RM~P~Developus Olympicus-CAMWOWUS2Realm1PvE~"
+	eq(type(D.GLOBAL_SEND_BYTES) == "number" and D.GLOBAL_SEND_BYTES + #label <= C.CHUNK * C.MAX_CHUNKS, true,
+		"the largest snapshot built, with a relay's label, is one envelope")
+	local bound = D.GLOBAL_SEND_BYTES
+	D.GLOBAL_SEND_BYTES = 1000 -- (a small bound shows the builder keeps to it)
+	local payload = assert(D.GlobalCensusPayload())
+	D.GLOBAL_SEND_BYTES = bound
+	eq(#payload <= 1000 and #payload > 900, true, "the builder keeps to the send bound: " .. #payload)
+end)
+
 test("global census: a trusted holder restores normalized guild counts to a late client without granting census authority", function()
 	local source, late = CensusWorld(), CensusWorld()
 	local relay = "Council-Realm"

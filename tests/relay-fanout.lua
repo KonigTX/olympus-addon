@@ -15,11 +15,12 @@ test("relay fan-out (#76): with 46 guilds registered, the relay's own snapshot i
 		for i = 1, 46 do
 			R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i))
 		end
-		-- An 8-piece global census snapshot, handed in as Relay.Out's own path does, then an approval.
-		local snapshot = "CG~2~S~1~ForeverPvE~Alliance~" .. ("Olympus Dawn,640,40,300,1;"):rep(66)
-		for _, p in ipairs(R.Codec.Chunk(snapshot, "77")) do R.Relay.HandleIn("WHISPER", R.me, "RL~P~" .. p) end
+		-- An approval, then an 8-piece global census snapshot handed in as Relay.Out's own path does
+		-- (1.5.4 review: the approval first, which 1.5.3's fan-out pushed out of the queue: 0 of 46).
 		local approval = "GV~1~A~1794011276~Olympus Dawn~Some Master-CAMWOWUS2Realm7PvE"
 		R.Relay.HandleIn("WHISPER", R.me, "RL~L~" .. approval)
+		local snapshot = "CG~2~S~1~ForeverPvE~Alliance~" .. ("Olympus Dawn,640,40,300,1;"):rep(66)
+		for _, p in ipairs(R.Codec.Chunk(snapshot, "77")) do R.Relay.HandleIn("WHISPER", R.me, "RL~P~" .. p) end
 		for _ = 1, 2000 do
 			R.Comm.Pump()
 			local due = timers; timers = {}
@@ -49,6 +50,59 @@ test("relay fan-out (#76): with 46 guilds registered, the relay's own snapshot i
 		eq(whole, 46, "every reporter can put the whole snapshot together")
 		eq(approved, 46, "the snapshot's batches never push the approval out of the queue")
 		eq(fewest, 46, ("each reporter gets the snapshot in %d full whispers, not a piece and its label apart"):format(least))
+	end)
+	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild = saved.channel, saved.member, saved.guild, saved.inGuild
+	C_ChatInfo = nil
+	if not ok then error(err, 0) end
+end)
+
+-- 1.5.4 (the review of #81 and #82): a relay's own census report keeps its pieces (reports decode
+-- from pieces alone, and a whole "R2~" word reached every reporter's Comm and went nowhere), and two
+-- different words of one kind from one origin never take each other's place in the drip.
+test("relay fan-out (1.5.4): the relay's own census report reaches each reporter in its pieces; two different words of one kind both reach every reporter", function()
+	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild }
+	local ok, err = pcall(function()
+		GetChannelName = function() return 0 end
+		ns.IsMember = function() return true end
+		IsInGuild = function() return true end
+		GetGuildInfo = function() return "Olympus II", "Member", 3 end
+		local R, _, sent = extra.RelayWorld("Hildryn Payne-CAMWOWUS2Realm1PvE", "Olympus II")
+		local timers = {}
+		R.After = function(_, _, fn) timers[#timers + 1] = fn end
+		for i = 1, 46 do
+			R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i))
+		end
+		local report = "R2~" .. ("Olympus II,1,2,3;"):rep(30)
+		local first, second = "T1~H~" .. ("a"):rep(400), "T1~N~" .. ("b"):rep(400)
+		for _, word in ipairs({ { report, "91" }, { first, "92" }, { second, "93" } }) do
+			for _, p in ipairs(R.Codec.Chunk(word[1], word[2])) do R.Relay.HandleIn("WHISPER", R.me, "RL~P~" .. p) end
+		end
+		for _ = 1, 3000 do
+			R.Comm.Pump()
+			local due = timers; timers = {}
+			for _, fn in ipairs(due) do fn() end
+		end
+		local whole, pieced, both = 0, 0, 0
+		for i = 1, 46 do
+			local outer, prefix = R.Codec.NewAssembler(), ("Rep Number%d-"):format(i)
+			local inner = R.Codec.NewAssembler()
+			local got = {}
+			for _, s in ipairs(sent) do
+				if s.target and s.target:sub(1, #prefix) == prefix then
+					local rm = s.msg:sub(1, 3) == "RM~" and s.msg or R.Codec.Feed(outer, "relay", s.msg, 0)
+					local body = rm and rm:match("^RM~[LP]~[^~]+~(.*)$")
+					if body == report then got.whole = true end
+					local assembled = body and (body:match("^C%w+:") and R.Codec.Feed(inner, "origin", body, 0) or body)
+					if assembled then got[assembled] = true end
+				end
+			end
+			if got.whole then whole = whole + 1 end
+			if got[report] and not got.whole then pieced = pieced + 1 end
+			if got[first] and got[second] then both = both + 1 end
+		end
+		eq(whole, 0, "no reporter is sent the report as one whole word")
+		eq(pieced, 46, "every reporter can put the report together from its pieces")
+		eq(both, 46, "neither word of the same kind takes the other's place")
 	end)
 	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild = saved.channel, saved.member, saved.guild, saved.inGuild
 	C_ChatInfo = nil

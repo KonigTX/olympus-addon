@@ -889,6 +889,11 @@ Data.GLOBAL_ASK_EVERY = 30 * 60
 Data.GLOBAL_ASK_AGAIN = 3 * 60
 Data.GLOBAL_ANSWER_GAP = 3 * 60
 Data.GLOBAL_MAX_BYTES = ns.Codec.CHUNK * ns.Codec.MAX_CHUNKS
+-- (1.5.4) A snapshot this client builds leaves room for a relay's label around it ("RM~P~<name>~",
+-- then "RG~P~<name>~"), so a relay sends it whole in one envelope of at most MAX_CHUNKS whispers: a
+-- full-size one took two batches, and a newer snapshot could replace the second after the first
+-- left. One taken may still be the whole GLOBAL_MAX_BYTES (an older relay's).
+Data.GLOBAL_SEND_BYTES = Data.GLOBAL_MAX_BYTES - 64
 Data.GLOBAL_MAX_ROWS = 180
 -- 1.4.0, the witnesses (the author's rule of 10-20: one person is one witness; a count is confirmed
 -- by a moderator alone, or by two or more people agreeing: observed within half an hour of each
@@ -1214,7 +1219,7 @@ function Data.GlobalCensusPayload()
 		if #out >= Data.GLOBAL_MAX_ROWS then break end
 		local row = ("%s,%d,%d,%d,%d"):format(e.name, e.total, e.online, e.avg10, e.observed)
 		local extra = #row + (#out > 0 and 1 or 0)
-		if bytes + extra > Data.GLOBAL_MAX_BYTES then break end
+		if bytes + extra > Data.GLOBAL_SEND_BYTES then break end
 		out[#out + 1], bytes = row, bytes + extra
 	end
 	return head .. table.concat(out, ";")
