@@ -2814,6 +2814,7 @@ local function Help()
 	print(L.HELP_ISSUE)
 	print(L.HELP_COUNCIL)
 	if ns.LinkLoader.Loaded() then print(L.HELP_DISCORD) end -- (1.4.0: the Olympus_Link module's command, when it is installed)
+	if ns.Relay and ns.Relay.IsRelay and ns.Relay.IsRelay(ns.me) then print(L.HELP_RELAY) end -- (1.5.4: on a relay's client)
 	print(L.HELP_CMD_DECREES)
 	print(L.HELP_CMD_ARMS)
 	print(L.HELP_CHAN_ALL)
@@ -3206,6 +3207,9 @@ local function Slash(input)
 			-- Olympus Link: this character's Discord role; confirmers' keys; watchers. Its own addon,
 			-- Olympus_Link, when it is installed (LinkLoader.lua); else one line says it is not.
 			ns.LinkLoader.Slash(rest)
+		elseif cmd == "relay" and ns.Relay and ns.Relay.Slash then
+			-- (1.5.4) The relay's report (whom it serves, refused, the rules in force) and the author's rules.
+			ns.Relay.Slash(rest)
 		elseif cmd == "army" then
 			-- An attended aggregate of our own guild for the separate browser receiver (ArmyExport.lua).
 			-- Its release gate remains closed until that receiver and the real clients pass acceptance.

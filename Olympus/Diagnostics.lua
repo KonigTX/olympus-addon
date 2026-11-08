@@ -506,6 +506,8 @@ function ns.StatusText()
 		-- Olympus Link (0.9.10): the key's id and tier only, never the key. (1.4.0: its own addon,
 		-- Olympus_Link; the loader says when it is not installed.)
 		add("discord link: %s", ns.LinkLoader and ns.LinkLoader.StatusLine and ns.LinkLoader.StatusLine() or "not loaded")
+		-- (1.5.4) The relay rules in force (Relay.lua): their revision, the deadline, the versions admitted.
+		add("relay: %s", ns.Relay and ns.Relay.RulesLine and ns.Relay.RulesLine() or "not loaded")
 		-- The Board (1.1): what this client holds and sends (the ch:G1, ch:G0, ch:GQ counts above).
 		add("board: %s", ns.Board and ns.Board.StatusLine and ns.Board.StatusLine() or "not loaded")
 		-- (1.4.0: the Board's group listings, counts only: ch:GL, ch:GM... above.)

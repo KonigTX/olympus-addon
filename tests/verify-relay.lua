@@ -22,6 +22,10 @@ local function World(fn)
 		local n = { c = c, deliver = deliver, sent = sent, pump = pump, sentOf = sentOf,
 			guild = guild, chat = C_ChatInfo, cursor = 0 }
 		c.clock, c.realm, c.RealmPages = now, "Realm", {}
+		-- (1.5.4) T0 is a date past the code's presentation deadline: this world runs before it (its
+		-- registrations are handed to the relays by hand, bare, ahead of any member's presentation).
+		-- The presentation and the deadline have their own suite (tests/relay-admit.lua).
+		c.Relay.PRESENT_REQUIRED_AT = T0 + 30 * 86400
 		c.rdb.guilds = { [GUILD] = { leader = MASTER, realm = "Realm" },
 			[REVOKED] = { leader = MASTER, realm = "Realm" } }
 		c.IsHighCouncillor = function(who) return c.FullName(who) == HC end

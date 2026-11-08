@@ -6994,6 +6994,8 @@ assert(loadfile(ROOT .. "tests/relay-fanout.lua"))(ns, test, eq, { RelayWorld = 
 -- 1.5.4: lists as one word by the relay (Comm.SendList, LS), the Church's public rows first.
 assert(loadfile(ROOT .. "tests/relay-lists.lua"))(ns, test, eq, { RelayWorld = RelayWorld, FreshComm = FreshComm, addon = ADDON_DIR, ROOT = ROOT })
 assert(loadfile(ROOT .. "tests/relay-presentation.lua"))(ns, test, eq, { RelayWorld = RelayWorld })
+-- 1.5.4: the presentation, the relay's admission and the relay rules (tests/relay-admit.lua).
+assert(loadfile(ROOT .. "tests/relay-admit.lua"))(ns, test, eq, { RelayWorld = RelayWorld, FreshComm = FreshComm, ROOT = ROOT })
 assert(loadfile(ROOT .. "tests/roster-subrealm.lua"))(ns, test, eq)
 assert(loadfile(ROOT .. "tests/king-crown-relay.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
 -- 1.5.4: the King's presence where he leads no guild named Olympus (tests/king-online.lua).
@@ -7127,7 +7129,11 @@ test("1.4.3 the relay: a relay that is offline (the server's word) or never answ
 		wipe(osent)
 		eq(O.Comm.Send("CHANNEL", "X1~c"), true)
 		opump()
-		eq(osent[1].dist, "CHANNEL"); eq(osent[1].msg, "X1~c")
+		-- (1.5.4) Our presentation to Max Ran, queued when it answered, leaves in this pump too: the
+		-- word itself goes on the channel, and no relay carries it.
+		local onChannel = osentOf("X1~c")
+		eq(#onChannel, 1); eq(onChannel[1].dist, "CHANNEL"); eq(onChannel[1].msg, "X1~c")
+		eq(#osentOf("RL~P~X1~c"), 0)
 		-- The reporter registers with its relay (MaybeBroadcast calls it) every REGISTER_EVERY.
 		O.Relay.Reset()
 		wipe(osent)
@@ -7196,7 +7202,10 @@ test("1.4.4 the relay: the first message with no relay answered pings every rela
 		opump()
 		local out = osentOf("RL~P~X1~")
 		eq(#out, 2); eq(out[1].msg, "RL~P~X1~two"); eq(out[1].target, "Max Ran"); eq(out[2].msg, "RL~P~X1~three"); eq(out[2].target, "Max Ran")
+		-- (1.5.4) Our presentation to the relay that answered (RI, ahead of what waited) is quieted too,
+		-- a name already recorded once above.
 		eq(table.concat(quieted, ","), "Max Ran", "both messages' name quieted (each name once, see above)")
+		eq(#osentOf("RI~"), 1, "(1.5.4) presented once, to the relay that answered")
 		eq(O.Relay.Stats().pending, 0); eq(O.Relay.Stats().sure, true); eq(O.Relay.Pick(), "Max Ran", "the one that answered, while any did")
 		-- The next message goes straight out, no new ping (it answered within DEAD_FOR).
 		eq(O.Comm.Send("CHANNEL", "X1~four"), true)

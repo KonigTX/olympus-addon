@@ -1,4 +1,5 @@
 local ADDON, ns = ...
+local L = ns.L
 local Relay = {}
 ns.Relay = Relay
 
@@ -41,6 +42,15 @@ ns.Relay = Relay
 -- (Flush, from HandleAck) and goes to whoever answered; the pick is made among the relays that
 -- answered (VERIFIED_FOR) while any did. The server's "No player named X" for each ping to an
 -- offline relay is kept out of the chat (Accord.Quiet) and still read (NotFound).
+--
+-- 1.5.4 (the presentation): a relay served whoever whispered it, so any build of the addon, changed
+-- or not, could register as a guild's reporter and take every guild's feed. Now a client identifies
+-- itself to its relay with its version, and from a deadline on a relay serves only clients that did
+-- so with a published version (Relay.Admit, below): until then everyone, as before, so nobody loses
+-- the census while the army updates. The deadline, a switch to pause it and the list of published
+-- versions are the relay rules (RU): the author's client hands them to the relays in game and the
+-- relays carry them to one another, so none of the three needs a release to change. A guild whose
+-- members did not update still receives the census through a guildmate who did (hop 3, RG).
 
 Relay.PICK_WINDOW = 600      -- seconds one relay serves a guild before the pick moves on
 Relay.DEAD_FOR = 600         -- a relay that did not answer, or is offline, is left out this long
@@ -54,6 +64,26 @@ Relay.SEEN_MAX = 2000
 Relay.MAX_RELAYS = 40
 Relay.MAX_GUILD_NAME = 48   -- (1.5.4) bytes: the game's 24 letters, accented ones taking 2, in a registration (RR)
 Relay.MAX_REPORTERS = 400   -- (1.5.4) guilds a relay keeps a reporter for
+-- (1.5.4) The presentation (HandleIn, HandlePresent, below). A client answered by a relay presents
+-- itself to it with its version (RI~<version>, a word of its own, which no relay before 1.5.4 has a
+-- handler for: an older relay ignores it and fans nothing out). A relay's answer to a ping is one
+-- whisper as before: RY~<version> to a client it holds a presentation of, "RY~" (which every version
+-- takes, and 1.5.3 and older nothing else) to any other. To a relay that named its version, a
+-- reporter's registration names its own (RR~<guild>~<version>), which renews the presentation every
+-- REGISTER_EVERY (a reporter's relay keeps it answered with every word it hands on, so it pings it
+-- rarely). From the deadline on, a relay serves only a client that presented itself with a published
+-- version; until then everyone. The deadline, its switch and the published versions are the relay
+-- rules (RU, Relay.Rules): until a word of rules arrives, these constants are the rules.
+-- PRESENT_REQUIRED_AT is set at release to the publish time plus seven days (this one:
+-- 2026-11-16 00:00 UTC, seven days after 2026-11-09).
+Relay.PRESENT_REQUIRED_AT = 1794787200
+Relay.PRESENT_FOR = 1800     -- a presentation is kept this long past its last word (a client pings its relay every DEAD_FOR)
+Relay.PRESENT_GAP = 60       -- a client presents itself to one relay once this long at most
+Relay.MAX_PRESENTED = 4000   -- characters a relay keeps a presentation for: every client that may whisper it, not only reporters
+Relay.MAX_REFUSED = 200      -- refusals a relay notes for /oly relay admitted
+Relay.PUBLISHED = { "1.4.0", "1.4.1", "1.4.3", "1.4.4", "1.4.5", "1.4.6", "1.5.0", "1.5.1", "1.5.2", "1.5.3", "1.5.4" }
+Relay.RULES_EVERY = 1800     -- a relay asks the others for the rules this often; the author's client hands them out this often
+Relay.MAX_RULE_VERSIONS = 40 -- versions one word of rules may name
 Relay.VERIFY_ASK_EVERY = 180 -- one recovery ask across the signed relays, never per reporter
 Relay.SNAPSHOT_WINDOW = 60  -- at most one bounded snapshot transfer per signed origin in this window
 Relay.LAUNCH_PINS = { ForeverPvE = { "Developus Olympicus", "Asmongold Thereal" }, ForeverPvP = { "Twalin Firebraid", "Elrond Oaklance" } }
@@ -141,7 +171,16 @@ local seenCount = 0
 local pending = {}   -- (1.4.4) what waits for the first relay to answer: { parts, logged, done, key, urgent, options }
 local holding = false -- a timer runs to send what waits anyway after PING_WAIT
 local flushing = false
-local stats = { out = 0, forwarded = 0, delivered = 0, dropped = 0, dead = 0, registered = 0 }
+-- (1.5.4) The presentation (its own section, below; a relay's presentations are in its store).
+local presentedMem = {} -- (on a relay, while no store is open) short name (lower) -> { name, v, t }
+local refused = {}      -- (on a relay) short name (lower) -> { name, kind, why, t }: refusals noted for the report
+local relayVersion = {} -- (on a client) relay short name (lower) -> the version its answer to our ping named
+local presentedTo = {}  -- (on a client) relay short name (lower) -> when we last presented ourselves to it
+local denied            -- (on a relay) the set another check hands over (Relay.SetDenied): short name (lower) -> true
+local rulesSent = {}    -- (on a relay) relay short name (lower) -> the rules revision last handed to it
+local lastRulesAsk, lastRulesSend = -math.huge, -math.huge
+local stats = { out = 0, forwarded = 0, delivered = 0, dropped = 0, dead = 0, registered = 0,
+	refused = 0, unpresented = 0, denied = 0, unserved = 0 }
 -- (1.5.4) A client marked as a modified build (Builds.lua): a relay takes no registration from it,
 -- drops one it holds and forwards nothing to it (Comm drops its words at the door already).
 local function Quarantined(name)
@@ -151,12 +190,15 @@ end
 function Relay.Stats()
 	local n = 0
 	for _, r in pairs(reporters) do n = n + 1 end
+	local shown = Relay.PresentedCount()
 	local relay, sure = Relay.Pick()
 	return { out = stats.out, forwarded = stats.forwarded, delivered = stats.delivered, dropped = stats.dropped,
 		dead = stats.dead, reporters = n, relay = relay, sure = sure == true, pending = #pending, on = Relay.On(),
 		across = stats.across or 0, kept = stats.kept or 0, trickled = stats.trickled or 0,
 		-- (1.5.4) Lists (LS) admitted to the drip, ones that took a waiting one's place, ones refused.
-		lists = stats.lists or 0, listsReplaced = stats.listsReplaced or 0, listsRefused = stats.listsRefused or 0 }
+		lists = stats.lists or 0, listsReplaced = stats.listsReplaced or 0, listsRefused = stats.listsRefused or 0,
+		presented = shown, refused = stats.refused, unpresented = stats.unpresented, denied = stats.denied, unserved = stats.unserved,
+		rules = Relay.Rules().rev, required = Relay.Required() }
 end
 
 local function Now() return ns.Now() end
@@ -416,6 +458,33 @@ local function OwnGuild(original, done, key, urgent, options)
 	return ns.Comm.Send("GUILD", wrapped, key and ("guild " .. key) or nil, urgent, false, done, pass) ~= false
 end
 
+-- (1.5.4, the presentation: the client's side.) A relay's version, from its answer to our ping
+-- (RY~<version>, HandleAck: a 1.5.4 relay names it once it holds our presentation); nil for an
+-- older relay, which answers "RY~" alone, and for one not answered so yet.
+function Relay.RelayVersion(name) return relayVersion[Lower(ns.ShortName(name or ""))] end
+-- A registration to a relay that named its version names ours: RR~<guild>~<version>. An older
+-- relay never sees that form (its RR takes everything after RR~ as the guild's name).
+local function Identify(parts, relay)
+	if #parts ~= 1 or type(parts[1]) ~= "string" or not parts[1]:match("^RR~[^~]+$") or not Relay.RelayVersion(relay) then return parts end
+	return { parts[1] .. "~" .. tostring(ns.VERSION) }
+end
+-- A relay answered our ping: its version remembered when it names one, and we present ourselves to
+-- it (RI~<version>), once a PRESENT_GAP at most: urgent, and queued before what waited for its
+-- answer (HandleAck flushes after this), so the relay holds it before our words reach it. An older
+-- relay has no handler for RI: it ignores it and fans nothing out.
+local function PresentTo(sender, named)
+	local short = ns.ShortName(sender or "") or ""
+	if short == "" then return false end
+	local key, now = short:lower(), Now()
+	local version = Relay.VersionOf(named)
+	if version then relayVersion[key] = version end
+	if now - (presentedTo[key] or -math.huge) < Relay.PRESENT_GAP then return false end
+	presentedTo[key] = now
+	Quiet(short)
+	ns.Comm.Whisper(short, "RI~" .. tostring(ns.VERSION), "relay present:" .. key, true)
+	return true
+end
+
 -- (1.5.4) The King's own crown, to every other relay not left out: one whisper each, once each
 -- KING_GAP at most, ahead of his queue's other words; the relay picked has it by the usual hop below.
 local function CrownToRelays(parts, pick)
@@ -489,6 +558,7 @@ function Relay.Out(parts, logged, done, key, urgent, options, anyway)
 		return true
 	end
 	local flag = logged and "L" or "P"
+	parts = Identify(parts, relay) -- (1.5.4: a registration names our version to a relay that named its own)
 	-- Our own client the relay: handed to it here, whole (a whisper to oneself is never delivered).
 	if relay:lower() == ns.ShortName(ns.me or ""):lower() then
 		-- No physical queue exists on this route. Apply the same logical-channel
@@ -907,6 +977,213 @@ local function PresentationScope(origin, body, now)
 	if kind == "C" or (kind == "G" and GrantToAll(origin, now)) then return nil end
 	return Lower(guild)
 end
+-- (1.5.4) The presentation and the relay's admission (the relay's side; the top of the file says why).
+-- A release's version string: 1.5.4, 1.5.4.1, or an arena test build's 1.5.4-test.3; nil for anything else.
+function Relay.VersionOf(s)
+	if type(s) ~= "string" or #s > 24 then return nil end
+	if s:match("^%d+%.%d+%.%d+$") or s:match("^%d+%.%d+%.%d+%.%d+$") or s:match("^%d+%.%d+%.%d+%-test%.%d+$") then return s end
+	return nil
+end
+-- The relay rules in force: the newest word of rules this realm group's store holds (RU, below),
+-- else the code's own (revision 0): the requirement on from PRESENT_REQUIRED_AT, PUBLISHED admitted.
+local function DefaultRules()
+	return { rev = 0, on = true, at = Relay.PRESENT_REQUIRED_AT, versions = Relay.PUBLISHED }
+end
+function Relay.Rules()
+	local r = ns.rdb and ns.rdb.relayRules
+	if type(r) == "table" and type(r.rev) == "number" and r.rev > 0 and type(r.at) == "number" and type(r.versions) == "table" then return r end
+	return DefaultRules()
+end
+-- Whether a relay serves only the clients that presented themselves now.
+function Relay.Required(now)
+	local r = Relay.Rules()
+	return r.on ~= false and (now or Now()) >= r.at
+end
+-- Whether a version presented is one the rules admit: on their list, or an arena test build of one
+-- on it; a list left empty admits every release's form. (The list as a set, made again when the
+-- rules in force change: a relay asks this for every reporter of every word it hands on.)
+local listed, listedFrom
+function Relay.Published(version)
+	local v = Relay.VersionOf(version)
+	if not v then return false end
+	local list = Relay.Rules().versions
+	if #list == 0 then return true end
+	if listedFrom ~= list then
+		listed, listedFrom = {}, list
+		for _, p in ipairs(list) do listed[p] = true end
+	end
+	return listed[v] == true or listed[v:match("^(%d+%.%d+%.%d+)%-test%.%d+$") or v] == true
+end
+-- An entry of one of the relay's tables of characters (presented, refused), as it may come back from
+-- the saved variables.
+local function Fresh(e, now)
+	return type(e) == "table" and type(e.t) == "number" and type(e.name) == "string" and now - e.t < Relay.PRESENT_FOR
+end
+-- One of those tables, bounded: the stale and malformed leave first, then the oldest, before a new
+-- character is kept.
+local function Keep(t, key, entry, cap, now)
+	if not t[key] then
+		local n, oldest = 0, nil
+		for k, e in pairs(t) do
+			if not Fresh(e, now) then t[k] = nil
+			else
+				n = n + 1
+				if not oldest or e.t < t[oldest].t then oldest = k end
+			end
+		end
+		if n >= cap and oldest then t[oldest] = nil end
+	end
+	t[key] = entry
+end
+-- The presentations a relay holds: in its realm group's store (ns.rdb.relayPresented), so a /reload
+-- or its next login keeps them (a client pings its relay again only every DEAD_FOR, and its words
+-- meanwhile would find none); in memory while no store is open. Made in the store by the first
+-- presentation kept (write) alone: a client no one presents to saves nothing.
+local function Book(write)
+	local d = ns.rdb
+	if type(d) ~= "table" then return presentedMem end
+	if type(d.relayPresented) ~= "table" then
+		if not write then return presentedMem end
+		d.relayPresented = {}
+	end
+	return d.relayPresented
+end
+-- A character presented itself (its RI's or its registration's version, well formed): kept
+-- PRESENT_FOR past its last word.
+local function Present(sender, version, now)
+	local short = ns.ShortName(sender or "") or ""
+	if short == "" or not version then return false end
+	Keep(Book(true), short:lower(), { name = short, v = version, t = now }, Relay.MAX_PRESENTED, now)
+	return true
+end
+-- The version a character presented, and when; nil when it did not, or too long ago.
+function Relay.Presented(name, now)
+	local p = Book()[Lower(ns.ShortName(name or ""))]
+	if not Fresh(p, now or Now()) or type(p.v) ~= "string" then return nil end
+	return p.v, p.t
+end
+local function Listed(t, now)
+	local out = {}
+	for _, e in pairs(t) do
+		if Fresh(e, now) then out[#out + 1] = e end
+	end
+	table.sort(out, function(a, b) return a.name < b.name end)
+	return out
+end
+-- The presentations held, by name: { name, v, t }; and the refusals noted: { name, kind, why, t }.
+function Relay.Presentations(now) return Listed(Book(), now or Now()) end
+function Relay.Refusals(now) return Listed(refused, now or Now()) end
+function Relay.PresentedCount(now)
+	now = now or Now()
+	local n = 0
+	for _, e in pairs(Book()) do if Fresh(e, now) then n = n + 1 end end
+	return n
+end
+-- A set of characters another check hands over (short names, lower; the modified-build check's):
+-- each refused at once, deadline or not, as an unpresented one is. nil clears it.
+function Relay.SetDenied(set) denied = type(set) == "table" and set or nil end
+function Relay.IsDenied(name)
+	if denied == nil or type(name) ~= "string" then return false end
+	return denied[Lower(ns.ShortName(name))] == true or denied[name:lower()] == true
+end
+-- Never refused: the relay's own client, the King's character and the signed relays (the words
+-- that hold the network together).
+local function Exempt(sender)
+	local full = ns.FullName(sender)
+	if full == ns.me then return true end
+	if type(ns.IsKingCharacter) == "function" and ns.IsKingCharacter(full) == true then return true end
+	return Relay.IsRelay(sender)
+end
+Relay.Exempt = Exempt
+-- The relay's admission of one character's word: true, or false and why. kind: "RR" its registration
+-- as a reporter, "RL" a word of its to pass on or answer, "RM" a word to hand to it as a reporter.
+-- The rule: a denied character never; before the deadline everyone; from then on one that presented
+-- a published version. (A stub takes its place in the tests.)
+function Relay.Admit(kind, sender, body, now)
+	if Relay.IsDenied(sender) then return false, "denied" end
+	if not Relay.Required(now) then return true end
+	local v = Relay.Presented(sender, now)
+	if not v then return false, "unpresented" end
+	if not Relay.Published(v) then return false, "version " .. v end
+	return true
+end
+-- Every word a relay hears, for whoever wants to watch it (nothing by default; the tests).
+function Relay.Observe(kind, sender, body, now) end
+local DefaultAdmit = Relay.Admit
+-- Admit asked; the exempt never refused (asked after a refusal alone: a relay asks this for every
+-- reporter of every word); a rule that fails falls back to the public one, so a relay never serves
+-- everyone or nobody by mistake.
+local function Ask(kind, sender, body, now)
+	local ok, admit, why = pcall(Relay.Admit, kind, sender, body, now)
+	if not ok then
+		if ns.CaptureError then ns.CaptureError("relay admit", admit) end
+		admit, why = DefaultAdmit(kind, sender, body, now)
+	end
+	if admit == true or Exempt(sender) then return true end
+	return false, why or "refused"
+end
+-- A word refused is counted and noted (the report).
+local function Admitted(kind, sender, body, now)
+	local ok, why = Ask(kind, sender, body, now)
+	if ok then return true end
+	stats.refused = stats.refused + 1
+	if why == "unpresented" then stats.unpresented = stats.unpresented + 1
+	elseif why == "denied" then stats.denied = stats.denied + 1 end
+	local short = ns.ShortName(sender or "") or ""
+	if short ~= "" then Keep(refused, short:lower(), { name = short, kind = kind, why = why, t = now }, Relay.MAX_REFUSED, now) end
+	return false, why
+end
+-- Whether a reporter is handed words now (never one that did not present, from the deadline on).
+local function Served(r, body, now)
+	local ok = Ask("RM", r.name, body, now)
+	if not ok then stats.unserved = stats.unserved + 1 end
+	return ok
+end
+-- A character's held registration goes (its RR renewed without a presentation, or refused).
+local function Unregister(who)
+	for g, r in pairs(reporters) do if r.name == who then reporters[g] = nil end end
+end
+-- What a registration says: RR~<guild> (every version), RR~<guild>~<version> (1.5.4, to a relay that
+-- named its version). A well-formed version is the reporter's presentation.
+local function Registration(sender, rest, now)
+	local guild, named = rest:match("^(.-)~([^~]*)$")
+	if not guild then return rest, nil end
+	local version = Relay.VersionOf(named)
+	if version then Present(sender, version, now) end
+	return guild, version
+end
+-- The ping's answer, one whisper as before: RY~<version> to a client we hold a presentation of (a
+-- 1.5.4 client: it takes it as the answer and learns our version), else "RY~", which every version
+-- takes (1.5.3 and older, that text and nothing else). Keyed per client: one waiting at most.
+local function Acknowledge(sender, now)
+	local answer = Relay.Presented(sender, now) and ("RY~" .. tostring(ns.VERSION)) or "RY~"
+	ns.Comm.Whisper(sender, answer, "relay ack:" .. sender, true)
+end
+-- Every word heard is shown to Observe (a failure there never stops the word).
+local function Heard(kind, sender, body, now)
+	ns.SafeCall("relay observe", Relay.Observe, kind, sender, body, now)
+end
+-- A client's presentation (RI~<version>, a word of its own) heard (we are a relay): kept. Answered
+-- with our version when we held none of it (its first, or past PRESENT_FOR), so the client learns
+-- it (its registration's form, Identify); keyed as the ping's answer, which it replaces when that
+-- one still waits. Fanned out to nobody.
+function Relay.HandlePresent(dist, sender, text)
+	if dist ~= "WHISPER" or not Relay.On() or not Relay.IsRelay(ns.me) then return false end
+	local named = tostring(text):match("^RI~(.*)$")
+	if not named then return false end
+	local now = Now()
+	Heard("RI", sender, text, now)
+	local had = Relay.Presented(sender, now)
+	if not Present(sender, Relay.VersionOf(named), now) then
+		stats.dropped = stats.dropped + 1
+		return true
+	end
+	if not had and ns.FullName(sender) ~= ns.me then
+		ns.Comm.Whisper(sender, "RY~" .. tostring(ns.VERSION), "relay ack:" .. sender, true)
+	end
+	return true
+end
+
 -- (1.5.4) The King's crown to this relay's reporters (KING_GAP above): each at most once a KING_GAP,
 -- the longest waiting first, within the relay's KING_PER_MIN (KING_BURST at once), ahead in the
 -- queue; "hidden" to all at once. Heard here too.
@@ -914,7 +1191,7 @@ local function CrownToReporters(flag, origin, body, now)
 	local hide, due = Hide(body), {}
 	for g, r in pairs(reporters) do
 		if now - r.t > Relay.REPORTER_FOR or Quarantined(r.name) then reporters[g] = nil
-		elseif CrownDue("r:" .. Lower(r.name), body, now) then due[#due + 1] = r end
+		elseif Served(r, body, now) and CrownDue("r:" .. Lower(r.name), body, now) then due[#due + 1] = r end
 	end
 	local function Last(r) return crownSent["r:" .. Lower(r.name)] or -math.huge end
 	table.sort(due, function(a, b) return Last(a) < Last(b) end)
@@ -1015,6 +1292,9 @@ local function ToReporters(flag, origin, body, sender)
 	for g, r in pairs(reporters) do
 		if now - r.t > Relay.REPORTER_FOR or Quarantined(r.name) then
 			reporters[g] = nil
+		elseif not Served(r, body, now) then
+			-- (1.5.4) A reporter the relay does not serve (no presentation from the deadline on, or
+			-- denied): nothing to him (counted, Stats().unserved).
 		elseif scoped and g ~= scoped then
 			stats.scoped = (stats.scoped or 0) + 1 -- (another guild's presentation: heard here alone)
 		elseif r.name == ns.me then
@@ -1149,12 +1429,15 @@ function Relay.HandleIn(dist, sender, text)
 	if not flag then return false end
 	if not Relay.IsRelay(ns.me) then return false end -- (only a relay's client answers hop 1)
 	local now = Now()
+	Heard(body == "RP~" and "RP" or (body:sub(1, 3) == "RR~" and "RR") or "RL", sender, body, now) -- (1.5.4)
 	if body == "RP~" then
-		if ns.FullName(sender) ~= ns.me then ns.Comm.Whisper(sender, "RY~", "relay ack:" .. sender, true) end
+		if ns.FullName(sender) ~= ns.me then Acknowledge(sender, now) end
 		return true
 	end
 	local guild = body:match("^RR~(.+)$")
 	if guild then
+		local version
+		guild, version = Registration(sender, guild, now) -- (1.5.4: a version named is the reporter's presentation)
 		-- (1.5.4, a player's security report of 1.5.3) A registration was taken from any whisperer,
 		-- for any number of guilds, of any length: one character could take every guild's feed.
 		-- A guild's name as the game allows it (at most MAX_GUILD_NAME, no separator), one guild
@@ -1162,6 +1445,12 @@ function Relay.HandleIn(dist, sender, text)
 		local who, key = ns.FullName(sender), guild:lower()
 		if #guild > Relay.MAX_GUILD_NAME or guild:find("[~|%c]") or Quarantined(who) then
 			stats.dropped = stats.dropped + 1
+			return true
+		end
+		-- (1.5.4) Refused (no presentation from the deadline on, a version the rules do not admit, a
+		-- denied character): not kept, and a registration of his held from before goes with it.
+		if not Admitted("RR", sender, body, now) then
+			Unregister(who)
 			return true
 		end
 		local count = 0
@@ -1173,12 +1462,14 @@ function Relay.HandleIn(dist, sender, text)
 			return true
 		end
 		local had = reporters[key]
-		reporters[key] = { name = who, t = now, guild = guild }
+		reporters[key] = { name = who, t = now, guild = guild, v = version }
 		stats.registered = stats.registered + 1
 		if not had or had.name ~= ns.FullName(sender) then ns.Log("relay: %s's reporter is %s", guild, tostring(sender)) end
 		return true
 	end
 	local origin = ns.FullName(sender)
+	-- (1.5.4) A word from a character the relay does not serve (Admit): dropped, answered by nobody.
+	if not Admitted("RL", sender, body, now) then return true end
 	local fresh = not Remembered(origin, body, now)
 	local localOnly = Relay.NO_FORWARD[body:sub(1, 2)]
 	-- Verification queries are periodic background traffic; decisions and recovery snapshots
@@ -1293,16 +1584,245 @@ function Relay.HandleGuild(dist, sender, text)
 	return true
 end
 
--- The relay's answer to our ping.
+-- The relay's answer to our ping: "RY~", or (1.5.4) RY~<version> from a relay that holds our
+-- presentation. Either way we present ourselves to it (PresentTo) before what waited goes.
 function Relay.HandleAck(dist, sender, text)
-	if dist ~= "WHISPER" or tostring(text) ~= "RY~" then return false end
+	if dist ~= "WHISPER" then return false end
+	local named = tostring(text):match("^RY~(.*)$")
+	if not named then return false end
 	local key = ns.ShortName(sender):lower()
 	if not verified[key] then ns.Log("relay: %s answers", tostring(sender)) end
 	verified[key] = Now()
 	pinged[key] = nil
 	offline[key] = nil
+	PresentTo(sender, named) -- (1.5.4: queued first, so the relay holds it before our words)
 	Flush() -- (1.4.4) what waited for an answer goes out now
 	return true
+end
+
+-- (1.5.4) The relay rules (RU): the deadline of the presentation, its switch and the versions a relay
+-- admits, handed to the relays in game so no release is needed to change them.
+--   RU~1~<rev>~<on>~<at>~<v1,v2,...>   the rules: their revision, 1 or 0 (the requirement on or
+--                                       paused), the deadline's epoch, the versions admitted
+--                                       (MAX_RULE_VERSIONS at most; none named: every release's
+--                                       form); in Codec's pieces when longer than one whisper
+--   RU~1~Q~<rev>                        a relay's ask: rules newer than this revision
+-- Only the author's client makes a new revision (/oly relay rules; ns.IsAuthorName on the sender the
+-- server stamps) and hands it to every relay it knows, at login and every RULES_EVERY. He is rarely
+-- online, so the relays carry it among themselves: each keeps the newest it holds in the realm
+-- group's store (ns.rdb.relayRules: a /reload or the next login applies it with nothing arriving),
+-- asks the other relays at login and every RULES_EVERY, answers an ask with its copy when newer, and
+-- hands a newer revision it receives to every other relay once. A copy from a signed relay is taken
+-- when newer than what is held (relays are trusted characters already); anyone else's is dropped; an
+-- older or the same revision changes nothing; a malformed word is dropped.
+function Relay.EncodeRules(r)
+	return ("RU~1~%d~%d~%d~%s"):format(r.rev, r.on ~= false and 1 or 0, r.at, table.concat(r.versions, ","))
+end
+function Relay.DecodeRules(body)
+	local rev, on, at, list = tostring(body):match("^(%d+)~([01])~(%d+)~(.*)$")
+	if not rev or #rev > 9 or #at > 12 then return nil end
+	local versions = {}
+	if list ~= "" then
+		for v in (list .. ","):gmatch("([^,]*),") do
+			if not Relay.VersionOf(v) then return nil end
+			versions[#versions + 1] = v
+			if #versions > Relay.MAX_RULE_VERSIONS then return nil end
+		end
+	end
+	return { rev = tonumber(rev), on = on == "1", at = tonumber(at), versions = versions }
+end
+-- Newer rules kept in the realm group's store, in force at once.
+local function KeepRules(r, from, now)
+	if not ns.rdb then return false end
+	r.from, r.t = ns.ShortName(from or "") or "?", now
+	ns.rdb.relayRules = r
+	ns.Log("relay rules: revision %d from %s (%s from %d, %d versions)", r.rev, tostring(r.from), r.on and "required" or "paused", r.at, #r.versions)
+	return true
+end
+local function RulesTo(name, r, key)
+	local pieces = Envelope("RU", Relay.EncodeRules(r))
+	if #pieces == 0 or #pieces > ns.Codec.MAX_CHUNKS then return false end
+	Quiet(name)
+	if #pieces == 1 then return ns.Comm.Whisper(name, pieces[1], key, true, false) ~= false end
+	return ns.Comm.SendBatch("WHISPER", pieces, key, name, true) ~= false
+end
+-- To every other relay not left out, each once per revision (the one they came from left out).
+local function ForwardRules(r, except)
+	local now, mine, from = Now(), Lower(ns.ShortName(ns.me or "")), Lower(ns.ShortName(except or ""))
+	for _, name in ipairs(Relay.Names(false)) do
+		local key = Lower(name)
+		if key ~= mine and key ~= from and (offline[key] or 0) <= now and rulesSent[key] ~= r.rev then
+			rulesSent[key] = r.rev
+			RulesTo(name, r, "relay rules " .. key)
+		end
+	end
+end
+-- The author's client hands its rules to every relay it knows: at login and every RULES_EVERY, and
+-- at once when they change (force).
+function Relay.SendRules(force)
+	if not Relay.On() or type(ns.IsAuthorName) ~= "function" or not ns.IsAuthorName(ns.me) then return false end
+	local r = ns.rdb and ns.rdb.relayRules
+	if type(r) ~= "table" or (r.rev or 0) < 1 then return false end
+	local now = Now()
+	if not force and now - lastRulesSend < Relay.RULES_EVERY then return false end
+	lastRulesSend = now
+	wipe(rulesSent)
+	ForwardRules(r, nil)
+	return true
+end
+-- A relay asks the others for rules newer than its own: at login and every RULES_EVERY.
+function Relay.AskRules(force)
+	if not Relay.On() or not Relay.IsRelay(ns.me) then return false end
+	local now = Now()
+	if not force and now - lastRulesAsk < Relay.RULES_EVERY then return false end
+	lastRulesAsk = now
+	local ask, mine = ("RU~1~Q~%d"):format(Relay.Rules().rev), Lower(ns.ShortName(ns.me or ""))
+	for _, name in ipairs(Relay.Names(false)) do
+		local key = Lower(name)
+		if key ~= mine and (offline[key] or 0) <= now then
+			Quiet(name)
+			ns.Comm.Whisper(name, ask, "relay rules ask " .. key, true)
+		end
+	end
+	return true
+end
+-- The rules heard (we are a relay): an ask answered when ours are newer; a copy kept when newer.
+function Relay.HandleRules(dist, sender, text)
+	if dist ~= "WHISPER" or not Relay.On() then return false end
+	local body = tostring(text):match("^RU~1~(.*)$")
+	if not body or not Relay.IsRelay(ns.me) then return false end
+	if not (Relay.IsRelay(sender) or (type(ns.IsAuthorName) == "function" and ns.IsAuthorName(sender) == true)) then
+		stats.dropped = stats.dropped + 1
+		return false
+	end
+	local now = Now()
+	local asked = body:match("^Q~(%d+)$")
+	if asked then
+		local r = Relay.Rules()
+		if r.rev > 0 and r.rev > (tonumber(asked) or 0) then RulesTo(ns.ShortName(sender), r, "relay rules " .. Lower(ns.ShortName(sender))) end
+		return true
+	end
+	local r = Relay.DecodeRules(body)
+	if not r then
+		stats.dropped = stats.dropped + 1
+		return false
+	end
+	if r.rev <= Relay.Rules().rev then return true end -- (an older or the same revision: nothing changes)
+	KeepRules(r, sender, now)
+	ForwardRules(r, sender)
+	return true
+end
+-- An epoch from "YYYY-MM-DD" (that day's 00:00 UTC), a number of seconds, or "now"; nil otherwise.
+function Relay.Epoch(word, now)
+	word = tostring(word or ""):lower()
+	if word == "now" then return now or Now() end
+	if word:match("^%d+$") and #word <= 12 then return tonumber(word) end
+	local y, m, d = word:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)$")
+	if not y then return nil end
+	y, m, d = tonumber(y), tonumber(m), tonumber(d)
+	if m < 1 or m > 12 or d < 1 or d > 31 then return nil end
+	-- (Days from the civil date, the proleptic Gregorian calendar.)
+	local yy = m <= 2 and y - 1 or y
+	local era = math.floor(yy / 400)
+	local yoe = yy - era * 400
+	local doy = math.floor((153 * ((m + 9) % 12) + 2) / 5) + d - 1
+	local doe = yoe * 365 + math.floor(yoe / 4) - math.floor(yoe / 100) + doy
+	return (era * 146097 + doe - 719468) * 86400
+end
+-- The author's new revision: the requirement on or off, its deadline (an epoch), the versions
+-- admitted (none named: the list in force stays). Kept and handed to the relays at once.
+function Relay.SetRules(on, at, versions, now)
+	now = now or Now()
+	local held = Relay.Rules()
+	local list = {}
+	for i, v in ipairs(versions or held.versions) do
+		if not Relay.VersionOf(v) then return false end
+		list[i] = v
+	end
+	if type(at) ~= "number" or at < 0 or #list > Relay.MAX_RULE_VERSIONS then return false end
+	local r = { rev = held.rev + 1, on = on ~= false, at = at, versions = list }
+	if not KeepRules(r, ns.me, now) then return false end
+	lastRulesSend = now
+	wipe(rulesSent)
+	ForwardRules(r, nil)
+	return true, r
+end
+local function Day(t) return type(date) == "function" and date("!%Y-%m-%d %H:%M", t) or tostring(t) end
+-- One line: the rules in force.
+function Relay.RulesLine(now)
+	now = now or Now()
+	local r = Relay.Rules()
+	local state = r.on == false and L.RELAY_RULES_PAUSED or (now >= r.at and L.RELAY_RULES_SINCE or L.RELAY_RULES_FROM):format(Day(r.at))
+	local source = r.rev == 0 and L.RELAY_RULES_CODE or L.RELAY_RULES_FROM_AUTHOR:format(tostring(r.from or "?"), Day(r.t or 0))
+	return L.RELAY_RULES_LINE:format(r.rev, source, state, #r.versions == 0 and L.RELAY_RULES_ANY or table.concat(r.versions, ", "))
+end
+-- The report of /oly relay admitted: whom this relay serves, whom it refused and why, the denied,
+-- and the rules in force.
+function Relay.Report(now)
+	now = now or Now()
+	local lines = { L.RELAY_REPORT_HEAD:format(tostring(ns.me), tostring(ns.VERSION), Relay.IsRelay(ns.me) and L.RELAY_REPORT_RELAY or L.RELAY_REPORT_NOT_RELAY),
+		Relay.RulesLine(now) }
+	local function Ago(t) return L.RELAY_AGO:format(math.floor(math.max(0, now - t) / 60)) end
+	local shown = Relay.Presentations(now)
+	lines[#lines + 1] = L.RELAY_REPORT_PRESENTED:format(#shown)
+	for _, p in ipairs(shown) do lines[#lines + 1] = ("  %s  %s  %s"):format(p.name, p.v, Ago(p.t)) end
+	local refusals = Relay.Refusals(now)
+	lines[#lines + 1] = L.RELAY_REPORT_REFUSED:format(#refusals)
+	for _, r in ipairs(refusals) do lines[#lines + 1] = ("  %s  %s  %s"):format(r.name, r.why, Ago(r.t)) end
+	local names = {}
+	for k in pairs(denied or {}) do names[#names + 1] = tostring(k) end
+	table.sort(names)
+	lines[#lines + 1] = L.RELAY_REPORT_DENIED:format(#names, table.concat(names, ", "))
+	return table.concat(lines, "\n")
+end
+function Relay.ShowReport()
+	local text = Relay.Report()
+	local UI = ns.UI
+	if type(UI) == "table" and type(UI.ShowCopy) == "function" then
+		UI.ShowCopy(L.RELAY_REPORT_TITLE, text)
+		return true
+	end
+	for line in (text .. "\n"):gmatch("([^\n]*)\n") do ns.Print(line) end
+	return true
+end
+-- /oly relay: "admitted" opens the report in the copy window; "rules" says the rules in force; the
+-- author's "rules on|off [YYYY-MM-DD|epoch|now] [versions, comma-separated]" makes a new revision
+-- and hands it to the relays.
+function Relay.Slash(rest)
+	local words = {}
+	for w in tostring(rest or ""):gmatch("%S+") do words[#words + 1] = w end
+	local cmd = (words[1] or ""):lower()
+	if cmd == "admitted" then return Relay.ShowReport() end
+	if cmd == "rules" and words[2] then
+		if type(ns.IsAuthorName) ~= "function" or not ns.IsAuthorName(ns.me) then
+			ns.Print(L.RELAY_RULES_AUTHOR)
+			return false
+		end
+		local on = words[2]:lower()
+		local at = Relay.Rules().at -- (no date named: the deadline in force stays)
+		if words[3] then at = Relay.Epoch(words[3]) end -- (a date that is none refuses the command)
+		local versions
+		if words[4] then
+			versions = {}
+			for v in (table.concat(words, ",", 4) .. ","):gmatch("([^,]*),") do
+				if v ~= "" then versions[#versions + 1] = v end
+			end
+		end
+		local ok, r = false, nil
+		if (on == "on" or on == "off") and at then ok, r = Relay.SetRules(on == "on", at, versions) end
+		if not ok then
+			ns.Print(L.RELAY_USAGE)
+			return false
+		end
+		ns.Print(L.RELAY_RULES_SET:format(r.rev))
+		return true
+	end
+	if cmd == "rules" then
+		ns.Print(Relay.RulesLine())
+		return true
+	end
+	ns.Print(L.RELAY_USAGE)
+	return false
 end
 
 -- The server's "No player named X is currently playing": a relay named is offline now.
@@ -1323,7 +1843,9 @@ ns.Comm.Handle("RG", function(...) Relay.HandleGuild(...) end)
 ns.Comm.Handle("RY", function(...) Relay.HandleAck(...) end)
 ns.Comm.Handle("RX", function(...) Relay.HandleAcross(...) end)
 ns.Comm.Handle("RW", function(...) Relay.HandleVerify(...) end)
-ns.Comm.RelayPieces({ RL = true, RM = true, RG = true, RX = true, RW = true })
+ns.Comm.Handle("RI", function(...) Relay.HandlePresent(...) end) -- (1.5.4: a client's presentation)
+ns.Comm.Handle("RU", function(...) Relay.HandleRules(...) end) -- (1.5.4: the relay rules)
+ns.Comm.RelayPieces({ RL = true, RM = true, RG = true, RX = true, RW = true, RU = true })
 
 -- (1.4.6, the dev's ask) The server's "No player named X is currently playing" for a relay or a
 -- reporter the relay whispered: out of the chat for good, not for a window (Accord.Quiet's ten
@@ -1379,6 +1901,17 @@ ns.On("LOGIN", function()
 	pcall(ns.RegisterEvent, "CHAT_MSG_SYSTEM", function(text) ns.SafeCall("relay not found", Relay.NotFound, text) end)
 	QuietLines()
 	if ns.Every then ns.Every(Relay.GLOBAL_EVERY, "relay global census", function() ns.SafeCall("relay global", Relay.SendGlobal) end) end
+	-- (1.5.4) The relay rules: asked of the other relays, and handed to them by the author's client.
+	if Relay.IsRelay(ns.me) then
+		ns.SafeCall("relay rules", Relay.AskRules, true)
+		ns.SafeCall("relay rules", Relay.SendRules, true)
+		if ns.Every then
+			ns.Every(Relay.RULES_EVERY, "relay rules", function()
+				ns.SafeCall("relay rules", Relay.AskRules)
+				ns.SafeCall("relay rules", Relay.SendRules)
+			end)
+		end
+	end
 end)
 
 -- Tests: a clean slate.
@@ -1386,6 +1919,9 @@ function Relay.Reset()
 	wipe(offline); wipe(verified); wipe(pinged); wipe(reporters); wipe(seen); wipe(pending); wipe(budget)
 	seenCount, lastRegister, holding, flushing, lastGlobal = 0, -math.huge, false, false, -math.huge
 	lastVerifyAsk = -math.huge
+	wipe(presentedMem); wipe(refused); wipe(relayVersion); wipe(presentedTo); wipe(rulesSent) -- (1.5.4)
+	if type(ns.rdb) == "table" then ns.rdb.relayPresented = nil end
+	denied, lastRulesAsk, lastRulesSend, listed, listedFrom = nil, -math.huge, -math.huge, nil, nil
 	wipe(snapshotTransfers); wipe(crownSent); wipe(kingSent); wipe(crownLayer); wipe(grantSent)
 	crownBucket.tokens, crownBucket.at = 0, -math.huge
 	wipe(sets); wipe(drip)

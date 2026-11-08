@@ -2523,6 +2523,18 @@ retires the old private key so a delayed message cannot split them again.
 3. The reporter sends a compact summary of its guild about every 3 minutes on the hidden Olympus channel.
 4. Every client adds up all the summaries: that is the census.
 
+On WoW: Forever the hidden channel delivers nothing, so since 1.4.3 these words travel by whisper
+through the relays (the signed High Council's characters, the King's, the Treasurer's and the
+author's): each guild's reporter registers with a relay, the relay passes every guild's words to
+every reporter, and each reporter hands them to its guild. Since 1.5.4 a client identifies itself
+with its version to each relay that answers it. Until the date in the release notes a relay serves
+every client as before; from then on it registers and serves only the clients that presented
+themselves with a published version, and an older client still receives the census through a
+guildmate who updated. The rules a relay applies (that date, a switch that pauses it, the list of
+published versions) are not a private module: the author's client hands them to the relays in
+game, the relays pass them to one another and keep the newest, and `/oly relay admitted` on a relay
+lists whom it serves, whom it refused and why, and the rules in force.
+
 The addon itself talks only in game, through the game's own addon messages: it has no server of
 its own, and nothing it sends leaves the game. One exception is the Olympus Companion app, only if
 you install it (its rows in [Privacy](#privacy)).
@@ -2553,6 +2565,8 @@ players' links, and its own documentation says what then goes where. Your name i
 
 | What | Who receives it | When |
 |---|---|---|
+| Your addon's version, as your presentation to the relays that answer your client on WoW: Forever (1.5.4), and in your guild's reporter's registration | each relay that answered your client alone (a signed High Council member's, the King's, the Treasurer's or the author's character); it keeps your character's name and version on its client, in its saved variables, 30 minutes past your last word | whenever a relay answers your client's ping (to each relay once a minute at most), and in each registration to a relay that named its version; from the date in the release notes a relay serves only the clients that presented themselves |
+| The relay rules (1.5.4): the presentation's deadline, its switch and the list of published versions a relay admits, with their revision | the relays alone, by whisper: from the author's client, and among themselves | at the author's `/oly relay rules`, at a relay's login and every 30 minutes (a relay's ask, a holder's newer copy) |
 | Your guild's census: size, online count, classes, levels, rank names, the leader and officers (name, online, days away, class, level), addon versions | everyone on the Olympus channel | from one elected member per guild (and a runner-up), every few minutes |
 | The census names people: your guild's leader and officers (above) and its five highest-level members (name, level and class), online or not, with the addon or not; the Realm's level race shows them | everyone on the Olympus channel | in every census report of your guild, from the member it elects: nobody named is asked |
 | Zones in that census: members per zone (numbers only), a leader's or officer's zone | everyone on the Olympus channel | only if the member sending it shares their zone and layer; a leader's or officer's zone only if they share theirs too |
@@ -3196,6 +3210,7 @@ Other limits:
 | `/oly council list` · `/oly council help on\|off` | the High Council as your addon knows it; moderators: take help requests or not. The list is signed by the author on his own computer and checked by every client: no name is written in the addon's code, and nobody can forge or change it. An addon without the list (`High Council: -`) asks the channel for it a minute or so after login, and again until it has it (two and a half minutes later when nobody answered, up to 3 times). Since 1.0.0 the list also crosses realms through guild chat: guildmates on another realm answer the ask and pass the list on, and it goes on to your realm's channel |
 | `/oly council icon` (or **My council icon** on the Realm tab, councillors only; 1.2.4: **My profile**'s **Icons**) | moderators: a councillor's name always carries the High Council's mark, which nobody can change: in the game's own chat (1.1.5, `/oly chatmarks`) the game's silver elite dragon, on their tooltip and in the census the game's target-frame skull. An icon of your own after it is optional: pick it from the game's icons, like a macro's. Your addon announces it on the channel (at once, then every 20 minutes), and other clients take it only from a councillor and only as a game icon |
 | `/oly discord ...` | Olympus Link, the Discord role: its own addon, Olympus_Link (1.4.0), with its own commands when it is installed; without it, one line says it is not installed |
+| `/oly relay admitted` · `/oly relay rules` | on a relay's client (1.5.4): whom it serves, whom it refused and why, and the relay rules in force, in a copy window; the rules in force in one line. The author's client alone: `/oly relay rules on\|off [YYYY-MM-DD\|epoch\|now] [versions, comma-separated]` makes a new revision of the rules and hands it to the relays |
 | `/oly hop` | ask for an invite to the King's layer (while he is online) |
 | `/oly lfg` · `/oly lfg dungeon\|raid\|pvp\|layer [note]` · `/oly lfg off` | the Board (1.1): who is looking for a group; raise your flag (a box with your note first) or lower it |
 | `/oly group` · `/oly group dungeon\|raid\|pvp\|quest` · `/oly group off` | the Board's groups (1.4.0): list your group, apply to one, answer applications; lower yours |
