@@ -63823,6 +63823,52 @@ end)()
 		if not ok then error(err, 0) end
 	end)
 
+	-- (The 1.5.4 review) The 1.5.4 letter took the 1.5.2 letter's signature, the dev's own words as the
+	-- launch letter's, which Locales.lua copies in English before a language file loads; the five
+	-- language files translated the letter but not its signature, so German, Spanish, French, Italian
+	-- and Russian players read the letter in their language signed in English. The signature the
+	-- window shows, for every letter in every language: where the letter is the player's language,
+	-- so is its signature.
+	test("version letters: a letter in the player's language is signed in it, never in English", function()
+		local savedLocale = GetLocale
+		local ok, err = pcall(function()
+			WithLetters(function()
+				local english = {}
+				for _, run in ipairs({ { "enUS" }, { "ptBR" }, { "deDE", "deDE" }, { "esES", "esES" }, { "esMX", "esES" },
+					{ "frFR", "frFR" }, { "itIT", "itIT" }, { "ruRU", "ruRU" } }) do
+					local code, file = run[1], run[2]
+					GetLocale = function() return code end
+					local loc = setmetatable({ On = function() end }, { __index = ns })
+					assert(loadfile(ADDON_DIR .. "Locales.lua"))("Olympus", loc)
+					if file then assert(loadfile(ADDON_DIR .. "Locales/" .. file .. ".lua"))("Olympus", loc) end
+					GetLocale = savedLocale
+					local lns = setmetatable({ L = loc.L, On = function() end, After = function() end,
+						Every = function() return { Cancel = function() end } end }, { __index = ns })
+					assert(loadfile(ADDON_DIR .. "Letters.lua"))("Olympus", lns)
+					local Lt, translated = lns.Letters, 0
+					for _, version in ipairs(Lt.LIST) do
+						eq(Lt.Show(version), true, code .. ": letter " .. version)
+						local f = Lt.Frame()
+						-- (Its words as written: a mark this harness has no art for is drawn as the
+						-- language's word for it, in a letter left in English too.)
+						local title, text, sign = f.title:GetText(), rawget(loc.L, "LETTER_" .. version:gsub("%.", "_")), f.sign:GetText()
+						assert(type(sign) == "string" and sign ~= "", code .. ": letter " .. version .. " signed")
+						if code == "enUS" then
+							english[version] = { title = title, text = text, sign = sign }
+						elseif title ~= english[version].title or text ~= english[version].text then
+							translated = translated + 1
+							assert(sign ~= english[version].sign, ("%s: letter %s in the player's language, signed in English: %s"):format(code, version, sign))
+						end
+					end
+					if code ~= "enUS" then assert(translated > 0, code .. ": letters in the player's language") end
+					Lt.Hide()
+				end
+			end)
+		end)
+		GetLocale = savedLocale
+		if not ok then error(err, 0) end
+	end)
+
 	test("1.1.5 version letters: every letter in English and pt-BR, plain text; 1.1.5's tells of the borders (the King, the High Council, guild masters; new ones coming, one everybody has worth nothing) and the marks in the game's chat; the README and CurseForge say it", function()
 		local pt = { L = setmetatable({}, { __index = ns.L }) }
 		local savedLocale = GetLocale
