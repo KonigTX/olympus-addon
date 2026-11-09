@@ -80,15 +80,18 @@ local function GrantWorld(fn)
 				for _, f in ipairs(due) do f() end
 			end
 		end
+		-- (And, third, the reporters' short names, sorted and joined by commas.)
 		local function Reached(word)
-			local n, dawn = 0, false
+			local n, dawn, names = 0, false, {}
 			for _, s in ipairs(sent) do
 				if s.target and s.msg:match("^RM~[LP]~[^~]+~(.*)$") == word then
 					n = n + 1
+					names[#names + 1] = ns.ShortName(s.target)
 					if ns.ShortName(s.target) == "Dawn Keeper" then dawn = true end
 				end
 			end
-			return n, dawn
+			table.sort(names)
+			return n, dawn, table.concat(names, ",")
 		end
 		fn(R, Hand, Reached, Register)
 	end)
@@ -127,6 +130,57 @@ test("relay fan-out (1.5.4): the issuer's grant reaches every reporter on its fi
 		Hand(R.me, close)
 		n, dawn = Reached(close)
 		eq(n, 11, "a close reaches every reporter at once"); eq(dawn, true)
+	end)
+end)
+
+-- The review of the 1.5.4 candidate, mixed versions: a 1.5.3 client keeps a heard grant 32 s
+-- (ProfileEffects.SESSION_TTL), so with the grant once each GRANT_EVERY a 1.5.3 presenter outside the
+-- issuer's guild lost his presentation at his next heartbeat, and the 1.5.3 viewers in his guild saw
+-- the effect come and go every minute. A guild whose member presents hears the grant each beat while
+-- he does. Fails before (the beat after his heartbeat reaches Dawn Keeper alone).
+test("relay fan-out (1.5.4): a guild whose member presents under the grant hears it each beat, for PRESENTING_FOR after his last heartbeat; a guild where nobody presents once each GRANT_EVERY; a guild with no reporter is not noted; Relay.Reset forgets", function()
+	GrantWorld(function(R, Hand, Reached, Register)
+		local t0, every, held = R.clock, R.Relay.GRANT_EVERY, R.Relay.PRESENTING_FOR
+		local function Grant(seq) return ("FX~2~G~s~123~%d~%d~Olympus Dawn~42"):format(seq, 1794011276 + seq) end
+		local function Names(word) return (select(3, Reached(word))) end
+		Hand(R.me, Grant(1))
+		eq((Reached(Grant(1))), 11, "the first beat reaches every reporter")
+		-- A member of Guild 3 presents under the grant, beating every 10 s (FX~ver~S~style~session~seq~
+		-- at~guild~issuer~grant~caption); a member of a guild with no reporter here too.
+		local function Beat(seq, guild) return ("FX~2~S~s~777~%d~%d~%s~%s~42~a caption"):format(seq, 1794011280 + seq, guild, R.me) end
+		R.clock = t0 + 5
+		Hand("Some Member-CAMWOWUS2Realm3PvE", Beat(1, "Guild 3"))
+		eq(Names(Beat(1, "Guild 3")), "Rep Number3", "his presentation stays with his guild")
+		Hand("Lone Member-CAMWOWUS2Realm3PvE", Beat(1, "Guild 99"))
+		eq((Reached(Beat(1, "Guild 99"))), 0, "a guild with no reporter here: nobody")
+		R.clock = t0 + 10
+		Hand(R.me, Grant(2))
+		eq(Names(Grant(2)), "Dawn Keeper,Rep Number3", "the beat after his heartbeat: the issuer's guild and the presenter's")
+		R.clock = t0 + 15
+		Hand("Some Member-CAMWOWUS2Realm3PvE", Beat(2, "Guild 3"))
+		R.clock = t0 + 20
+		Hand(R.me, Grant(3))
+		eq(Names(Grant(3)), "Dawn Keeper,Rep Number3", "and the next")
+		R.clock = t0 + every
+		Hand(R.me, Grant(4))
+		eq((Reached(Grant(4))), 11, "GRANT_EVERY after the first: every reporter again")
+		-- His last heartbeat was at t0 + 15: his guild hears the grant for PRESENTING_FOR after it.
+		R.clock = t0 + 15 + held - 1
+		Hand(R.me, Grant(5))
+		eq(Names(Grant(5)), "Dawn Keeper,Rep Number3", "within PRESENTING_FOR of his last heartbeat")
+		R.clock = t0 + 15 + held
+		Hand(R.me, Grant(6))
+		eq(Names(Grant(6)), "Dawn Keeper", "past it: the issuer's guild alone again")
+		-- Relay.Reset forgets who presents.
+		R.clock = t0 + 100
+		Hand("Some Member-CAMWOWUS2Realm3PvE", Beat(3, "Guild 3"))
+		R.Relay.Reset()
+		Register()
+		Hand(R.me, Grant(7))
+		eq((Reached(Grant(7))), 11, "after Relay.Reset: every reporter at once")
+		R.clock = t0 + 105
+		Hand(R.me, Grant(8))
+		eq(Names(Grant(8)), "Dawn Keeper", "and the presenter's guild is forgotten")
 	end)
 end)
 

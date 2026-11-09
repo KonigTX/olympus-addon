@@ -189,6 +189,97 @@ test("relay fan-out (1.5.4): a snapshot batch pushed out of the queue before it 
 	end)
 end)
 
+-- The review of the 1.5.4 candidate: a batch in flight is no longer in the drip, so a newer copy of
+-- its word for that reporter was appended as an entry of its own, and when the queue pushed the batch
+-- out it went back to the front with its older whispers: that reporter was sent the superseded
+-- snapshot, and the newest one a whole round of reporters later. The put-back takes the newer copy's
+-- whispers in its place. Fails before (the pushed-out reporter is sent both copies).
+test("relay fan-out (1.5.4): a snapshot batch pushed out of the queue while a newer copy of its word already waits goes back as the newer copy, never the older", function()
+	Relayed(function(R, sent, Run)
+		local C = R.Comm
+		for i = 1, 3 do
+			R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i))
+		end
+		-- A transfer to somebody else under way: the first reporter's batch waits in the queue behind it.
+		local filler = {}
+		for i = 1, 34 do filler[i] = ("C900:%d:34:"):format(i) .. ("f"):rep(200) end
+		eq(C.SendBatch("WHISPER", filler, nil, "Filler Target-CAMWOWUS2Realm7PvE", false), true)
+		C.Pump()
+		eq(C.QueueSize(), 30, "the transfer began: four parts went")
+		local older = "CG~2~S~1~ForeverPvE~Alliance~" .. ("Olympus Dawn,640,40,300,1;"):rep(66)
+		local newer = "CG~2~S~2~ForeverPvE~Alliance~" .. ("Olympus Dawn,641,41,300,2;"):rep(66)
+		for _, p in ipairs(R.Codec.Chunk(older, "77")) do R.Relay.HandleIn("WHISPER", R.me, "RL~P~" .. p) end
+		local batch = C.QueueSize() - 30
+		eq(batch > 0, true, "the first reporter's batch of the older snapshot waits in the queue, behind the transfer")
+		for _, p in ipairs(R.Codec.Chunk(newer, "78")) do R.Relay.HandleIn("WHISPER", R.me, "RL~P~" .. p) end
+		eq(C.QueueSize(), 30 + batch, "the newer snapshot waits in the drip, not in the queue")
+		-- A burst of single whispers (two chat lines to every reporter) pushes the waiting batch out.
+		for i = 1, 40 do C.Whisper("Filler Target-CAMWOWUS2Realm7PvE", "X1~burst " .. i, nil, false, false) end
+		Run(3000)
+		eq(C.QueueSize(), 0, "everything went out")
+		local olderSent, newerSent = 0, 0
+		for i = 1, 3 do
+			local got = Assembled(R, sent, ("Rep Number%d-"):format(i))
+			if got[older] then olderSent = olderSent + 1 end
+			if got[newer] then newerSent = newerSent + 1 end
+		end
+		eq(newerSent, 3, "every reporter gets the newer snapshot")
+		eq(olderSent, 0, "no reporter is sent the copy the newer snapshot replaced")
+	end)
+end)
+
+-- The review of the 1.5.4 candidate: a batch waits a whole round of reporters, and Drip sent it to the
+-- name DripSet stored without asking whether his guild still had that reporter: one it had replaced
+-- (an older client's election churn, a logout) was sent up to 34 wasted whispers, and when he had
+-- logged off the server's "No player named" line showed in the relay's chat, which QuietLine hides
+-- for current reporters alone. A batch for a name no guild has as its reporter any more is left out.
+-- Fails before (the whole batch goes to the replaced name).
+test("relay fan-out (1.5.4): a drip batch waiting for a reporter his guild has since replaced is not sent to him; the other guild's reporter still gets the snapshot", function()
+	Relayed(function(R, sent, Run)
+		local C = R.Comm
+		local old, new, other = "Rep Alpha-CAMWOWUS2Realm7PvE", "Rep Alphanew-CAMWOWUS2Realm7PvE", "Rep Beta-CAMWOWUS2Realm7PvE"
+		R.Relay.HandleIn("WHISPER", old, "RL~P~RR~Guild Alpha")
+		R.Relay.HandleIn("WHISPER", other, "RL~P~RR~Guild Beta")
+		-- The queue nearly full with whispers to somebody else: both batches wait in the drip.
+		for i = 1, C.MAX_QUEUE - 4 do C.Whisper("Busy Target-CAMWOWUS2Realm7PvE", "X1~busy " .. i, nil, false, false) end
+		local snapshot = "CG~2~S~1~ForeverPvE~Alliance~" .. ("Guild Row,640,40,300,1;"):rep(70)
+		for _, p in ipairs(R.Codec.Chunk(snapshot, "55")) do R.Relay.HandleIn("WHISPER", R.me, "RL~P~" .. p) end
+		eq(C.QueueSize(), C.MAX_QUEUE - 4, "no batch was handed to the queue yet")
+		-- Guild Alpha's new reporter registers before the old one's turn comes.
+		R.Relay.HandleIn("WHISPER", new, "RL~P~RR~Guild Alpha")
+		Run(500)
+		eq(C.QueueSize(), 0, "everything went out")
+		local toOld = 0
+		for _, s in ipairs(sent) do if s.target == old or s.target == ns.ShortName(old) then toOld = toOld + 1 end end
+		eq(toOld, 0, "nothing goes to the reporter his guild replaced")
+		eq(Assembled(R, sent, "Rep Beta-")[snapshot], 1, "the other guild's reporter gets the whole snapshot once")
+	end)
+end)
+
+test("relay fan-out (1.5.4): a drip batch waiting for a reporter whose registration lapsed is not sent to him", function()
+	Relayed(function(R, sent, Run)
+		local C = R.Comm
+		local old, other = "Rep Alpha-CAMWOWUS2Realm7PvE", "Rep Beta-CAMWOWUS2Realm7PvE"
+		R.Relay.HandleIn("WHISPER", old, "RL~P~RR~Guild Alpha")
+		R.Relay.HandleIn("WHISPER", other, "RL~P~RR~Guild Beta")
+		for i = 1, C.MAX_QUEUE - 4 do C.Whisper("Busy Target-CAMWOWUS2Realm7PvE", "X1~busy " .. i, nil, false, false) end
+		local snapshot = "CG~2~S~1~ForeverPvE~Alliance~" .. ("Guild Row,640,40,300,1;"):rep(70)
+		for _, p in ipairs(R.Codec.Chunk(snapshot, "55")) do R.Relay.HandleIn("WHISPER", R.me, "RL~P~" .. p) end
+		eq(C.QueueSize(), C.MAX_QUEUE - 4, "no batch was handed to the queue yet")
+		-- Alpha never registers again; Beta does; another client's word prunes Alpha (ToReporters).
+		R.clock = R.clock + R.Relay.REPORTER_FOR + 1
+		R.Relay.HandleIn("WHISPER", other, "RL~P~RR~Guild Beta")
+		R.Relay.HandleIn("WHISPER", "Some Client-CAMWOWUS2Realm7PvE", "RL~P~X1~a word")
+		eq(R.Relay.Stats().reporters, 1, "Alpha's lapsed registration is gone")
+		Run(500)
+		eq(C.QueueSize(), 0, "everything went out")
+		local toOld = 0
+		for _, s in ipairs(sent) do if s.target == old or s.target == ns.ShortName(old) then toOld = toOld + 1 end end
+		eq(toOld, 0, "nothing goes to the reporter whose registration lapsed")
+		eq(Assembled(R, sent, "Rep Beta-")[snapshot], 1, "the fresh reporter gets the whole snapshot once")
+	end)
+end)
+
 -- The review of the 1.5.4 candidate: the relay's own repeats in pieces (the King's Hands and the
 -- Treasury's words every 300 s, a ranking's repeat) were keyed by their message id, so each repeat
 -- waited in the drip as one more batch behind the rest: on a busy relay the drip grew without end
@@ -318,9 +409,10 @@ test("relay trickle (1.5.4): a word in two whispers still gets through beside sh
 		local looks, most = Trial(10, 300)
 		eq(looks >= 5, true, ("10 reporters: each is handed a look in two whispers each minute: at least %d in 5 minutes"):format(looks))
 		eq(most <= rate * 6, true, ("and no more than REPORTER_RATE a minute: at most %d whispers"):format(most))
+		-- (The review, mixed versions: an allowance holds three whispers at the least, a window of 105 s here.)
 		looks, most = Trial(35, 300)
-		eq(looks >= 4, true, ("35 reporters: each is handed one about every 70 s: at least %d in 5 minutes"):format(looks))
-		eq(most <= 2 + all / 35 * 5 + 1, true, ("and no more than his share: at most %d whispers"):format(most))
+		eq(looks >= 2, true, ("35 reporters: each is handed one about every 105 s: at least %d in 5 minutes"):format(looks))
+		eq(most <= 3 + all / 35 * 5 + 1, true, ("and no more than his share: at most %d whispers"):format(most))
 	end)
 end)
 
@@ -345,11 +437,15 @@ test("relay trickle (1.5.4): a clock set back starts a reporter's new allowance"
 end)
 
 -- The review of the 1.5.4 candidate: another client's word in pieces passes the trickle whole or not
--- at all. With 35 reporters an allowance holds two whispers; a census report in two pieces (385 bytes:
--- its full first piece and its RM label are two whispers, its last one more) can never reach a reporter
--- whole, yet its first piece took the allowance and the single words after it went to nobody. A last
--- piece alone (its first ones refused before) took a single word's place the same way. Fails before.
-test("relay trickle (1.5.4): a word in pieces that can never pass whole spends nothing, and the single words after it still pass", function()
+-- at all. A census report in three pieces (its two full pieces with their RM labels are two whispers
+-- each, its last one more: five) can never reach a reporter whole, yet its first piece took the
+-- allowance and the single words after it went to nobody. A last piece alone (its first ones refused
+-- before) took a single word's place the same way. Fails before. (The same review, mixed versions:
+-- with more than 20 reporters an allowance held two whispers, so a report in two pieces, three
+-- whispers, never passed either, and no other guild's full report reached any guild through a busy
+-- relay, which 1.5.3 let through whenever the allowance was full. It holds three at the least now.
+-- Fails before: the two-piece report reached nobody with 35 reporters.)
+test("relay trickle (1.5.4): a word in pieces that can never pass whole spends nothing, and the single words after it still pass; a census report in two pieces passes whole with many reporters too", function()
 	Relayed(function(R)
 		R.Relay.Reset()
 		for i = 1, 35 do
@@ -372,8 +468,8 @@ test("relay trickle (1.5.4): a word in pieces that can never pass whole spends n
 			end
 		end
 		Watch()
-		local report = R.Codec.Chunk("R2~" .. ("r"):rep(382), "7")
-		eq(#report, 2, "a 385-byte census report is two pieces")
+		local report = R.Codec.Chunk("R2~" .. ("r"):rep(600), "7")
+		eq(#report, 3, "a 603-byte census report is three pieces")
 		for _, p in ipairs(report) do R.Relay.HandleIn("WHISPER", "Census Guy-CAMWOWUS2Realm3PvE", "RL~P~" .. p) end
 		R.Relay.HandleIn("WHISPER", "Census Guy-CAMWOWUS2Realm3PvE", "RL~P~C8:3:3:" .. ("x"):rep(40))
 		R.Relay.HandleIn("WHISPER", "Some Client-CAMWOWUS2Realm3PvE", "RL~P~X2~1~a word")
@@ -382,6 +478,14 @@ test("relay trickle (1.5.4): a word in pieces that can never pass whole spends n
 		eq(pieces, 0, "no piece of a word that can never pass whole is sent")
 		eq(words["1"] or 0, 35, "the first single word reaches every reporter")
 		eq(words["2"] or 0, 35, "and so does the second")
+		-- Every allowance full again: a report in two pieces (385 bytes, three whispers) passes whole.
+		R.clock = R.clock + 120
+		Watch()
+		local two = R.Codec.Chunk("R2~" .. ("t"):rep(382), "8")
+		eq(#two, 2, "a 385-byte census report is two pieces")
+		for _, p in ipairs(two) do R.Relay.HandleIn("WHISPER", "Census Guy-CAMWOWUS2Realm3PvE", "RL~P~" .. p) end
+		R.Comm.Whisper, R.Comm.SendBatch = raw, rawBatch
+		eq(pieces, 70, "with 35 reporters both pieces of a two-piece report go to each")
 		-- A few reporters (an allowance of REPORTER_RATE): the same report still passes whole.
 		R.Relay.Reset()
 		for i = 1, 10 do
@@ -393,6 +497,61 @@ test("relay trickle (1.5.4): a word in pieces that can never pass whole spends n
 		for _, p in ipairs(R.Codec.Chunk("R2~" .. ("s"):rep(382), "9")) do R.Relay.HandleIn("WHISPER", "Census Guy-CAMWOWUS2Realm3PvE", "RL~P~" .. p) end
 		R.Comm.Whisper, R.Comm.SendBatch = raw, rawBatch
 		eq(pieces, 20, "with 10 reporters both pieces of the report go to each")
+	end)
+end)
+
+-- The review of the 1.5.4 candidate: the trickle charged a word in pieces piece by piece, so with an
+-- allowance partly spent by single words the full first piece (two whispers once wrapped) was refused
+-- and the short last one passed alone, or the first passed and the last was refused: a whisper wasted
+-- per reporter, the report never arriving, and at every receiver an assembly that never closed (/oly
+-- bug's "incomplete reports"). A word in pieces is paid for whole at its first piece, or refused
+-- there, and its later pieces pass free. Fails before (every reporter is sent one piece alone).
+test("relay trickle (1.5.4): a census report in two pieces goes to a reporter whole or not at all when his allowance is partly spent, before its first piece or between its pieces", function()
+	Relayed(function(R, sent, Run)
+		local CENSUS, CLIENT, N = "Census Guy-CAMWOWUS2Realm3PvE", "Some Client-CAMWOWUS2Realm3PvE", 10
+		-- How many reporters were sent the census client's word whole, none of it, or a piece alone,
+		-- read back from the whispers that left (a full piece travels as the relay's own envelope, in two).
+		local function Tally()
+			local whole, none, alone = 0, 0, 0
+			for i = 1, N do
+				local name, outer, got, n = ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), R.Codec.NewAssembler(), 0, nil
+				for _, s in ipairs(sent) do
+					if s.target == name then
+						local rm = s.msg:sub(1, 3) == "RM~" and s.msg or R.Codec.Feed(outer, "relay", s.msg, 0)
+						local k, total = nil, nil
+						if rm then k, total = rm:match("^RM~P~Census Guy%-[^~]+~C%w+:(%d+):(%d+):") end
+						if k then got, n = got + 1, tonumber(total) end
+					end
+				end
+				if got == 0 then none = none + 1 elseif got == n then whole = whole + 1 else alone = alone + 1 end
+			end
+			return whole, none, alone
+		end
+		local function Register()
+			R.Relay.Reset(); wipe(sent)
+			for i = 1, N do R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i)) end
+			R.clock = R.clock + 120 -- (every allowance full: REPORTER_RATE, with ten reporters)
+		end
+		-- Three single words first, each allowance down to one whisper; then the report, piece by piece
+		-- as the origin's pump sends it.
+		Register()
+		for k = 1, 3 do R.Relay.HandleIn("WHISPER", CLIENT, ("RL~P~X2~%d~a word"):format(k)); Run(2) end
+		local report = R.Codec.Chunk("R2~" .. ("r"):rep(382), "7")
+		eq(#report, 2, "a 385-byte census report is two pieces")
+		for _, p in ipairs(report) do R.Relay.HandleIn("WHISPER", CENSUS, "RL~P~" .. p); Run(1) end
+		Run(30)
+		local whole, none, alone = Tally()
+		eq(alone, 0, ("one whisper left: no reporter is sent a piece alone (whole %d, none %d, alone %d)"):format(whole, none, alone))
+		eq(none, N, "the report is refused at its first piece for every reporter")
+		-- The first piece on a full allowance, two single words, then the last piece.
+		Register()
+		R.Relay.HandleIn("WHISPER", CENSUS, "RL~P~" .. report[1]); Run(1)
+		for k = 1, 2 do R.Relay.HandleIn("WHISPER", CLIENT, ("RL~P~X2~%d~a word"):format(k)); Run(1) end
+		R.Relay.HandleIn("WHISPER", CENSUS, "RL~P~" .. report[2])
+		Run(30)
+		whole, none, alone = Tally()
+		eq(alone, 0, ("spent between the pieces: no reporter is sent a piece alone (whole %d, none %d, alone %d)"):format(whole, none, alone))
+		eq(whole, N, "the report, paid for at its first piece, reaches every reporter whole")
 	end)
 end)
 
@@ -446,6 +605,65 @@ test("relay fan-out (1.5.4): the relay's own word too long for one drip batch is
 		end
 		eq(half, 0, "no reporter is sent part of a copy")
 		eq(newerWhole, REPORTERS, "every reporter gets the newer copy whole")
+	end)
+end)
+
+-- The review of the 1.5.4 candidate (its load): the relay's own word in pieces whose envelope needs
+-- two drip batches was keyed by its message id, so no repeat ever took its waiting copy's place: on a
+-- busy relay the drip grew without end (70 batches a repeat at 35 reporters, drained at about three a
+-- minute) and the census snapshots waited behind it, hours stale. A repeat takes the waiting copy's
+-- place while every batch of it still waits; with one in flight it takes the one "next" place, which
+-- the repeat after it takes in turn. Fails before (every reporter is sent all four copies).
+test("relay fan-out (1.5.4): the relay's own word too long for one drip batch, repeated: each reporter gets the newest copy whole and at most the one in flight before it, never a backlog", function()
+	Relayed(function(R, sent, Run)
+		local REPORTERS = 6
+		for i = 1, REPORTERS do
+			R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i))
+		end
+		local label = #("RM~P~" .. R.me .. "~")
+		local size = R.Codec.CHUNK * R.Codec.MAX_CHUNKS - label + 1 -- one whisper past MAX_CHUNKS once wrapped whole
+		local function Word(stamp) return (("T9~Olympus~%d~"):format(stamp) .. ("a"):rep(size)):sub(1, size) end
+		-- Four copies in a row (a bank changing: Bank.Share every SHARE_GAP), the first reporter's first
+		-- batch of the first copy in the queue already when the others come.
+		for c = 1, 4 do
+			for _, p in ipairs(R.Codec.Chunk(Word(1794011276 + c), tostring(60 + c))) do R.Relay.HandleIn("WHISPER", R.me, "RL~P~" .. p) end
+		end
+		Run(1500)
+		eq(R.Comm.QueueSize(), 0, "everything went out")
+		local most, least, newest, half = 0, math.huge, 0, 0
+		for i = 1, REPORTERS do
+			local prefix = ("Rep Number%d-"):format(i)
+			local outer, got, total = R.Codec.NewAssembler(), {}, {}
+			for _, s in ipairs(sent) do
+				if s.target and s.target:sub(1, #prefix) == prefix then
+					local rm = s.msg:sub(1, 3) == "RM~" and s.msg or R.Codec.Feed(outer, "relay", s.msg, 0)
+					local body = rm and rm:match("^RM~[LP]~[^~]+~(.*)$")
+					local id, k, n = nil, nil, nil
+					if body then id, k, n = body:match("^C(%w+):(%d+):(%d+):") end
+					if id then
+						got[id] = got[id] or {}
+						got[id][tonumber(k)] = true
+						total[id] = tonumber(n)
+					end
+				end
+			end
+			local whole = 0
+			for id, ks in pairs(got) do
+				local c = 0
+				for _ in pairs(ks) do c = c + 1 end
+				if c == total[id] then
+					whole = whole + 1
+					if id == "64" then newest = newest + 1 end
+				else
+					half = half + 1
+				end
+			end
+			most, least = math.max(most, whole), math.min(least, whole)
+		end
+		eq(half, 0, "no reporter is sent part of a copy")
+		eq(newest, REPORTERS, "every reporter gets the newest copy whole")
+		eq(least, 1, "a reporter not yet served gets the newest copy alone")
+		eq(most <= 2, true, ("the reporter whose first batch was in flight gets that copy and the newest, no more: %d"):format(most))
 	end)
 end)
 

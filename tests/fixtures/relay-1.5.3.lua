@@ -1,9 +1,10 @@
--- Olympus/Relay.lua as 1.5.3 ships it, for tests/run.lua (tests/relay-admit.lua): copied unchanged
--- from `git show v1.5.3:Olympus/Relay.lua`, the file every relay and client ran before the
--- presentation of 1.5.4. A 1.5.3 relay answers a ping with the exact text "RY~", takes everything
--- after "RR~" as the guild's name, and fans any other word out to its reporters; a 1.5.3 client takes
--- the exact text "RY~" as a relay's answer and nothing else. Loaded like the addon loads its files:
--- loadfile("tests/fixtures/relay-1.5.3.lua")("Olympus", ns).
+-- Olympus/Relay.lua as 1.5.3 ships it (the release most players run while 1.5.4 is built), copied
+-- unchanged from `git show v1.5.3:Olympus/Relay.lua`, for tests/relay-admit.lua and tests/hop-forever.lua.
+-- A 1.5.3 relay answers a ping with the exact text "RY~", takes everything after "RR~" as the guild's
+-- name, and fans any other word out to its reporters; a 1.5.3 client takes the exact text "RY~" as a
+-- relay's answer and nothing else. Its Deliver takes a word once by the origin's name as written, with
+-- no dedupe by the short name, so a word that reaches a 1.5.3 client under two stamps counts twice there.
+-- Loaded like the addon loads its files: loadfile("tests/fixtures/relay-1.5.3.lua")("Olympus", ns).
 local ADDON, ns = ...
 local Relay = {}
 ns.Relay = Relay
