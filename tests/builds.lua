@@ -596,6 +596,11 @@ test("1.5.4 modified builds relays: a relay's client keeps another relay's word 
 	RelaySetup(function()
 		local R, Deliver, sent, _, Pump = Relayed(RELAY)
 		R.clock = 1800000000
+		-- (1.5.4, with the relays' presentation) This world is dated past Relay.PRESENT_REQUIRED_AT and its
+		-- clients hand their words in without presenting, which the relays refuse from that date on. The
+		-- presentation has its own tests (tests/relay-admit.lua): here the deadline is moved past the
+		-- world's date, as tests/verify-relay.lua does, so these stay about the modified builds.
+		R.Relay.PRESENT_REQUIRED_AT = R.clock + 30 * 86400
 		local one, two, origin = "Rep One" .. REALM7, "Rep Two" .. REALM7, "Some Origin" .. REALM7
 		Deliver("WHISPER", one, "RL~P~RR~Guild One")
 		Deliver("WHISPER", two, "RL~P~RR~Guild Two")
@@ -657,6 +662,11 @@ test("1.5.4 modified builds relays: a sighting a relay hears from its clients cr
 	RelaySetup(function()
 		local R, Deliver, sent, _, Pump = Relayed(RELAY)
 		R.clock = 1800000000
+		-- (1.5.4, with the relays' presentation) This world is dated past Relay.PRESENT_REQUIRED_AT and its
+		-- clients hand their words in without presenting, which the relays refuse from that date on. The
+		-- presentation has its own tests (tests/relay-admit.lua): here the deadline is moved past the
+		-- world's date, as tests/verify-relay.lua does, so these stay about the modified builds.
+		R.Relay.PRESENT_REQUIRED_AT = R.clock + 30 * 86400
 		local rep, client = "Rep One" .. REALM7, "Some Client" .. REALM7
 		Deliver("WHISPER", rep, "RL~P~RR~Guild One")
 		local word = ("BD~1~Olympus Dawn~%s~1.5.1-onn.12~h~%d~%d~"):format("Ann Dark" .. REALM7, R.clock, R.clock)
