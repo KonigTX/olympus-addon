@@ -231,7 +231,6 @@ What version 1.5.4 changes:
 - {news} Item links in the Olympus chat work again: highlighted, clickable, and the item shows when you hover.
 - {watch} More guild names that insult Olympus no longer count as Olympus guilds.
 - {team} The yellow "No player named ... is currently playing" lines no longer fill your chat.
-- {team} Your addon now tells the relays which version it runs, so keep it up to date.
 - {team} When no relay answers, the census waits for one instead of trying the channel the game blocks.
 
 Please close and reopen the game after updating. Thank you to everyone who measured and reported the problems on GitHub, CurseForge and Discord.
@@ -380,7 +379,6 @@ O que muda na versão 1.5.4:
 - {news} Os links de itens no chat do Olympus voltaram a funcionar: destacados, clicáveis, e o item aparece quando você passa o mouse.
 - {watch} Mais nomes de guilda que insultam o Olympus deixam de contar como guildas do Olympus.
 - {team} As linhas amarelas de "jogador não encontrado" não enchem mais o seu chat.
-- {team} O seu addon agora informa aos relays qual versão ele usa, então mantenha-o atualizado.
 - {team} Quando nenhum relay responde, o censo espera por um em vez de tentar o canal que o jogo bloqueia.
 
 Feche e abra o jogo de novo depois de atualizar. Obrigado a todos que mediram e relataram os problemas no GitHub, no CurseForge e no Discord.
