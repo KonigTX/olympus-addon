@@ -591,6 +591,52 @@ test("verify: paused member notices leave overdue state and GM follow-up intact"
 	end)
 end)
 
+-- 1.5.4: a verifier's whisper to a guild master (the Guilds page's "Whisper them") ended by telling
+-- him that the members of an unverified guild are told it is not sanctioned. Nothing has told them
+-- since 1.5.3 (Verify.Mine is the guild master's alone), and after the reset a verifier may send it
+-- to every guild master again: it says nothing of his members, in English or in Portuguese. Fails
+-- before: the whisper's last sentence spoke of them.
+test("verify: 1.5.4 a verifier's whisper to an overdue guild's master says nothing of its members, whom nothing tells (English and Portuguese)", function()
+	World(function(w)
+		local member = w.Client(MEMBER, GUILD, 3)
+		local hc = w.Client(HC, "Olympus", 3) -- (a councillor in the King's guild: his own guild asks nothing of him)
+		local saved = GetLocale
+		GetLocale = function() return "ptBR" end
+		local ok, hcPt = pcall(w.Client, HC2, "Olympus", 3)
+		GetLocale = saved
+		if not ok then error(hcPt, 0) end
+		w.Census(GUILD, "Bram Hollow", 120)
+		for _, c in ipairs({ member, hc, hcPt }) do w.As(c, c.Verify.Observe) end
+		w.now = T0 + GRACE + 1
+		w.As(member, member.Verify.Login)
+		w.now = w.now + member.Verify.NOTICE_AFTER
+		eq(w.Status(member, GUILD), "overdue")
+		eq(w.As(member, member.Verify.Tick), false, "no notice to the member")
+		eq(w.As(member, member.Verify.Mine), nil)
+		eq(#member.copies, 0); eq(#w.As(member, member.Verify.Lines), 0)
+		-- Each verifier clicks the guild's row on his page, then "Whisper them".
+		local function Whisper(c)
+			local row
+			for _, l in ipairs(w.As(c, c.Verify.CouncilLines)) do
+				if l.onClick and l.text and l.text:find("<" .. GUILD .. ">  Bram Hollow", 1, true) then row = row or l end
+			end
+			assert(row, "the guild's row on the verifiers' page")
+			w.As(c, row.onClick)
+			local d = c.dialogs[#c.dialogs]
+			eq(d.which, "OLYMPUS_VERIFY_GUILD"); eq(d.data.gm, GM)
+			eq(w.As(c, c.Verify.Nudge, d.data), true)
+			local sent = c.whispers[#c.whispers]
+			eq(sent.to, "Bram Hollow")
+			assert(sent.text:find("<" .. GUILD .. ">", 1, true) and sent.text:find("/oly verify", 1, true), sent.text)
+			return sent.text:lower()
+		end
+		local en, pt = Whisper(hc), Whisper(hcPt)
+		assert(en ~= pt, "one whisper in each language")
+		assert(not en:find("member", 1, true), "nothing of the members: " .. en)
+		assert(not pt:find("membro", 1, true), "nada dos membros: " .. pt)
+	end)
+end)
+
 -- (1.5.4: within the grace, 7 days where it was 48 hours: the notice says 6 d 23 h are left where it
 -- said 1 d 23 h, and the deadline passed is 7 days on; the test's name said "within 48 hours".)
 test("verify: within the grace only the guild master sees \"GM verification pending\", once a session; overdue notices stay with the guild master", function()

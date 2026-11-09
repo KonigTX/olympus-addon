@@ -72,7 +72,9 @@ L.VERIFY_LIST_FOOT = "Verified: %d. Ask each guild master to install Olympus and
 L.VERIFY_GUILD_PROMPT = "<%s>\nGuild master: %s\n%s\n\nApprove this guild and its guild master? Approve only after the guild master asked you (their whisper, or their code)."
 L.VERIFY_APPROVE_BTN = "Approve"
 L.VERIFY_WHISPER_GM_BTN = "Whisper them"
-L.VERIFY_NUDGE_TEXT = "Hi! You lead <%s>, an Olympus guild. Olympus asks every guild master to verify their guild: install the Olympus addon, type /oly verify in game and follow it. Members of unverified guilds are told their guild is not sanctioned."
+-- A verifier's whisper to a guild master. (1.5.4) It no longer says that the members of an
+-- unverified guild are told it is not sanctioned: nothing has told them since 1.5.3 paused it.
+L.VERIFY_NUDGE_TEXT = "Hi! You lead <%s>, an Olympus guild. Olympus asks every guild master to verify their guild: install the Olympus addon, type /oly verify in game and follow it."
 L.VERIFY_REVOKE_PROMPT = "Revoke the verification of <%s> (guild master %s)?"
 L.VERIFY_REVOKE_BTN = "Revoke"
 L.VERIFY_MARK_VERIFIED = "Verified by Olympus"
@@ -149,7 +151,7 @@ if GetLocale and GetLocale() == "ptBR" then
 	L.VERIFY_GUILD_PROMPT = "<%s>\nMestre da guilda: %s\n%s\n\nAprovar esta guilda e o mestre dela? Aprove só depois que o mestre da guilda pediu (o sussurro dele, ou o código dele)."
 	L.VERIFY_APPROVE_BTN = "Aprovar"
 	L.VERIFY_WHISPER_GM_BTN = "Sussurrar"
-	L.VERIFY_NUDGE_TEXT = "Olá! Você lidera <%s>, uma guilda do Olympus. O Olympus pede a cada mestre de guilda que verifique a guilda: instale o addon Olympus, digite /oly verify no jogo e siga os passos. Os membros de guildas não verificadas veem que a guilda não é reconhecida."
+	L.VERIFY_NUDGE_TEXT = "Olá! Você lidera <%s>, uma guilda do Olympus. O Olympus pede a cada mestre de guilda que verifique a guilda: instale o addon Olympus, digite /oly verify no jogo e siga os passos."
 	L.VERIFY_REVOKE_PROMPT = "Revogar a verificação de <%s> (mestre da guilda %s)?"
 	L.VERIFY_REVOKE_BTN = "Revogar"
 	L.VERIFY_MARK_VERIFIED = "Verificada pelo Olympus"
