@@ -138,7 +138,12 @@ test("1.5.4 the King on Forever: his word stamped with the relay's sub-realm pla
 			assert(status:find("layer map 1453 zone 9", 1, true), status)
 			local other = L.HOP_KING_OTHER_REALM:format(k.name, k.realm)
 			assert(ns.Hop.KingUnknownText(k) ~= other, "why his layer can't be asked for: never 'another realm' for a stamp of our family")
+			-- (1.5.4, the layer hop marked experimental) The first ask of a session opens the window that
+			-- tells the flow (tests/hop-forever.lua covers it); as the other hop tests do, it was answered.
+			local confirmed = ns.Hop.confirmed and { same = ns.Hop.confirmed.same, other = ns.Hop.confirmed.other }
+			if ns.Hop.confirmed then ns.Hop.confirmed.same, ns.Hop.confirmed.other = true, true end
 			ns.Hop.AskKing()
+			if confirmed then ns.Hop.confirmed.same, ns.Hop.confirmed.other = confirmed.same, confirmed.other end
 			eq(#printed <= 1, true)
 			assert(printed[1] ~= other, "the click never refuses the hop for the relay's sub-realm: " .. tostring(printed[1]))
 			local top = ns.Hop.KingLines()

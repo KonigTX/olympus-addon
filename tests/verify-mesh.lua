@@ -420,7 +420,10 @@ test("verify mesh: an ask that crossed (RW), the RW heard and the direct answer 
 			assert(status:find("\nrelay: ", 1, true) and status:find(counted, 1, true), status)
 			assert(As(verifier, ns.BuildBugReport):find(counted, 1, true), "in /oly bug too")
 			ns.Relay, ns.Verify = hub.c.Relay, hub.c.Verify
-			local line = As(hub, ns.StatusText):match("\n(relay: [^\n]*)")
+			-- (1.5.4, with the relays' presentation) /oly status has a second "relay:" line, the rules and
+			-- the deadline (Relay.lua); the counts are on the relay line that carries them.
+			local line
+			for l in As(hub, ns.StatusText):gmatch("\n(relay: [^\n]*)") do if l:find("verify across", 1, true) then line = l end end
 			assert(line and line:find("verify across 1  direct 0  asked 1  answered 0  unsent 0", 1, true), tostring(line))
 		end)
 		ns.Relay, ns.Verify = had.relay, had.verify

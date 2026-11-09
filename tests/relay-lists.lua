@@ -773,6 +773,10 @@ local EMBER, THORN = "Olympus Ember", "Olympus Thorn"
 local MASTER, CLAIMANT, EDITOR = "Garrick Ashby-Realm", "Mallory Crane-Realm", "Editor Quill-Realm"
 local function OverRelay(fn)
 	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild, server = GetServerTime }
+	-- A file loaded into a node sets the game's global popups (Nominees.lua's OLYMPUS_NOMINEE and its
+	-- remove) to that node's module: given back afterwards, or the host's nominee tests clicked a node's.
+	local dialogs = {}
+	for k, v in pairs(StaticPopupDialogs or {}) do dialogs[k] = v end
 	local ok, err = pcall(function()
 		GetChannelName = function() return 0 end
 		ns.IsMember = function() return true end
@@ -827,6 +831,10 @@ local function OverRelay(fn)
 		fn(Node)
 	end)
 	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild, GetServerTime = saved.channel, saved.member, saved.guild, saved.inGuild, saved.server
+	if StaticPopupDialogs then
+		for k in pairs(StaticPopupDialogs) do if dialogs[k] == nil then StaticPopupDialogs[k] = nil end end
+		for k, v in pairs(dialogs) do StaticPopupDialogs[k] = v end
+	end
 	C_ChatInfo = nil
 	if not ok then error(err, 0) end
 end

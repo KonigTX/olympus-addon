@@ -782,7 +782,9 @@ bottom-to-top always gives the same tab order; changing role or debug view never
 - A line your block terms hide shows as a grey bubble, and a click shows it, marked. Over the
   lines, like the pinned line, how many your filter hides in the channel (no room while it hides
   none), and a click there shows them all (another hides them again). A link shows its tooltip
-  when you hover it, and a Shift-click puts it in the tab's box.
+  when you hover it, a click opens it as a click in the game's chat does (1.5.4; with mouse and
+  keyboard), and a Shift-click puts it in the tab's box. An item shows with the name and colour
+  your client knows it by, whatever the line said (1.5.4).
 - Right-click any saved line and choose **Reply**. The box shows a compact reference to its writer
   and words, and the **x** beside it cancels it without sending. Your answer's bubble, on your
   screen and everyone else's, shows the quoted line over the answer: smaller, on a darker inset,

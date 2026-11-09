@@ -5824,7 +5824,9 @@ test("sending is gated with a clear answer", function()
 		end)
 		eq(#sent, 1)
 		eq(sent[1]:sub(1, 16), "M1~C~Olympus II~")
-		assert(sent[1]:find("~PA~reunir em " .. ITEM, 1, true), sent[1])
+		-- (1.5.4, chat links) The item link travels packed as [name](kind:data/colour) (Codec.PackLinks),
+		-- which every receiver turns back into the game's link; the local echo below keeps the link itself.
+		assert(sent[1]:find("~PA~reunir em [Thunderfury](item:19019::::::::60:::::::::/ff0070dd)", 1, true), sent[1])
 		eq(#CHAT_LINES, 1, "local echo")
 		assert(CHAT_LINES[1]:find("[Captains]", 1, true) and CHAT_LINES[1]:find(ITEM, 1, true), CHAT_LINES[1])
 	end)
@@ -35647,14 +35649,16 @@ test("1.1 join routing (Fern #20): one modified member's answer names nobody to 
 					{ name = "Rcap-Realm", guild = "Olympus R1" }, { name = "Stranger-Realm", guild = "Olympus II" }, { name = "Third-Realm", guild = "Olympus R1" } })
 				eq(out[1], "Mod J1~1")
 				-- Made-up gates and guild, a stranger named for a real guild he is not in.
-				eq(R.OnRoute("Mod-Realm", "J2~y~Olympus Scam~7200~Olympus Scam=999=Victim/Victim2;Olympus R1=900=Stranger/Rcap"), true)
+				-- (1.5.4) A neutral made-up name: "Olympus Scam" became a name against Olympus (Core.lua's
+				-- AGAINST_AFTER), whose gates are dropped at once with no second member to ask.
+				eq(R.OnRoute("Mod-Realm", "J2~y~Olympus Phantom~7200~Olympus Phantom=999=Victim/Victim2;Olympus R1=900=Stranger/Rcap"), true)
 				eq(R.Route().gates, nil, "one member's gates")
 				eq(out[2], "Honest J1~1", "a second member asked at once")
 				local lines = V.RecruitLines()
-				eq(Fern.Find(lines, "Olympus Scam"), nil, "no member of it found: not listed")
+				eq(Fern.Find(lines, "Olympus Phantom"), nil, "no member of it found: not listed")
 				local _, at = Fern.Find(lines, L.RECRUIT_ROUTE_TITLE)
 				eq(Fern.Bare(lines[at + 1].text), "<Olympus R1>")
-				eq(R.NextContact("Olympus Scam"), nil, "nobody there to ask")
+				eq(R.NextContact("Olympus Phantom"), nil, "nobody there to ask")
 				eq(R.NextContact(nil).name, "Rcap-Realm")
 				local c = R.NextContact("Olympus R1")
 				eq(c.name, "Rcap-Realm", "the officer /who found in it, never Stranger (/who shows him in another guild)"); eq(c.officer, true)
