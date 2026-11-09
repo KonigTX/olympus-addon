@@ -647,13 +647,15 @@ end
 -- channel message each: nothing changes on those realms, and no older client reads a list. The
 -- guild masters' nominees (NM, Nominees.Send) and the shared block terms (BW, Filter.SendAll) go
 -- the same way; another list is one line for its sender and one in Relay.LIST_KINDS.
---   LS~1~<kind>~<n>~<word>\255<word>...   kind: the words' own type (two letters); n: how many
--- The separator is the byte 255. The unit separator (\30) is a control byte, and Comm takes every
--- control byte out of each message as it arrives (Codec.Plain, 0.9.2), before the pieces are put
--- together: it never reached a handler. No word holds 255, which no UTF-8 text has (names, guild
--- names and typed text are UTF-8), and a list with one in a word is refused; the game's addon
--- messages carry it (the bytes 128 to 255 travel as they are, as the accented names do).
-Comm.LIST_SEP = "\255"
+--   LS~1~<kind>~<n>~<word>`<word>...   kind: the words' own type (two letters); n: how many
+-- The separator is the backtick, plain text: Comm takes every control byte and the escape mark out
+-- of each message as it arrives (Codec.Plain, 0.9.2), before the pieces are put together, so the
+-- unit separator (\30) never reached a handler; the byte 255 of the first cut travels in the game's
+-- guild messages (measured in game) but that its whispers carry it, which carry the relay's lists,
+-- could not be shown before the release. No name or guild name has a backtick (the game allows
+-- neither), the block terms are letters and digits (Filter.Term), and a list with one in a word goes
+-- word by word, as any list past the bounds.
+Comm.LIST_SEP = "`"
 Comm.LIST_MAX = 64        -- words in one list at most
 Comm.LIST_WORD_MAX = 255  -- bytes of one word at most (a channel message's)
 -- The list as one word, or nil and why: a kind that is not a type (or a list's), no words, too many,
@@ -711,7 +713,7 @@ end
 -- kind or with the separator).
 function Comm.SendList(kind, words, options, key)
 	local _, why = Comm.PackList(kind, words)
-	if why == "kind" or why == "empty" or why == "mixed" or why == "separator" then return false, why end
+	if why == "kind" or why == "empty" or why == "mixed" then return false, why end
 	local text, split = OneWord(kind, words)
 	if text then return Comm.SendChunked(text, false, "CHANNEL", nil, options, key) == true end
 	if split then

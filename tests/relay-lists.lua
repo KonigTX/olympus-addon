@@ -81,6 +81,9 @@ test("list envelope (1.5.4): pack and unpack round trip, in pieces too; the sepa
 	assert(text, "packed")
 	eq(text:sub(1, 11), "LS~1~NR~22~")
 	eq(Codec.Plain(text), text, "the separator survives Comm's cleaning of every message (Codec.Plain)")
+	-- (1.5.4, before the release) Plain printable text: the byte 255 of the first cut travels in guild
+	-- messages, but its whispers, which carry the relay's lists, could not be shown to carry it.
+	assert(not text:find("[%z\1-\31\127-\255]"), "a list of plain words is plain printable text: no byte a channel may lose")
 	eq(Codec.Plain("a\30b"), "ab", "(the unit separator is a control byte: it would not)")
 	local kind, words = C.UnpackList(text)
 	eq(kind, "NR"); eq(#words, 22)
@@ -155,6 +158,17 @@ test("Comm.SendList (1.5.4): where the channel works each word goes as its own c
 		end
 		eq(bare, 0, "no row goes on its own")
 		eq(got, text, "the relay's client puts the one list word together from the origin's pieces")
+		-- (1.5.4) A word with the separator in it: its list goes word by word, as one past the bounds,
+		-- never refused (the game allows no backtick in a name, but a list is never lost to one).
+		local odd = Rows(2, "abc", "q")
+		odd[1] = odd[1]:gsub("~Some ", "~So" .. R.Comm.LIST_SEP .. "me ", 1)
+		eq(select(2, R.Comm.PackList("NR", odd)), "separator")
+		local from = #rsent
+		eq(R.Comm.SendList("NR", odd), true, "sent, word by word")
+		for _ = 1, 60 do R.Comm.Pump() end
+		local single = 0
+		for i = from + 1, #rsent do if rsent[i].msg:find("^RL~P~NR~") then single = single + 1 end end
+		eq(single, #odd, "each word its own word to the relay")
 	end)
 	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild = saved.channel, saved.member, saved.guild, saved.inGuild
 	C_ChatInfo = nil
