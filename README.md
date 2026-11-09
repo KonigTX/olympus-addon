@@ -73,10 +73,12 @@ approved list, it counts again, with no new version. Until a player updates, the
 such a guild off the network live.
 
 **Guild verification (launch).** A guild's guild master verifies it once, with a verifier: the King,
-a High Councillor of the signed list or the author. Each Olympus guild has a 48-hour clock from its
+a High Councillor of the signed list or the author. Each Olympus guild has a 7-day clock from its
 start: the first time a verifier's client saw it, the same on every client (each client keeps the
 earliest start a verifier's client gave, so a reinstall, a rejoin or a new guild master never
-restarts it; until one reaches it, a client counts from its own first sighting). Meanwhile its guild
+restarts it; until one reaches it, a client counts from its own first sighting). 1.5.4 started every
+guild's clock again on its release night (2026-11-09, 00:00 Brasília time): a guild seen before
+then has its 7 days from that moment (the grace was 48 hours before 1.5.4). Meanwhile its guild
 master sees **GM verification pending** (once a session, and the line on top of the Census or
 `/oly verify` opens it again) with the steps: whisper a verifier (**Whisper a verifier** writes it
 for him in Olympus's own whisper window, with a short code), or **Resend verification request**
@@ -90,7 +92,7 @@ who may not have the addon yet; **Copy the list** opens it in a window to copy f
 back. The verifiers are told once of each pending guild (and of each new guild master to check)
 and reminded 12 hours before its deadline. A verification belongs to the guild **and** its guild
 master: while the census names someone else as guild master, it lapses until the new one is
-verified, on the guild's same clock. Past 48 hours an unverified guild is overdue. Member-facing popups, chat warnings and Census
+verified, on the guild's same clock. Past its 7 days an unverified guild is overdue. Member-facing popups, chat warnings and Census
 notices are temporarily paused; the guild master still receives the verification reminder.
 The guild stays on the verifiers' list, marked overdue; and its guild master's own
 powers in Olympus wait for his verification (others take him as an officer: his public card, his

@@ -14,11 +14,17 @@ local L = ns.L
 -- guild) names someone else as its guild master, the approval lapses: a fresh check of the new
 -- guild master, on the guild's same clock. The old one leading it again, it stands again.
 --
--- The clock: GRACE (48 hours) from the guild's start, the same on every client. A verifier's client
--- records the first time it saw the guild (its census, or its own guild) and relays it with the
--- approvals; every client keeps the earliest start any verifier's client gave (ns.rdb.verify.start,
--- the earliest wins), so a reinstall, a rejoin or a new guild master never restarts it. Until a
--- verifier's start reaches it, a client counts from its own first sighting (ns.rdb.verify.seen).
+-- The clock: GRACE (7 days; 48 hours before 1.5.4) from the guild's start, the same on every client.
+-- A verifier's client records the first time it saw the guild (its census, or its own guild) and
+-- relays it with the approvals; every client keeps the earliest start any verifier's client gave
+-- (ns.rdb.verify.start, the earliest wins), so a reinstall, a rejoin or a new guild master never
+-- restarts it. Until a verifier's start reaches it, a client counts from its own first sighting
+-- (ns.rdb.verify.seen). (1.5.4, the dev's ask: every guild's verification period starts again,
+-- with 7 days of grace.) No deadline counts from before RESET_AT, the release night: a guild started
+-- before it has GRACE from RESET_AT, alike on every 1.5.4 client, and a client whose clock is before
+-- it finds nothing overdue. Only the deadline moves (Verify.Status): the starts are kept and relayed
+-- as they were, so the GV rows stay what a 1.5.3 client reads and the earliest still wins (a 1.5.3
+-- client counts its 48 hours from them until it updates).
 -- Within GRACE the guild is pending: only its guild master sees "GM verification pending" (once a
 -- session, reopened with /oly verify or the line on top of the Census). Past it the guild is
 -- overdue: member-facing notices are temporarily paused; the guild master still sees the
@@ -30,8 +36,8 @@ local L = ns.L
 --
 -- The verifiers (the King, the High Council, the author) see the pending and overdue guilds in The
 -- Watch (Guilds), are told once of each new pending guild (and of each new guild master to check),
--- and once more REMIND_LEFT before its deadline, to tell a guild master who has no addon to install
--- it and verify.
+-- and once more REMIND_LEFT before its deadline (and before a later deadline again, as the 1.5.4
+-- reset made every one), to tell a guild master who has no addon to install it and verify.
 --
 -- Exemptions live in one predicate, Verify.Exempt. Nothing of the whole guild is gated:
 -- ns.VERIFY_GATE (Core.lua) is off, and ns.GuildSanctioned(guild), the one predicate a feature
@@ -58,7 +64,8 @@ local Verify = {}
 ns.Verify = Verify
 
 Verify.PROTOCOL = 1
-Verify.GRACE = 48 * 3600         -- a guild's grace, from its start
+Verify.GRACE = 7 * 86400         -- a guild's grace, from its start (1.5.4: 7 days, where it was 48 hours)
+Verify.RESET_AT = 1794193200     -- (1.5.4) no deadline counts from before: 2026-11-09 00:00 BRT (03:00 UTC), the release night
 Verify.REMIND_LEFT = 12 * 3600   -- the verifiers are reminded of a pending guild this long before its deadline
 Verify.NOTICE_AFTER = 90         -- the session's notices wait this long after login (roster and census in)
 Verify.TICK = 60                 -- the guilds seen and the notices, every minute
@@ -217,7 +224,8 @@ end
 
 -- "exempt", "verified", "pending" or "overdue" (nil: no Olympus guild), with
 -- { guild, gm (now, or nil), entry (its approval), lapsed (approved with another guild master),
---   revoked, since (its start), shared (a verifier's start), left (seconds before its deadline) }.
+--   revoked, since (its start), shared (a verifier's start), deadline (GRACE after its start, or
+--   after RESET_AT for one started before it), left (seconds before its deadline) }.
 function Verify.Status(guild, now)
 	if type(guild) ~= "string" or guild == "" or not ns.IsFederation(guild) then return nil end
 	now = now or Verify.Clock()
@@ -235,7 +243,10 @@ function Verify.Status(guild, now)
 	local since, shared = Verify.Start(guild, now)
 	if since > now then since = now end
 	info.since, info.shared = since, shared
-	info.left = since + Verify.GRACE - now
+	-- (1.5.4) The deadline alone counts from RESET_AT at the earliest (see the top): since stays the
+	-- guild's start, as it is kept and relayed.
+	info.deadline = math.max(since, Verify.RESET_AT) + Verify.GRACE
+	info.left = info.deadline - now
 	if info.left > 0 then return "pending", info end
 	return "overdue", info
 end
@@ -856,7 +867,7 @@ function Verify.WhisperVerifier(guild)
 end
 
 -- Request timing is separate from the guild's earliest observation/start. It limits queued
--- requests across reloads without renewing the 48-hour verification deadline.
+-- requests across reloads without renewing the guild's verification deadline.
 function Verify.RequestWait(guild, now)
 	now = now or Verify.Clock()
 	local s = Store()
@@ -994,7 +1005,10 @@ end
 
 -- The verifiers' notices, each once per guild and guild master (kept in the saved data): a guild
 -- pending (new, or with a new guild master to check), and REMIND_LEFT before its deadline. One
--- chat line for each kind, naming the guilds.
+-- chat line for each kind, naming the guilds. (1.5.4) A reminder is kept with the deadline it was
+-- for: a later deadline is reminded again (the reset moved every one later, and 1.5.3 kept no
+-- deadline, so each guild it reminded is reminded once more before its new one); a deadline that
+-- only came nearer (an earlier start heard) is not.
 function Verify.CouncilNotices(now)
 	if not Verify.CouncilShown() then return 0 end
 	now = now or Verify.Clock()
@@ -1012,8 +1026,9 @@ function Verify.CouncilNotices(now)
 			t.gm = gm
 		end
 		t.last = now
-		if r.status == "pending" and r.info.left <= Verify.REMIND_LEFT and not t.remind then
-			t.remind = now
+		local reminded = tonumber(t.deadline)
+		if r.status == "pending" and r.info.left <= Verify.REMIND_LEFT and not (reminded and reminded >= r.info.deadline) then
+			t.remind, t.deadline = now, r.info.deadline
 			due[#due + 1] = r
 		end
 	end

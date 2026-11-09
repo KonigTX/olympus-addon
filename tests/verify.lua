@@ -1,5 +1,6 @@
 -- Guild verification (Verify.lua): a guild master verified by a verifier (the King, a High
--- Councillor, the author); the guild's 48-hour clock, the same on every client; the notices; the
+-- Councillor, the author); the guild's clock (7 days of grace since 1.5.4, 48 hours before; every
+-- guild's started again at the 1.5.4 release), the same on every client; the notices; the
 -- verifiers' page; the hold of an overdue guild master's own powers; the switches.
 -- A small world of clients, each with the real Locales/VerifyText.lua and Verify.lua loaded into a
 -- namespace of its own over the harness's, talking through a stand-in channel (the server stamps
@@ -14,6 +15,12 @@ local ADDON_DIR = ROOT .. "Olympus/"
 
 local T0 = 1800000000 -- the server's clock when each world starts
 local H = 3600
+local DAY = 24 * H
+-- (1.5.4) A guild's grace (Verify.GRACE: 48 hours before), and the moment every guild's clock
+-- started again (Verify.RESET_AT): 2026-11-09 00:00 BRT (03:00 UTC), the 1.5.4 release night. T0
+-- is past RESET_AT + GRACE, so a world that starts at T0 counts from its guilds' own starts.
+local GRACE = 7 * DAY
+local RESET_AT = 1794193200
 local GUILD, OTHER, ROGUES, HEARTH = "Olympus Vanguard", "Olympus Embers", "Olympus Rogues", "Olympus Hearth"
 local HC, HC2 = "Vera Stone-Realm", "Odo Marsh-Realm"
 local GM, GM2 = "Bram Hollow-Realm", "Corin Ash-Realm"
@@ -266,9 +273,11 @@ test("verify: a verification belongs to the guild and its guild master: a new gu
 		w.Census(GUILD, "Corin Ash", 120)
 		local status, info = w.Status(member, GUILD)
 		eq(status, "pending"); eq(info.lapsed, true); eq(info.since, T0, "the guild's start kept")
-		eq(info.left, 38 * H)
-		w.now = T0 + 49 * H
-		eq(w.Status(member, GUILD), "overdue", "48 hours from the guild's start, not from the new guild master")
+		-- (1.5.4: the grace is 7 days, where it was 48 hours: 38 hours left were GRACE - 10 hours, and
+		-- the deadline passed at 49 hours is passed an hour after GRACE now.)
+		eq(info.left, GRACE - 10 * H)
+		w.now = T0 + GRACE + H
+		eq(w.Status(member, GUILD), "overdue", "7 days from the guild's start, not from the new guild master")
 		eq(w.As(member, member.MasterHeld, GUILD), true, "the new guild master's own powers wait")
 		-- The new guild master verified: it stands again.
 		w.As(hc, hc.Verify.Approve, GUILD)
@@ -326,9 +335,172 @@ test("verify: the earliest start a verifier gave wins, in any order, and a reins
 		w.Run()
 		_, info = w.Status(member, GUILD)
 		eq(info.since, T0, "the guild's own clock again"); eq(info.shared, true)
-		eq(info.left, 8 * H - 9)
-		w.now = T0 + 48 * H + 1
-		eq(w.Status(member, GUILD), "overdue", "48 hours from the guild's start, not from the reinstall")
+		-- (1.5.4: 7 days of grace, where it was 48 hours: what is left and when it ends follow GRACE.)
+		eq(info.left, GRACE - 40 * H - 9)
+		w.now = T0 + GRACE + 1
+		eq(w.Status(member, GUILD), "overdue", "7 days from the guild's start, not from the reinstall")
+	end)
+end)
+
+-- 1.5.4 (the dev, 2026-11-08: "I'll reset the verification period for every guild and increase the
+-- grace period to 7 days"). Every guild's clock starts again at RESET_AT, the same on every 1.5.4 client:
+-- a deadline is 7 days from the guild's start or from RESET_AT, whichever is later. The starts
+-- themselves are kept and relayed as they were. Each of these fails before: 48 hours from the
+-- guild's start, and no reset.
+test("verify: 1.5.4 a guild whose start is weeks before the release is pending until 7 days after RESET_AT, then overdue; its start is kept", function()
+	World(function(w)
+		local hc = w.Client(HC, HEARTH, 3)
+		local member = w.Client(MEMBER, GUILD, 3)
+		w.Census(GUILD, "Bram Hollow", 120)
+		-- A verifier's client saw the guild three weeks before the release; every client holds that start.
+		local start = RESET_AT - 21 * DAY
+		w.now = start
+		w.As(hc, hc.Verify.Observe)
+		w.As(hc, hc.Verify.SendSnapshot)
+		eq(w.As(member, member.Verify.Start, GUILD), start, "the shared start")
+		-- The day after the release: pending again, with 6 days left.
+		w.now = RESET_AT + DAY
+		for _, c in ipairs({ hc, member }) do
+			local status, info = w.Status(c, GUILD)
+			eq(status, "pending", c.me .. ": pending, not three weeks overdue")
+			eq(info.since, start, c.me .. ": the guild's start, kept"); eq(info.shared, true)
+			eq(info.left, GRACE - DAY, c.me .. ": its deadline is 7 days after RESET_AT")
+		end
+		w.now = RESET_AT + GRACE - 1
+		eq(w.Status(member, GUILD), "pending", "a second before the new deadline")
+		w.now = RESET_AT + GRACE
+		eq(w.Status(member, GUILD), "overdue", "7 days after RESET_AT")
+		eq(w.Status(hc, GUILD), "overdue")
+		eq(member.Verify.GRACE, GRACE); eq(member.Verify.RESET_AT, RESET_AT)
+	end)
+end)
+
+test("verify: 1.5.4 a guild started after the release gets 7 days from its own start", function()
+	World(function(w)
+		local hc = w.Client(HC, HEARTH, 3)
+		local member = w.Client(MEMBER, GUILD, 3)
+		w.Census(GUILD, "Bram Hollow", 120)
+		local start = RESET_AT + 3 * DAY + 5 * H
+		w.now = start
+		w.As(hc, hc.Verify.Observe)
+		w.As(hc, hc.Verify.SendSnapshot)
+		w.now = start + 48 * H + 1
+		local status, info = w.Status(member, GUILD)
+		eq(status, "pending", "48 hours are no longer the grace")
+		eq(info.since, start); eq(info.left, GRACE - 48 * H - 1)
+		w.now = start + GRACE - 1
+		eq(w.Status(member, GUILD), "pending")
+		w.now = start + GRACE
+		eq(w.Status(member, GUILD), "overdue", "7 days from its own start")
+		eq(w.Status(hc, GUILD), "overdue")
+	end)
+end)
+
+test("verify: 1.5.4 a client whose clock is before RESET_AT marks nothing overdue: no overdue status, mark, list row or hold", function()
+	World(function(w)
+		local gm = w.Client(GM, GUILD, 0)
+		local hc = w.Client(HC, HEARTH, 3)
+		w.Census(GUILD, "Bram Hollow", 120)
+		w.Census(OTHER, "Corin Ash", 40)
+		-- Both guilds seen two months before the release, the start shared.
+		w.now = RESET_AT - 60 * DAY
+		for _, c in ipairs({ gm, hc }) do w.As(c, c.Verify.Observe) end
+		w.As(hc, hc.Verify.SendSnapshot)
+		for _, at in ipairs({ RESET_AT - 30 * DAY, RESET_AT - 1 }) do
+			w.now = at
+			for _, c in ipairs({ gm, hc }) do
+				for _, guild in ipairs({ GUILD, OTHER }) do
+					local status, info = w.Status(c, guild)
+					eq(status, "pending", c.me .. ", " .. guild .. ": nothing is overdue before RESET_AT")
+					eq(info.left, RESET_AT + GRACE - at, "its deadline 7 days after RESET_AT")
+				end
+			end
+			eq(w.As(hc, hc.Verify.Mark, GUILD), "", "no overdue mark for the verifiers")
+			for _, l in ipairs(w.As(hc, hc.Verify.CouncilLines)) do
+				assert(not tostring(l.text):find(hc.Verify.MARK_LATE, 1, true), "no overdue row on the verifiers' list: " .. tostring(l.text))
+				assert(not tostring(l.right):find("overdue", 1, true), "no overdue state on the verifiers' list: " .. tostring(l.right))
+			end
+			eq(w.As(gm, gm.MasterHeld, GUILD), false, "the guild master's powers stand")
+			eq(select(3, w.As(gm, gm.Verify.Mine)), "pending", "his own notice says pending")
+		end
+	end)
+end)
+
+test("verify: 1.5.4 an unverified guild master's own powers wait only past the new grace (ns.MasterHeld, the hold on as it ships)", function()
+	World(function(w)
+		local gm = w.Client(GM, GUILD, 0)
+		local hc = w.Client(HC, HEARTH, 3)
+		w.Census(GUILD, "Bram Hollow", 120)
+		eq(gm.VERIFY_HOLD, true, "Core.lua ships the hold on")
+		-- His guild started two weeks before the release; another guild two days after it.
+		w.now = RESET_AT - 14 * DAY
+		w.As(hc, hc.Verify.Observe)
+		local later = RESET_AT + 2 * DAY
+		w.now = later
+		w.Census(OTHER, "Corin Ash", 40)
+		w.As(hc, hc.Verify.Observe)
+		w.As(hc, hc.Verify.SendSnapshot)
+		-- The harness's Data asks the harness's predicate: this guild master's here (as the hold's test does).
+		local saved = { held = ns.MasterHeld, known = ns.Data.KnownRank }
+		ns.MasterHeld = function(guild) return gm.MasterHeld(guild) end
+		ns.Data.KnownRank = function(sender, guild) if sender == GM and guild == GUILD then return 0, 2 end return nil end
+		local ok, err = pcall(function()
+			local function Held(guild) return w.As(gm, gm.MasterHeld, guild) end
+			local function Rank() return w.As(gm, function() return (ns.Data.AuthorizedRank(GM, GUILD)) end) end
+			w.now = later + 48 * H + 1
+			eq(Held(GUILD), false, "within the new grace: not held"); eq(Rank(), 0, "his guild master's rank")
+			eq(Held(OTHER), false, "48 hours past its start: not held either")
+			w.now = RESET_AT + GRACE - 1
+			eq(Held(GUILD), false, "a second before the new deadline"); eq(Rank(), 0)
+			w.now = RESET_AT + GRACE + 1
+			eq(Held(GUILD), true, "past it: held"); eq(Rank(), ns.CAPTAIN_RANK, "an officer's rank until verified")
+			eq(Held(OTHER), false, "the later guild's own 7 days still run")
+			w.now = later + GRACE + 1
+			eq(Held(OTHER), true)
+			w.As(hc, hc.Verify.Approve, GUILD)
+			eq(Held(GUILD), false, "verified: released"); eq(Rank(), 0)
+		end)
+		ns.MasterHeld, ns.Data.KnownRank = saved.held, saved.known
+		if not ok then error(err, 0) end
+	end)
+end)
+
+test("verify: 1.5.4 the starts cross the wire unchanged (the GV rows a 1.5.3 client reads, the earliest still wins); only the deadline counts from RESET_AT", function()
+	World(function(w)
+		local hc = w.Client(HC, GUILD, 3)
+		local hc2 = w.Client(HC2, GUILD, 3)
+		local member = w.Client(MEMBER, GUILD, 3)
+		w.Census(GUILD, "Bram Hollow", 120)
+		local key = ns.Fold(GUILD)
+		-- The first verifier's client sees the guild three weeks before the release, alone online.
+		local start = RESET_AT - 21 * DAY
+		w.now = start
+		hc2.online, member.online = false, false
+		w.As(hc, hc.Verify.Observe)
+		-- The second sees it first the day after the release, and answers the member first.
+		w.now = RESET_AT + DAY
+		hc.online, hc2.online, member.online = false, true, true
+		w.As(hc2, hc2.Verify.Observe)
+		w.As(hc2, hc2.Verify.SendSnapshot)
+		eq(w.sent[#w.sent].msg, ("GV~1~S~%d~T,%d,%s,Odo Marsh"):format(w.now, RESET_AT + DAY, GUILD))
+		eq(member.rdb.verify.start[key].at, RESET_AT + DAY)
+		-- The first answers after the release: its row is the guild's original start, as before it.
+		hc.online = true
+		w.now = w.now + 60
+		w.As(hc, hc.Verify.SendSnapshot)
+		eq(w.sent[#w.sent].msg, ("GV~1~S~%d~T,%d,%s,Vera Stone"):format(w.now, start, GUILD), "the original start, never RESET_AT")
+		eq(member.rdb.verify.start[key].at, start, "the earliest wins, kept as it came")
+		eq(hc2.rdb.verify.start[key].at, start)
+		-- Relayed on by the second: the same row.
+		w.now = w.now + 60
+		w.As(hc2, hc2.Verify.SendSnapshot)
+		eq(w.sent[#w.sent].msg, ("GV~1~S~%d~T,%d,%s,Vera Stone"):format(w.now, start, GUILD), "relayed unchanged")
+		local n, _, sum = w.As(member, member.Verify.Digest)
+		eq(n, 1); eq(sum, start, "the ask's digest counts the original start")
+		-- Only the deadline counts from RESET_AT.
+		local status, info = w.Status(member, GUILD)
+		eq(status, "pending"); eq(info.since, start); eq(info.shared, true)
+		eq(info.left, RESET_AT + GRACE - w.now)
 	end)
 end)
 
@@ -401,7 +573,7 @@ test("verify: paused member notices leave overdue state and GM follow-up intact"
 		w.Census(GUILD, "Bram Hollow", 120)
 		w.As(gm, gm.Verify.Observe)
 		w.As(member, member.Verify.Observe)
-		w.now = T0 + 48 * H + 1
+		w.now = T0 + GRACE + 1 -- (1.5.4: just past the 7-day grace, where it was 48 hours)
 		w.As(member, member.Verify.Login)
 		w.now = w.now + member.Verify.NOTICE_AFTER
 		eq(w.Status(member, GUILD), "overdue", "the original deadline stays")
@@ -419,7 +591,9 @@ test("verify: paused member notices leave overdue state and GM follow-up intact"
 	end)
 end)
 
-test("verify: within 48 hours only the guild master sees \"GM verification pending\", once a session; overdue notices stay with the guild master", function()
+-- (1.5.4: within the grace, 7 days where it was 48 hours: the notice says 6 d 23 h are left where it
+-- said 1 d 23 h, and the deadline passed is 7 days on; the test's name said "within 48 hours".)
+test("verify: within the grace only the guild master sees \"GM verification pending\", once a session; overdue notices stay with the guild master", function()
 	World(function(w)
 		local gm = w.Client(GM, GUILD, 0)
 		local member = w.Client(MEMBER, GUILD, 3)
@@ -433,7 +607,7 @@ test("verify: within 48 hours only the guild master sees \"GM verification pendi
 		assert(Find(gm.printed, "GM verification pending for <" .. GUILD .. ">"), "the chat line")
 		local notice = gm.copies[1]
 		eq(notice.title, gm.L.VERIFY_TITLE); eq(notice.opts.auto, true, "opened by itself: no keyboard taken")
-		assert(notice.text:find("GM verification pending", 1, true) and notice.text:find("1 d 23 h", 1, true), notice.text)
+		assert(notice.text:find("GM verification pending", 1, true) and notice.text:find("6 d 23 h", 1, true), notice.text)
 		assert(notice.text:find(gm.L.VERIFY_CONTACT, 1, true), "whom to contact, from the locale")
 		local code = w.As(gm, gm.Verify.Code, GUILD, GM)
 		assert(code and notice.text:find(code, 1, true), "the code to paste")
@@ -448,8 +622,8 @@ test("verify: within 48 hours only the guild master sees \"GM verification pendi
 		w.As(gm, gm.Verify.Slash, "")
 		eq(#gm.copies, 3, "reopened twice")
 		eq(gm.copies[3].opts.auto, nil, "a click's: the keyboard may follow")
-		-- 48 hours on, a new session each: members stay quiet; the guild master's powers wait.
-		w.now = T0 + 48 * H + 1
+		-- The grace over, a new session each: members stay quiet; the guild master's powers wait.
+		w.now = T0 + GRACE + 1
 		for _, c in ipairs({ gm, member }) do w.As(c, c.Verify.Login) end
 		w.now = w.now + member.Verify.NOTICE_AFTER
 		eq(w.As(member, member.Verify.Tick), false)
@@ -491,8 +665,9 @@ test("verify: the verifiers are told once of each pending guild (and of each new
 		w.As(hc, hc.Verify.Tick)
 		eq(#hc.printed, n + 1)
 		assert(hc.printed[n + 1]:find("<" .. OTHER .. ">", 1, true) and not hc.printed[n + 1]:find(GUILD, 1, true), hc.printed[n + 1])
-		-- 36 hours in: reminded of the first, once (the second has 14 hours left).
-		w.now = T0 + 36 * H + 60
+		-- 12 hours before its deadline: reminded of the first, once (the second has 14 hours left).
+		-- (1.5.4: GRACE - 12 hours in, where 36 hours in was 12 hours before the 48-hour deadline.)
+		w.now = T0 + GRACE - 12 * H + 60
 		w.As(hc, hc.Verify.Tick)
 		local remind = hc.printed[#hc.printed]
 		assert(remind:find("less than 12 h", 1, true) and remind:find(GUILD, 1, true) and not remind:find(OTHER, 1, true), remind)
@@ -512,11 +687,84 @@ test("verify: the verifiers are told once of each pending guild (and of each new
 	end)
 end)
 
+-- 1.5.4: the reset moves every deadline later, so a guild the verifiers were reminded of before its
+-- old deadline is reminded again before its new one; nothing is announced as new again. Fails
+-- before: the guild is overdue at once (48 hours, no reset); with the reset alone, the reminder
+-- 1.5.3 kept for the old deadline silences the new one.
+test("verify: 1.5.4 a guild the verifiers were reminded of before its old deadline is reminded again before its new one, once; no guild is announced as new again; a deadline that only came earlier is not reminded twice", function()
+	World(function(w)
+		local hc = w.Client(HC, "Olympus", 3) -- (a councillor in the King's guild: his own guild asks nothing of him)
+		local hc2 = w.Client(HC2, "Olympus", 3)
+		hc2.online = false
+		w.Census(GUILD, "Bram Hollow", 120)
+		w.Census(OTHER, "Corin Ash", 40)
+		local start = RESET_AT - 5 * DAY
+		w.now = start
+		w.As(hc, hc.Verify.Observe)
+		-- What 1.5.3 left in his saved data: both guilds told, GUILD also reminded 12 hours before its
+		-- 48-hour deadline (OTHER's reminder never came: he was away then).
+		local told = hc.rdb.verify.told
+		told[ns.Fold(GUILD)] = { gm = ns.Fold("Bram Hollow"), new = start, remind = start + 36 * H, last = start + 36 * H }
+		told[ns.Fold(OTHER)] = { gm = ns.Fold("Corin Ash"), new = start, last = start + 36 * H }
+		local function Said(from, needle)
+			for i = from, #hc.printed do if hc.printed[i]:find(needle, 1, true) then return hc.printed[i] end end
+			return nil
+		end
+		-- The day after the release: a login tells him nothing (no guild is new, no deadline near).
+		w.now = RESET_AT + DAY
+		w.As(hc, hc.Verify.Login)
+		w.now = w.now + hc.Verify.NOTICE_AFTER
+		w.As(hc, hc.Verify.Tick)
+		eq(#hc.printed, 0, "nothing announced again: " .. table.concat(hc.printed, " / "))
+		eq(w.Status(hc, GUILD), "pending")
+		-- 12 hours before the new deadline: reminded of both, once.
+		w.now = RESET_AT + GRACE - hc.Verify.REMIND_LEFT - 60
+		w.As(hc, hc.Verify.Tick)
+		eq(#hc.printed, 0, "not yet")
+		w.now = RESET_AT + GRACE - hc.Verify.REMIND_LEFT + 60
+		w.As(hc, hc.Verify.Tick)
+		eq(#hc.printed, 1)
+		local remind = hc.printed[1]
+		assert(remind:find("less than 12 h", 1, true) and remind:find("<" .. GUILD .. "> (Bram Hollow)", 1, true)
+			and remind:find("<" .. OTHER .. "> (Corin Ash)", 1, true), remind)
+		w.now = w.now + 60
+		w.As(hc, hc.Verify.Tick)
+		w.As(hc, hc.Verify.Login)
+		w.now = w.now + hc.Verify.NOTICE_AFTER
+		w.As(hc, hc.Verify.Tick)
+		eq(#hc.printed, 1, "reminded once, across a session too")
+		-- A guild that appears after their deadline: told of it alone, reminded 12 hours before its own
+		-- deadline; an earlier start heard after that brings the deadline nearer, and no second reminder.
+		local first = RESET_AT + GRACE + DAY
+		w.now = first - 6 * H
+		w.Census(ROGUES, "Mallo Crook", 12)
+		w.As(hc2, hc2.Verify.Observe) -- (the second verifier saw it six hours earlier, away since)
+		w.now = first
+		w.As(hc, hc.Verify.Tick)
+		eq(#hc.printed, 2, "told of the new guild alone")
+		assert(Said(2, "<" .. ROGUES .. "> (Mallo Crook)") and Said(2, "GM verification pending for")
+			and not Said(2, GUILD) and not Said(2, OTHER), hc.printed[2])
+		w.now = first + GRACE - hc.Verify.REMIND_LEFT + 60
+		w.As(hc, hc.Verify.Tick)
+		local n = #hc.printed
+		eq(n, 3, "reminded of it (the others are overdue now)")
+		assert(hc.printed[n]:find("less than 12 h", 1, true) and hc.printed[n]:find(ROGUES, 1, true), hc.printed[n])
+		hc2.online = true
+		w.As(hc2, hc2.Verify.SendSnapshot)
+		local _, info = w.Status(hc, ROGUES)
+		eq(info.since, first - 6 * H, "the earlier start"); eq(info.left, 6 * H - 60, "a nearer deadline, still pending")
+		w.As(hc, hc.Verify.Tick)
+		eq(#hc.printed, n, "already reminded of a later deadline: not again")
+	end)
+end)
+
 ---------------------------------------------------------------------------
 -- The hold, the switches, what nobody gets
 ---------------------------------------------------------------------------
 
-test("verify: past 48 hours an unverified guild master's own powers are held (rank, card, Legates, guild decrees); verification releases them; members keep everything", function()
+-- (1.5.4: the deadline is 7 days from the guild's start, where it was 48 hours; the test's name said
+-- "past 48 hours".)
+test("verify: past the grace an unverified guild master's own powers are held (rank, card, Legates, guild decrees); verification releases them; members keep everything", function()
 	World(function(w)
 		local gm = w.Client(GM, GUILD, 0)
 		local hc = w.Client(HC, HEARTH, 3)
@@ -539,9 +787,9 @@ test("verify: past 48 hours an unverified guild master's own powers are held (ra
 				end)
 			end
 			Check(false, "pending")
-			w.now = T0 + 48 * H - 1
+			w.now = T0 + GRACE - 1
 			Check(false, "a second before the deadline")
-			w.now = T0 + 48 * H + 1
+			w.now = T0 + GRACE + 1
 			Check(true, "overdue")
 			-- The members keep their own standing: an officer's rank is never touched.
 			ns.Data.KnownRank = function(sender, guild) if guild == GUILD then return sender == GM and 0 or 1, 2 end return nil end
@@ -568,7 +816,7 @@ test("verify: the King's guild needs no verification; the gate switch off change
 		w.Census("Olympus", ns.KingCharacter(), 900)
 		w.Census(GUILD, "Bram Hollow", 120)
 		for _, c in ipairs({ king, hc, member }) do w.As(c, c.Verify.Login) end
-		w.now = T0 + 60 * H
+		w.now = T0 + GRACE + 12 * H -- (1.5.4: 12 hours past the 7-day grace, where 60 hours were 12 past 48)
 		eq(w.Status(member, "Olympus"), "exempt")
 		eq(w.As(king, king.Verify.Mine), nil, "the King is told nothing")
 		eq(w.As(king, king.Verify.Tick), false)
@@ -623,10 +871,13 @@ test("verify: the verifiers' page lists pending and overdue guilds with guild ma
 		w.Census(GUILD, "Bram Hollow", 120)
 		w.As(hc, hc.Verify.Observe)
 		w.As(member, member.Verify.Observe)
-		w.now = T0 + 40 * H
+		-- (1.5.4: the grace is 7 days, where it was 48 hours. The second guild still appears 8 hours
+		-- before the first's deadline, and the page is read an hour past it: the second has 6 d 15 h
+		-- left where it had 1 d 15 h, and the first was seen 7 d 1 h ago where it was 2 d 1 h.)
+		w.now = T0 + GRACE - 8 * H
 		w.Census(OTHER, "Corin Ash", 40)
 		w.As(hc, hc.Verify.Observe)
-		w.now = T0 + 49 * H
+		w.now = T0 + GRACE + H
 		eq(#w.As(member, member.Verify.CouncilLines), 0, "a member sees no page")
 		local lines = w.As(hc, hc.Verify.CouncilLines)
 		eq(lines[1].text, hc.L.VERIFY_COUNCIL_TITLE)
@@ -637,13 +888,13 @@ test("verify: the verifiers' page lists pending and overdue guilds with guild ma
 		end
 		assert(first and second, "both guilds")
 		assert(first.right:find("overdue", 1, true), first.right)
-		assert(second.right:find("pending, 1 d 15 h left", 1, true), second.right)
+		assert(second.right:find("pending, 6 d 15 h left", 1, true), second.right)
 		local order = {}
 		for i, l in ipairs(lines) do if l == first or l == second then order[#order + 1] = i end end
 		assert(order[1] < order[2] and lines[order[1]] == first, "the overdue first")
 		local tip = {}
 		first.tooltip({ AddLine = function(_, s) tip[#tip + 1] = s end })
-		assert(Find(tip, "Members: 120") and Find(tip, "First seen here: 2 d 1 h ago") and Find(tip, "Code: "), table.concat(tip, " / "))
+		assert(Find(tip, "Members: 120") and Find(tip, "First seen here: 7 d 1 h ago") and Find(tip, "Code: "), table.concat(tip, " / "))
 		-- A click: the question, with approve and whisper.
 		w.As(hc, first.onClick)
 		local d = hc.dialogs[#hc.dialogs]
