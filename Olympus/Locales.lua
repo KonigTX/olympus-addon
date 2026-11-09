@@ -222,7 +222,6 @@ What version 1.5.4 changes:
 - {crown} The King: his crown on the map, his online status and his layer reach every guild, whichever guild he plays in.
 - {watch} Guild verifications reach every relay and every guild, and a client that missed an approval gets it back when it asks.
 - {watch} Guild verification starts over: every guild's clock restarts with this version, and the grace is now 7 days instead of 48 hours.
-- {team} Guildmates on other Forever servers are recognised: their Olympus chat is no longer dropped, and their names show plain.
 - {team} Guildmates on other Forever servers are recognised: their Olympus chat is no longer dropped, and their names show without the server name.
 - {star} PvP and PvE totals reported by the High Council now count for everyone, not only for those who played there.
 - {church} The Church: its public scores now travel between guilds through the relays, and the Twelve Apostles are named.
