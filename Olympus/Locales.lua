@@ -221,6 +221,7 @@ What version 1.5.4 changes:
 - {guild} The census: the relays now hand each guild the whole census in turns, instead of losing pieces on the way. With many guilds on one relay, a full picture can take about half an hour to reach you. It works once the relay characters (the High Council's, the King's and mine) run this version.
 - {crown} The King: his crown on the map, his online status and his layer reach every guild, whichever guild he plays in.
 - {watch} Guild verifications reach every relay and every guild, and a client that missed an approval gets it back when it asks.
+- {watch} Guild verification starts over: every guild's clock restarts with this version, and the grace is now 7 days instead of 48 hours.
 - {team} Guildmates on other Forever servers are recognised: their Olympus chat is no longer dropped, and their names show plain.
 - {star} PvP and PvE totals reported by the High Council now count for everyone, not only for those who played there.
 - {church} The Church: scores and nominations now travel between guilds through the relays, and the Twelve Apostles are named.
@@ -229,6 +230,7 @@ What version 1.5.4 changes:
 - {news} Item links in the Olympus chat work again: highlighted, clickable, and the item shows when you hover.
 - {watch} Guild names that insult Olympus no longer count as Olympus guilds.
 - {team} The yellow "No player named ... is currently playing" lines no longer fill your chat.
+- {team} Your addon now tells the relays which version it runs, so keep it up to date.
 - {team} When no relay answers, the census waits for one instead of trying the channel the game blocks.
 
 Please close and reopen the game after updating. Thank you to everyone who measured and reported the problems on GitHub, CurseForge and Discord.
@@ -367,6 +369,7 @@ O que muda na versão 1.5.4:
 - {guild} O censo: os relays agora entregam a cada guilda o censo inteiro, em turnos, em vez de perder pedaços no caminho. Com muitas guildas no mesmo relay, o quadro completo pode levar cerca de meia hora para chegar. Funciona quando os personagens relay (os do High Council, o do Rei e os meus) estiverem nesta versão.
 - {crown} O Rei: a coroa no mapa, o status online e a camada dele chegam a todas as guildas, seja qual for a guilda em que ele joga.
 - {watch} As verificações de guilda chegam a todos os relays e a todas as guildas, e quem perdeu uma aprovação a recebe de volta quando pede.
+- {watch} A verificação de guilda recomeça: o prazo de cada guilda volta a contar com esta versão, e a carência agora é de 7 dias em vez de 48 horas.
 - {team} Colegas de guilda em outros servidores do Forever são reconhecidos: o chat do Olympus deles não é mais descartado, e os nomes aparecem sem o servidor.
 - {star} Os totais de PvP e PvE informados pelo High Council agora contam para todos, não só para quem jogou lá.
 - {church} A Igreja: as pontuações e as nomeações agora circulam entre as guildas pelos relays, e os Doze Apóstolos foram nomeados.
@@ -375,6 +378,7 @@ O que muda na versão 1.5.4:
 - {news} Os links de itens no chat do Olympus voltaram a funcionar: destacados, clicáveis, e o item aparece quando você passa o mouse.
 - {watch} Nomes de guilda que insultam o Olympus não contam mais como guildas do Olympus.
 - {team} As linhas amarelas de "jogador não encontrado" não enchem mais o seu chat.
+- {team} O seu addon agora informa aos relays qual versão ele usa, então mantenha-o atualizado.
 - {team} Quando nenhum relay responde, o censo espera por um em vez de tentar o canal que o jogo bloqueia.
 
 Feche e abra o jogo de novo depois de atualizar. Obrigado a todos que mediram e relataram os problemas no GitHub, no CurseForge e no Discord.
