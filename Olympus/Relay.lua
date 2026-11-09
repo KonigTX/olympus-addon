@@ -1010,7 +1010,10 @@ end
 -- in place of a batch still waiting. Those that do not hold it yet, or had it `refresh` ago, within
 -- its shares (the relay's own lists skip them); within LIST_EVERY of its origin's last, at no cost,
 -- only those whose batch of that one still waits. None when it is refused.
-local function ListSend(s, origin, set, now)
+-- (The review of the merged candidate.) `reachable(r)`: whether the relay hands that reporter words at
+-- all now (no modified build, admitted): a guild whose reporter it serves nothing is not counted as
+-- holding the list, or the served reporter who takes its place would wait `refresh` for it.
+local function ListSend(s, origin, set, now, reachable)
 	listSets[s.key] = nil
 	local spec = Relay.LIST_KINDS[s.kind]
 	local o = ListOrigin(s.okey, now, spec.refresh, spec.hold)
@@ -1025,7 +1028,7 @@ local function ListSend(s, origin, set, now)
 		if sum == o.sum then return to end -- (its repeat: what waits carries it already)
 		o.sum, o.to = sum, {}
 		for g, r in pairs(reporters) do
-			if r.name ~= ns.me and DripWaitingFor(r.name, word) then to[g], o.to[g] = true, now end
+			if r.name ~= ns.me and (not reachable or reachable(r)) and DripWaitingFor(r.name, word) then to[g], o.to[g] = true, now end
 		end
 		if next(to) then stats.listsReplaced = (stats.listsReplaced or 0) + 1
 		else stats.listsRefused = (stats.listsRefused or 0) + 1 end
@@ -1034,7 +1037,7 @@ local function ListSend(s, origin, set, now)
 	if sum ~= o.sum then o.sum, o.to = sum, {} end
 	local each, cost = #SetWhispers("P", origin, set), 0
 	for g, r in pairs(reporters) do
-		if now - r.t <= Relay.REPORTER_FOR and r.name ~= ns.me and not o.to[g] and not o.last[g] then
+		if now - r.t <= Relay.REPORTER_FOR and r.name ~= ns.me and not o.to[g] and not o.last[g] and (not reachable or reachable(r)) then
 			to[g] = true
 			cost = cost + each
 		end
@@ -1404,7 +1407,11 @@ local function ToReporters(flag, origin, body, sender)
 	local list = flag ~= "L" and not snapshot and ListSet(origin, body, now, own) or nil
 	if list then set = list.one and { body } or CollectSet(origin, body, now)
 	elseif (own or snapshot) and flag ~= "L" then set = CollectSet(origin, body, now) end
-	if list and type(set) == "table" then listTo, waitingOnly = ListSend(list, origin, set, now) end
+	if list and type(set) == "table" then
+		listTo, waitingOnly = ListSend(list, origin, set, now, function(r)
+			return not Quarantined(r.name) and (Ask("RM", r.name, body, now)) == true
+		end)
+	end
 	-- (The review of the candidate.) Another client's word in pieces passes the trickle whole or not
 	-- at all: the pieces before its last are full, and a full piece with its RM label is one or two
 	-- whispers. The least it takes, for Afford: a census report in two pieces (385 bytes) is three

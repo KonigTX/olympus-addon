@@ -451,6 +451,51 @@ test("relay lists (1.5.4): a guild is sent a list it does not hold: an unchanged
 	end)
 end)
 
+-- Fails before (the review of the merged candidate): ListSend counted a guild whose reporter the relay
+-- hands nothing (a modified build marked after he registered, or a name the admission refuses) as
+-- holding the list, so a reporter the relay serves who took that guild's place waited `refresh`.
+test("relay lists (1.5.4): a guild whose reporter the relay serves nothing (a modified build, a refused name) is not counted as holding the list: the served reporter who takes its place gets it at the next repeat", function()
+	Relayed(function(R, sent, Run)
+		Trusting(R, { ["Garrick Ashby"] = true })
+		local GM = "Garrick Ashby-CAMWOWUS2Realm3PvE"
+		local A = R.Comm.PackList("NM", MasterList("Olympus Ember", 1800000000, 2, "A"))
+		local B = R.Comm.PackList("NM", MasterList("Olympus Ember", 1800000600, 2, "B"))
+		local marked = {}
+		-- (An hour between sends: one master's own share of his kind refills, as between real changes.)
+		R.Builds = { Quarantined = function(n) return marked[ns.ShortName(n)] == true end }
+		local function Reg(name, guild) R.Relay.HandleIn("WHISPER", name .. "-CAMWOWUS2Realm7PvE", "RL~P~RR~" .. guild) end
+		local function Times(word, prefix) return Assembled(R, sent, prefix)[word] or 0 end
+		-- A modified build: guild 2's reporter is marked after he registered.
+		R.clock = R.clock + 3600
+		Register(R, 3)
+		marked["Rep Number2"] = true
+		HandIn(R, GM, A, "1")
+		Run(100)
+		eq(Times(A, "Rep Number1-"), 1); eq(Times(A, "Rep Number3-"), 1)
+		eq(Times(A, "Rep Number2-"), 0, "nothing to the modified build's reporter")
+		R.clock = R.clock + 3600
+		Reg("Rep Number1", "Guild 1"); Reg("Rep Number3", "Guild 3"); Reg("Other Member", "Guild 2")
+		HandIn(R, GM, A, "2")
+		Run(100)
+		eq(Times(A, "Other Member-"), 1, "guild 2 never held it: its new reporter gets the repeat")
+		eq(Times(A, "Rep Number1-"), 1, "the others hold it: not again")
+		-- A name the admission refuses (Relay.SetDenied), refused after he registered.
+		R.clock = R.clock + 3600
+		Reg("Rep Number1", "Guild 1"); Reg("Rep Number3", "Guild 3"); Reg("Other Member", "Guild 2"); Reg("Rep Number4", "Guild 4")
+		R.Relay.SetDenied({ ["rep number4"] = true })
+		HandIn(R, GM, B, "3")
+		Run(100)
+		eq(Times(B, "Other Member-"), 1); eq(Times(B, "Rep Number4-"), 0, "nothing to the refused name")
+		R.clock = R.clock + 3600
+		Reg("Rep Number1", "Guild 1"); Reg("Rep Number3", "Guild 3"); Reg("Other Member", "Guild 2"); Reg("Fresh Member", "Guild 4")
+		HandIn(R, GM, B, "4")
+		Run(100)
+		eq(Times(B, "Fresh Member-"), 1, "guild 4 never held it: its new reporter gets the repeat")
+		eq(Times(B, "Other Member-"), 1, "not again to a guild that holds it")
+		R.Relay.SetDenied({})
+	end)
+end)
+
 -- Fails before (nothing was kept: after a /reload every guild was sent every list again).
 test("relay lists (1.5.4): a relay's /reload keeps which guild holds which list (its saved data): an unchanged repeat goes to nobody, a changed one to every guild", function()
 	Relayed(function(R, sent, Run)
