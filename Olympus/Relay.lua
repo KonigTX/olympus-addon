@@ -195,8 +195,10 @@ function Relay.Stats()
 	return { out = stats.out, forwarded = stats.forwarded, delivered = stats.delivered, dropped = stats.dropped,
 		dead = stats.dead, reporters = n, relay = relay, sure = sure == true, pending = #pending, on = Relay.On(),
 		across = stats.across or 0, kept = stats.kept or 0, trickled = stats.trickled or 0,
-		-- (1.5.4) Lists (LS) admitted to the drip, ones that took a waiting one's place, ones refused.
+		-- (1.5.4) Lists (LS) taken to the drip, ones that took a waiting one's place, ones refused, and
+		-- ones every reporter held already.
 		lists = stats.lists or 0, listsReplaced = stats.listsReplaced or 0, listsRefused = stats.listsRefused or 0,
+		listsSame = stats.listsSame or 0,
 		presented = shown, refused = stats.refused, unpresented = stats.unpresented, denied = stats.denied, unserved = stats.unserved,
 		rules = Relay.Rules().rev, required = Relay.Required() }
 end
@@ -757,90 +759,160 @@ local function CollectSet(origin, body, now)
 	return s.pieces
 end
 
--- (1.5.4) A list (LS, Comm.SendList: the Church's public rows first) in pieces from any origin is
--- collected whole too and handed to each reporter whole, keyed by its origin and kind, so a newer
--- list takes a waiting one's place. Piece by piece it passed the trickle whole or not at all, which
--- with many reporters is not at all (need, in ToReporters), and the Church's rows, one word each
--- before, reached a reporter one to four of twenty-two. Bounded, so a member cannot fill the drip or
--- starve the census snapshots: from one origin, one list of a kind each LIST_EVERY (a second within
--- it only takes the place of batches of the first still waiting: a reporter already served keeps
--- the first, and with none waiting it is refused); LIST_MAX_PIECES pieces at most (2.2 KB: the
--- Church's 22 rows with the longest names Forever gives take nine); LIST_OPEN sets collecting at
--- once; and from everyone together, the whispers the drip will spend on a list (a piece and its
--- label to each reporter): LIST_RATE a minute for each reporter the relay holds (the Church's list
--- every half hour is 0.2), LIST_BURST for each at once (the largest list, wrapped, to everyone once).
--- A count of lists a minute bounded nothing: one list to 35 reporters is 175 whispers, and the
--- offline load model gave the census half its snapshots under a flood of one list a minute from
--- three characters. Past any bound the pieces go through the trickle as any client's word in
--- pieces. A list in one piece is one word of the trickle, keyed by its kind (ListKind). Admitted at
--- its first piece: a set that never completes spent its place (SET_WAIT), a late first piece opens
--- nothing. The relay's own lists and a signed snapshot keep their own way (own, snapshot:
--- unbounded, as before).
+-- (1.5.4) A list (LS, Comm.SendList: the Church's public rows, the guild masters' nominees, the
+-- shared block terms) in pieces from any origin is collected whole too and handed to each reporter
+-- whole, keyed by its origin and kind, so a newer list takes a waiting one's place. Piece by piece
+-- it passed the trickle whole or not at all, which with many reporters is not at all (need, in
+-- ToReporters): the Church's rows reached a reporter one to four of twenty-two, and a guild
+-- master's list in more than one part reached no other guild. Only the kinds of LIST_KINDS go so;
+-- any other list keeps the trickle. A guild is sent a list it does not hold: an unchanged one,
+-- which its sender repeats for late logins, goes to a guild that had it only `refresh` later (for
+-- its late members), whoever reports for it now (a guild's reporter changes several times a day);
+-- and a guild gets one list of an origin each `hold` at most, the newest when it is due (the
+-- Church's rows, changed at most every desk's send, each hour: their receivers keep them
+-- PUBLIC_FRESH, two hours, and the census snapshots get half the whispers back). What the relay
+-- sent which guild is kept in its saved data (ns.rdb.relayLists: a sum of each origin's last list,
+-- and when each guild had it, `refresh` at most), so a /reload sends nothing again. Every list
+-- whisper is one the census snapshots do not get (the drip is theirs; the offline load model: a
+-- list share in use costs them as much). What a list costs, its whispers to each reporter it goes
+-- to, comes out of shares of so many whispers a minute for every reporter the relay holds, `cap` a
+-- minute at most whatever their number (the relay sends some 200 a minute however many guilds it
+-- serves), so lists never take the census's room: its kind's (`rate`) for the origins the relay can
+-- trust for that kind by the very test their receivers make (`trusted`: the Church's keepers, the
+-- guild's proven master, the block terms' editors), or a small one (LIST_OTHERS, LIST_OTHERS_CAP)
+-- for anyone else, whose lists the receivers refuse but this relay cannot tell apart (a guild
+-- master its census does not prove yet); and its origin's own (`each`), so no member, and no one
+-- trusted origin, takes a whole share. (The first cut had one share for every list, taken first
+-- come: a member's short list every few minutes kept the Church's longer one out.) A list goes
+-- while both its shares are above nothing and may take them below it, so a long list is never
+-- starved by short ones; a share saves up LIST_BURST for each reporter. From one origin, one list
+-- of a kind each LIST_EVERY (a second within it only takes the place of the first's batches still
+-- waiting); LIST_MAX_PIECES pieces at most (2.2 KB: the Church's 22 rows with the longest names
+-- Forever gives take nine); one collecting from an origin of a kind, and LIST_OPEN in all from
+-- origins not trusted. Past a bound the pieces go through the trickle as any client's word in
+-- pieces. The relay's own lists skip the shares and bounds, as its own words do, never the
+-- reporters who hold them already (the King's Legates every Nominees.EVERY, Nominees.SendMain).
 Relay.LIST_EVERY = 120
 Relay.LIST_MAX_PIECES = 10
 Relay.LIST_OPEN = 16
-Relay.LIST_RATE = 0.25
-Relay.LIST_BURST = 11 -- (LIST_MAX_PIECES + 1)
-local listAdmitted = {} -- origin (short, lower) .. " " .. kind -> when its last list was admitted
-local listBucket = { tokens = math.huge, at = nil } -- the whispers lists may spend now (full at the start)
-local listSets = {}     -- origin#id -> { kind, replace, t }: the list sets being collected
+Relay.LIST_BURST = 2      -- whispers a share saves up for each reporter
+Relay.LIST_OTHERS = 0.02  -- a kind's share for the origins the relay cannot trust for it...
+Relay.LIST_OTHERS_CAP = 0.5 -- ...whispers a minute at most
+Relay.LIST_ORIGINS = 128  -- origins of a kind whose last list and share a relay remembers
+Relay.LIST_KINDS = {
+	-- The Church's public rows (Count.SendPublic): the desk alone, every 30 min; each guild its newest
+	-- each hour (some 5 whispers to each of 35 reporters: 3 a minute; `cap` 8, about 90 guilds).
+	NR = { rate = 0.25, each = 0.25, cap = 8, refresh = 3600, hold = 3600, trusted = function(origin)
+		local C = ns.Church
+		return type(C) == "table" and type(C.IsKeeper) == "function" and C.IsKeeper(origin) == true
+	end },
+	-- The guild masters' nominees (Nominees.Send): each master every Nominees.EVERY, his guild in each
+	-- part; each guild once a change, and every 3 days for its late members.
+	NM = { rate = 0.15, each = 0.05, cap = 4, refresh = 3 * 86400, trusted = function(origin, word)
+		local N, guild = ns.Nominees, tostring(word or ""):match("^NM~%d+~([^~]+)~")
+		return type(N) == "table" and type(N.Proven) == "function" and guild ~= nil and N.Proven(origin, guild) == true
+	end },
+	-- The shared block terms (Filter.SendAll): an editor every Filter.REPEAT, unless another said the same.
+	BW = { rate = 0.05, each = 0.05, cap = 1, refresh = 3 * 86400, trusted = function(origin)
+		local F = ns.Filter
+		return type(F) == "table" and type(F.IsEditorName) == "function" and F.IsEditorName(origin) == true
+	end },
+}
+-- (Until the saved data is there.) origin (short, lower) .. " " .. kind -> { tokens, at, admitted,
+-- sum, to = { [guild] = when it had sum }, last = { [guild] = when it had one } }
+local listOrigins = {}
+local listShares = {}  -- kind (its trusted origins'), or kind .. "?" (the others') -> { tokens, at }
+local listSets = {}    -- origin#id -> { kind, okey, trusted, own, one, key, t }: the lists being collected
 -- "LS~<kind>" for a list, whole or its first piece, else nil: the queue's and the drip's key.
 local function ListKind(text)
 	local kind = text:match("^LS~1~(%u%w)~") or text:match("^C%w+:1:1:LS~1~(%u%w)~")
 	return kind and ("LS~" .. kind) or nil
 end
--- Whether a batch keyed `word` (and a batch number) waits in the drip.
-local function DripWaiting(word)
+-- Whether a batch keyed `word` (and its batch number) waits in the drip for `name`.
+local function DripWaitingFor(name, word)
 	for _, d in ipairs(drip) do
-		if d.word:sub(1, #word + 1) == word .. " " then return true end
+		if d.name == name and d.word:sub(1, #word + 1) == word .. " " then return true end
 	end
 	return false
 end
--- The list set this piece belongs to, admitted here or now ({ kind, replace }); nil when it is not a
--- list's piece or is not admitted (then the trickle, as before). reporters: how many it goes to.
-local function ListSet(origin, body, now, reporters)
+-- A share's whispers now: refilled at `rate` a minute for each of `reporters`, `cap` a minute at
+-- most, LIST_BURST each saved up at most (a clock set back refills nothing).
+local function Share(b, rate, reporters, now, cap)
+	local most = Relay.LIST_BURST * reporters
+	if b.tokens == nil then b.tokens = most end
+	local perMinute = math.min(rate * reporters, cap or math.huge)
+	if b.at and now > b.at then b.tokens = math.min(most, b.tokens + (now - b.at) * perMinute / 60) end
+	b.at = now
+	return b.tokens
+end
+-- The origins' records, in the saved data once it is there (a /reload keeps what each guild holds).
+local function Origins()
+	local r = ns.rdb
+	if type(r) ~= "table" then return listOrigins end
+	if type(r.relayLists) ~= "table" then r.relayLists = {} end
+	return r.relayLists
+end
+-- An origin's record of a kind, made when new; past LIST_ORIGINS the one used longest ago goes, and
+-- a guild's marks past its kind's refresh and hold with it.
+local function ListOrigin(okey, now, refresh, hold)
+	local all = Origins()
+	local o = all[okey]
+	if type(o) ~= "table" or type(o.to) ~= "table" or type(o.at) ~= "number" then
+		o = nil
+		local n, oldest = 0, nil
+		for k, x in pairs(all) do
+			n = n + 1
+			if not oldest or (tonumber(x.at) or 0) < (tonumber(all[oldest].at) or 0) then oldest = k end
+		end
+		if n >= Relay.LIST_ORIGINS and oldest then all[oldest] = nil end
+		o = { to = {}, at = now }
+		all[okey] = o
+	end
+	for g, at in pairs(o.to) do
+		if type(at) ~= "number" or now < at or now - at >= (refresh or 0) then o.to[g] = nil end
+	end
+	if type(o.last) ~= "table" then o.last = {} end
+	for g, at in pairs(o.last) do
+		if type(at) ~= "number" or now < at or now - at >= (hold or 0) then o.last[g] = nil end
+	end
+	return o
+end
+-- The list this piece belongs to ({ kind, okey, trusted, one }), opened at its first piece; nil when
+-- it is not a list of a kind carried whole, or is past a bound (then the trickle, as before).
+local function ListSet(origin, body, now, own)
 	local id, i, n, head = body:match("^C(%w+):(%d+):(%d+):(.*)$")
 	i, n = tonumber(i), tonumber(n)
-	if not id or n < 2 or n > ns.Codec.MAX_CHUNKS then return nil end
+	if not id or n < 1 or n > ns.Codec.MAX_CHUNKS then return nil end
 	local open = 0
 	for key, s in pairs(listSets) do
-		if now - s.t > Relay.SET_WAIT then listSets[key] = nil else open = open + 1 end
+		if now - s.t > Relay.SET_WAIT then listSets[key] = nil elseif not s.trusted then open = open + 1 end
 	end
 	local key = Lower(origin) .. "#" .. id
 	local s = listSets[key]
 	if s then return s end
 	if i ~= 1 then return nil end
-	local kind = head:match("^LS~1~(%u%w)~")
-	if not kind then return nil end
-	if n > Relay.LIST_MAX_PIECES or open >= Relay.LIST_OPEN then
-		stats.listsRefused = (stats.listsRefused or 0) + 1
-		return nil
-	end
+	local kind, word = head:match("^LS~1~(%u%w)~%d+~([^\255]*)")
+	local spec = kind and Relay.LIST_KINDS[kind]
+	if not spec then return nil end
 	local okey = Lower(ns.ShortName(origin)) .. " " .. kind
-	local replace = now - (listAdmitted[okey] or -math.huge) < Relay.LIST_EVERY
-	if replace then
-		if not DripWaiting(Lower(origin) .. " LS~" .. kind) then
+	local trusted = own == true
+	if not own then
+		local ok, yes = pcall(spec.trusted, origin, word)
+		trusted = ok and yes == true
+		-- (One collecting from an origin of a kind: a newer one takes its place.)
+		for k, o in pairs(listSets) do
+			if o.okey == okey then
+				listSets[k] = nil
+				if not o.trusted then open = open - 1 end
+			end
+		end
+		if n > Relay.LIST_MAX_PIECES or (not trusted and open >= Relay.LIST_OPEN) then
 			stats.listsRefused = (stats.listsRefused or 0) + 1
 			return nil
 		end
-		stats.listsReplaced = (stats.listsReplaced or 0) + 1
-	else
-		-- (The whispers it will take: the list wrapped once is a whisper more than its pieces, to
-		-- each reporter. A clock set back refills nothing.)
-		local b, cost = listBucket, (n + 1) * (reporters or 0)
-		local passed = b.at and math.max(0, now - b.at) or 0
-		b.tokens = math.min(Relay.LIST_BURST * (reporters or 0), b.tokens + passed * Relay.LIST_RATE * (reporters or 0) / 60)
-		b.at = now
-		if b.tokens < cost then
-			stats.listsRefused = (stats.listsRefused or 0) + 1
-			return nil
-		end
-		b.tokens = b.tokens - cost
-		listAdmitted[okey] = now
-		stats.lists = (stats.lists or 0) + 1
 	end
-	s = { kind = kind, replace = replace, t = now }
-	listSets[key] = s
+	s = { kind = kind, okey = okey, trusted = trusted, own = own == true, one = n == 1, key = key, t = now }
+	if n > 1 then listSets[key] = s end
 	return s
 end
 
@@ -932,6 +1004,61 @@ local function SetBatches(flag, origin, set)
 		batches[#batches + 1] = batch
 	end
 	return batches
+end
+
+-- (1.5.4) A whole list (ListSet above): the guilds whose reporters it goes to now, and whether only
+-- in place of a batch still waiting. Those that do not hold it yet, or had it `refresh` ago, within
+-- its shares (the relay's own lists skip them); within LIST_EVERY of its origin's last, at no cost,
+-- only those whose batch of that one still waits. None when it is refused.
+local function ListSend(s, origin, set, now)
+	listSets[s.key] = nil
+	local spec = Relay.LIST_KINDS[s.kind]
+	local o = ListOrigin(s.okey, now, spec.refresh, spec.hold)
+	local parts = {}
+	for k, body in ipairs(set) do parts[k] = body:match("^C%w+:%d+:%d+:(.*)$") or "" end
+	local sum, to, fresh = Hash(table.concat(parts)), {}, 0
+	for _, r in pairs(reporters) do
+		if now - r.t <= Relay.REPORTER_FOR and r.name ~= ns.me then fresh = fresh + 1 end
+	end
+	local word = Lower(origin) .. " LS~" .. s.kind
+	if not s.own and o.admitted and now >= o.admitted and now - o.admitted < Relay.LIST_EVERY then
+		if sum == o.sum then return to end -- (its repeat: what waits carries it already)
+		o.sum, o.to = sum, {}
+		for g, r in pairs(reporters) do
+			if r.name ~= ns.me and DripWaitingFor(r.name, word) then to[g], o.to[g] = true, now end
+		end
+		if next(to) then stats.listsReplaced = (stats.listsReplaced or 0) + 1
+		else stats.listsRefused = (stats.listsRefused or 0) + 1 end
+		return to, true
+	end
+	if sum ~= o.sum then o.sum, o.to = sum, {} end
+	local each, cost = #SetWhispers("P", origin, set), 0
+	for g, r in pairs(reporters) do
+		if now - r.t <= Relay.REPORTER_FOR and r.name ~= ns.me and not o.to[g] and not o.last[g] then
+			to[g] = true
+			cost = cost + each
+		end
+	end
+	if cost == 0 then
+		stats.listsSame = (stats.listsSame or 0) + 1
+		return to
+	end
+	if not s.own then
+		local which = s.kind .. (s.trusted and "" or "?")
+		local share = listShares[which] or {}
+		listShares[which] = share
+		local rate, cap = spec.rate, spec.cap
+		if not s.trusted then rate, cap = Relay.LIST_OTHERS, Relay.LIST_OTHERS_CAP end
+		if Share(share, rate, fresh, now, cap) <= 0 or Share(o, spec.each, fresh, now, spec.cap) <= 0 then
+			stats.listsRefused = (stats.listsRefused or 0) + 1
+			return {}
+		end
+		share.tokens, o.tokens = share.tokens - cost, o.tokens - cost
+		o.admitted = now
+		stats.lists = (stats.lists or 0) + 1
+	end
+	for g in pairs(to) do o.to[g], o.last[g] = now, spec.hold and now or nil end
+	return to
 end
 
 -- (1.5.4) An integration's profile presentation (ProfileEffects, FX) names its guild. A presenter's
@@ -1271,10 +1398,13 @@ local function ToReporters(flag, origin, body, sender)
 	-- Comm's queue/throughput limits; malformed or unreserved parts use the trickle.
 	local snapshot = SnapshotPart(origin, body, now)
 	-- A trickle-exempt word in pieces goes to the other reporters as a whole set (above).
-	-- (1.5.4) And a list's pieces from any origin, within ListSet's bounds.
-	local set, batches
-	local list = flag ~= "L" and not own and not snapshot and ListSet(origin, body, now, fresh) or nil
-	if ((own or snapshot) and flag ~= "L") or list then set = CollectSet(origin, body, now) end
+	-- (1.5.4) And a list of a kind carried whole, from any origin, in one piece too (ListSet); once
+	-- whole, to the reporters ListSend names, in place of a waiting batch alone when it says so.
+	local set, batches, listTo, waitingOnly
+	local list = flag ~= "L" and not snapshot and ListSet(origin, body, now, own) or nil
+	if list then set = list.one and { body } or CollectSet(origin, body, now)
+	elseif (own or snapshot) and flag ~= "L" then set = CollectSet(origin, body, now) end
+	if list and type(set) == "table" then listTo, waitingOnly = ListSend(list, origin, set, now) end
 	-- (The review of the candidate.) Another client's word in pieces passes the trickle whole or not
 	-- at all: the pieces before its last are full, and a full piece with its RM label is one or two
 	-- whispers. The least it takes, for Afford: a census report in two pieces (385 bytes) is three
@@ -1301,6 +1431,8 @@ local function ToReporters(flag, origin, body, sender)
 			if Deliver(origin, body, flag == "L") then ToGuild(flag, origin, body) end
 		elseif set == false then
 			-- (Some pieces of the set are still on their way: the whole set goes once they are here.)
+		elseif set and listTo and not listTo[g] then
+			-- (A list his guild holds already, or one refused: not to him.)
 		elseif set then
 			batches = batches or SetBatches(flag, origin, set)
 			-- (review prototype) A newer copy replaces a waiting one only where it supersedes it: the
@@ -1320,7 +1452,7 @@ local function ToReporters(flag, origin, body, sender)
 			local kind = head and (head:match("^(%u%w~%d+~S)~") or head:match("^(R[12])~") or ListKind(head)
 				or (own and #batches == 1 and head:match("^%u%w~") and QueueWord(head)))
 			local word = Lower(origin) .. " " .. (kind or ("#" .. tostring(id)))
-			for k, batch in ipairs(batches) do DripSet(r.name, word .. " " .. k, batch, list ~= nil and list.replace) end
+			for k, batch in ipairs(batches) do DripSet(r.name, word .. " " .. k, batch, waitingOnly) end
 		else
 			pieces = pieces or Envelope("RM", "RM~" .. flag .. "~" .. origin .. "~" .. body)
 			-- (1.5.0) Another client's word that is not a chat line: within the reporter's trickle
@@ -1925,8 +2057,7 @@ function Relay.Reset()
 	wipe(snapshotTransfers); wipe(crownSent); wipe(kingSent); wipe(crownLayer); wipe(grantSent)
 	crownBucket.tokens, crownBucket.at = 0, -math.huge
 	wipe(sets); wipe(drip)
-	wipe(listAdmitted); wipe(listSets)
-	listBucket.tokens, listBucket.at = math.huge, nil
+	wipe(listOrigins); wipe(Origins()); wipe(listShares); wipe(listSets)
 	dripSince, dripping = nil, false
 	for k in pairs(stats) do stats[k] = 0 end
 end

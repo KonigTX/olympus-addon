@@ -46,7 +46,10 @@ local L = ns.L
 -- own realm's. Bounded on every side: MAX_PARTS parts, the caps above (the first ones kept), each
 -- name and each department once, a department's name of DEPT_LEN bytes. No part is ever chunked:
 -- clients before 1.1.5 have no handler for NM and leave each part unread, nothing counted bad
--- (Comm.lua). Version 1: a client takes the parts of its own version alone.
+-- (Comm.lua). Version 1: a client takes the parts of its own version alone. (1.5.4) Where the relay
+-- carries the channel the parts go together as one list (Comm.SendList, LS): every receiver hands
+-- each part to Nominees.Handle as it came; a list too long for the relay to carry whole goes part
+-- by part, as before.
 -- The gamepad UI: the borders and marks it gives are off there, as every border (Borders.lua), and
 -- its name boxes are Olympus's own dialogs (ns.ShowDialog), never the game's popups.
 -- /oly status: his own list, and the lists held here (Nominees.StatusLine).
@@ -545,9 +548,12 @@ function Nominees.Send(force)
 	local entries = OwnEntries(s)
 	if #entries == 0 and not sentOnce then return false end
 	lastSent, sentOnce = now, true
-	for i, part in ipairs(Nominees.Parts(s.guild, tonumber(s.rev) or now, entries)) do
-		ns.Comm.Send("CHANNEL", part, "nominees" .. i)
-	end
+	-- (1.5.4) Its parts as one list (Comm.SendList): where the relay carries the channel (Forever),
+	-- one word the relay hands each other guild's reporter whole; part by part they passed its
+	-- trickle one at a time, keyed by their type, and a list in more than one part reached no other
+	-- guild. Where the channel works, each part as before. The parts are the ones Nominees.Handle
+	-- takes, each as it always came.
+	ns.Comm.SendList("NM", Nominees.Parts(s.guild, tonumber(s.rev) or now, entries), nil, "nominees")
 	return true
 end
 
@@ -714,9 +720,8 @@ function Nominees.SendMain(force)
 	local entries = MainEntries(s)
 	-- An explicit empty snapshot is a revocation too; keep repeating it for late clients.
 	lastMainSent = now
-	for i, part in ipairs(Nominees.Parts(Nominees.MainGuild(), rev, entries)) do
-		ns.Comm.Send("CHANNEL", part, "mainnominees" .. i)
-	end
+	-- (1.5.4) One list, as Nominees.Send's.
+	ns.Comm.SendList("NM", Nominees.Parts(Nominees.MainGuild(), rev, entries), nil, "mainnominees")
 	return true
 end
 local function SendMainSoon()

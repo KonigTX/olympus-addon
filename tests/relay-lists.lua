@@ -69,6 +69,7 @@ local function Rows(n, at, list, salt)
 	return rows
 end
 local function Pieces(R, text, id) return R.Codec.Chunk(text, id) end
+local LETTERS2 = "abcdefghijklmnopqrstuvwxyz"
 local function HandIn(R, origin, text, id)
 	for _, p in ipairs(Pieces(R, text, id)) do R.Relay.HandleIn("WHISPER", origin, "RL~P~" .. p) end
 end
@@ -191,46 +192,91 @@ test("relay lists (1.5.4): a list in pieces from a member who is no relay reache
 	end)
 end)
 
--- Fails before (nothing of a member's list reached any reporter).
-test("relay lists (1.5.4): cadence: from one origin a list of a kind is admitted once each LIST_EVERY: a second after the first went out is refused and reaches nobody, past LIST_EVERY the next is admitted", function()
+-- A guild master's list as Nominees.Parts cuts it, its parts of `size` bytes or so (the relay reads
+-- no more than its guild, for its trust).
+local function MasterList(guild, rev, parts, salt, size)
+	local words = {}
+	for i = 1, parts do
+		words[i] = ("NM~1~%s~%d~%d~%d~"):format(guild, rev, i, parts) .. ("c=Filler %s;"):format(salt or "Name"):rep(math.floor((size or 150) / 16))
+	end
+	return words
+end
+-- The relay's view of who it can trust for a kind (its receivers' own test): the Church's desk a
+-- keeper; `masters` proven guild masters.
+local function Trusting(R, masters)
+	R.Church = { IsKeeper = function(n) return ns.ShortName(n) == "Church Desk" end }
+	R.Nominees = { Proven = function(n) return masters ~= nil and masters[ns.ShortName(n)] == true end }
+end
+local DESK = "Church Desk-CAMWOWUS2Realm3PvE"
+
+-- Fails before (one-piece lists went by the trickle, where nothing holds an origin to one a window).
+test("relay lists (1.5.4): cadence: from one origin a list of a kind goes once each LIST_EVERY: a second after the first went out is refused and reaches nobody, past LIST_EVERY the next goes", function()
 	Relayed(function(R, sent, Run)
 		local REPORTERS = 3
+		Trusting(R, { ["Garrick Ashby"] = true })
+		local GM = "Garrick Ashby-CAMWOWUS2Realm3PvE"
 		Register(R, REPORTERS)
 		R.clock = R.clock + 120
-		local desk = "Church Desk-CAMWOWUS2Realm3PvE"
-		local first = R.Comm.PackList("NR", Rows(21, "abc", "m", "A"))
-		HandIn(R, desk, first, "11")
-		Run(50) -- (60 s: the three batches went, nothing waits)
+		local first = R.Comm.PackList("NM", MasterList("Olympus Ember", 1800000000, 1, "A", 60))
+		eq(#R.Codec.Chunk(first, "0"), 1, "a list in one piece")
+		HandIn(R, GM, first, "11")
+		Run(30)
 		eq(Reporters(R, sent, REPORTERS, first), REPORTERS)
-		local second = R.Comm.PackList("NR", Rows(21, "abd", "m", "B"))
-		HandIn(R, desk, second, "12")
+		local second = R.Comm.PackList("NM", MasterList("Olympus Ember", 1800000001, 1, "B", 60))
+		HandIn(R, GM, second, "12")
 		Run(20)
 		eq(Reporters(R, sent, REPORTERS, second), 0, "a second within LIST_EVERY, none of the first waiting: nobody")
 		local st = R.Relay.Stats()
 		eq(st.lists, 1); eq(st.listsRefused, 1); eq(st.listsReplaced, 0)
 		R.clock = R.clock + R.Relay.LIST_EVERY
 		Register(R, REPORTERS)
-		local third = R.Comm.PackList("NR", Rows(21, "abe", "m", "C"))
-		HandIn(R, desk, third, "13")
-		Run(50)
+		local third = R.Comm.PackList("NM", MasterList("Olympus Ember", 1800000002, 1, "C", 60))
+		HandIn(R, GM, third, "13")
+		Run(30)
 		eq(Reporters(R, sent, REPORTERS, third), REPORTERS, "past LIST_EVERY the next list reaches everyone")
 		eq(R.Relay.Stats().lists, 2)
 	end)
 end)
 
--- Fails before (no bounds: nothing of a member's list reached the drip at all).
-test("relay lists (1.5.4): bounds: a second list of a kind from one origin within LIST_EVERY only takes its waiting batches' place; another kind keeps its own window; more than LIST_MAX_PIECES pieces, a list past the whispers LIST_BURST and LIST_RATE allow, and the LIST_OPEN+1th set collecting go through the trickle (nothing, with 35 reporters); Relay.Stats counts each", function()
+-- Fails before (each of the desk's lists went to every reporter, the census snapshots waiting behind
+-- every one of them).
+test("relay lists (1.5.4): the Church's rows reach a guild once an hour at most (their kind's hold), the newest when it is due; a guild new to the relay gets the one it holds then", function()
+	Relayed(function(R, sent, Run)
+		Trusting(R)
+		local lists = {}
+		for k = 1, 3 do
+			R.clock = R.clock + 1800
+			Register(R, k == 1 and 3 or 4)
+			lists[k] = R.Comm.PackList("NR", Rows(21, "hd" .. k, "m", "Desk" .. LETTERS2:sub(k, k)))
+			HandIn(R, DESK, lists[k], tostring(80 + k))
+			Run(100)
+		end
+		for i = 1, 3 do
+			local got = Assembled(R, sent, ("Rep Number%d-"):format(i))
+			eq(got[lists[1]], 1, "the first")
+			eq(got[lists[2]], nil, "not the one half an hour later")
+			eq(got[lists[3]], 1, "the newest once the hour passed")
+		end
+		local got = Assembled(R, sent, "Rep Number4-")
+		eq(got[lists[2]], 1, "a guild new to the relay gets the one it holds then")
+		eq(got[lists[3]], nil, "and the next one only an hour later")
+	end)
+end)
+
+-- Fails before (a list of another kind than the Church's was carried from anyone; more than one
+-- collecting from an origin each took a place of LIST_OPEN; a trusted origin's had no place past it).
+test("relay lists (1.5.4): bounds: a second list of a kind within LIST_EVERY only takes its waiting batches' place; another kind keeps its own window; past LIST_MAX_PIECES the trickle; one collecting from an origin of a kind, LIST_OPEN from origins not trusted, a trusted one's always; a kind not carried whole keeps the trickle; Relay.Stats counts each", function()
 	Relayed(function(R, sent, Run)
 		local REPORTERS = 35
+		Trusting(R, { ["Proven Master"] = true })
 		Register(R, REPORTERS)
 		R.clock = R.clock + 120
-		local desk = "Church Desk-CAMWOWUS2Realm3PvE"
 		local first, second = R.Comm.PackList("NR", Rows(21, "abc", "m", "A")), R.Comm.PackList("NR", Rows(21, "abd", "m", "B"))
-		HandIn(R, desk, first, "11")
+		HandIn(R, DESK, first, "11")
 		-- (The first reporter's batch of the first list is in the queue already; every other's waits
 		-- in the drip, where the second takes its place: that reporter keeps the first, the rest get
 		-- the second alone.)
-		HandIn(R, desk, second, "12")
+		HandIn(R, DESK, second, "12")
 		Run(600)
 		local gotFirst, gotSecond, both = Reporters(R, sent, REPORTERS, first), Reporters(R, sent, REPORTERS, second), 0
 		for i = 1, REPORTERS do
@@ -241,92 +287,216 @@ test("relay lists (1.5.4): bounds: a second list of a kind from one origin withi
 		eq(gotSecond, REPORTERS - 1, "every other reporter gets the second in its place")
 		eq(both, 0, "nobody gets both")
 		local st = R.Relay.Stats()
-		eq(st.lists, 1, "one admitted"); eq(st.listsReplaced, 1, "one took its place")
-		-- Another kind from the same origin keeps its own window. (The reporters register again, as
-		-- every REGISTER_EVERY they do: a registration lasts REPORTER_FOR.)
+		eq(st.lists, 1, "one taken"); eq(st.listsReplaced, 1, "one took its place")
+		-- Another kind (the block terms') from the same origin keeps its own window. (The reporters
+		-- register again, as every REGISTER_EVERY they do: a registration lasts REPORTER_FOR.)
 		Register(R, REPORTERS)
-		local other = R.Comm.PackList("X1", (function() local t = {} for i = 1, 30 do t[i] = ("X1~row %d %s"):format(i, ("w"):rep(40)) end return t end)())
-		HandIn(R, desk, other, "15")
+		local terms = {}
+		for i = 1, 30 do terms[i] = ("BW~0badc0de~+term%s@1800000000"):format(("w"):rep(40) .. i) end
+		local other = R.Comm.PackList("BW", terms)
+		HandIn(R, DESK, other, "15")
 		Run(600)
-		eq(Reporters(R, sent, REPORTERS, other), REPORTERS, "a list of another kind, within the first kind's window, is admitted")
+		eq(Reporters(R, sent, REPORTERS, other), REPORTERS, "a list of another kind, within the first kind's window, goes")
 		eq(R.Relay.Stats().lists, 2)
 		-- More than LIST_MAX_PIECES: the trickle, which with 35 reporters takes no word in pieces.
-		R.clock = R.clock + R.Relay.LIST_EVERY
+		R.clock = R.clock + 3600
 		Register(R, REPORTERS)
 		local big = {}
 		for i = 1, 60 do big[i] = ("NR~1~p~abg~m~%d~%s~1~1"):format(i, ("n"):rep(30)) end
 		local long = R.Comm.PackList("NR", big)
 		eq(#R.Codec.Chunk(long, "0") > R.Relay.LIST_MAX_PIECES, true, "a list past LIST_MAX_PIECES pieces")
 		local refused = R.Relay.Stats().listsRefused
-		HandIn(R, desk, long, "16")
+		HandIn(R, DESK, long, "16")
 		Run(300)
 		eq(Reporters(R, sent, REPORTERS, long), 0, "too long a list reaches nobody by the drip")
 		eq(R.Relay.Stats().listsRefused, refused + 1)
-		-- The whispers lists may spend, from everyone together: a list's pieces and one more to each
-		-- reporter, out of LIST_BURST a reporter at once (refilled: the clock ran on) and LIST_RATE a
-		-- reporter a minute after. Here two lists of four pieces fit the burst, the third does not,
-		-- and the minutes its cost takes to refill admit it.
-		R.clock = R.clock + 3600
-		Register(R, REPORTERS)
-		local lists, admitted = {}, R.Relay.Stats().lists
-		local pieces = #R.Codec.Chunk(R.Comm.PackList("NR", Rows(21, "ab1", "a", "K")), "0")
-		local cost = (pieces + 1) * REPORTERS
-		local fit = math.floor(R.Relay.LIST_BURST * REPORTERS / cost)
-		eq(fit, 2, ("two lists of %d pieces fit the burst"):format(pieces))
-		for k = 1, fit + 1 do
-			lists[k] = R.Comm.PackList("NR", Rows(21, "ab" .. k, "a", "K" .. k))
-			HandIn(R, ("Desk Number%d-CAMWOWUS2Realm3PvE"):format(k), lists[k], tostring(20 + k))
+		-- Collecting: one from an origin of a kind (a newer first piece takes the older's place), then
+		-- LIST_OPEN in all from origins the relay cannot trust; a trusted origin's list opens past them.
+		local function FirstPiece(who, k)
+			local text = R.Comm.PackList("NM", MasterList("Olympus Ember", 1800000000 + k, 3, "N" .. k))
+			R.Relay.HandleIn("WHISPER", who, "RL~P~" .. R.Codec.Chunk(text, tostring(60 + k % 900))[1])
 		end
-		eq(R.Relay.Stats().lists - admitted, fit, "the whispers of two lists admitted, the third's not")
-		eq(R.Relay.Stats().listsRefused, refused + 2)
-		Run(1500)
-		local passed = 0
-		for k = 1, fit + 1 do
-			local n = Reporters(R, sent, REPORTERS, lists[k])
-			eq(n == 0 or n == REPORTERS, true, ("list %d: every reporter or none, not %d"):format(k, n))
-			if n == REPORTERS then passed = passed + 1 end
-		end
-		eq(passed, fit, "the admitted lists reach every reporter")
-		-- Refilled at LIST_RATE a reporter a minute: the next list once its cost came back.
-		R.clock = R.clock + math.ceil(cost / (R.Relay.LIST_RATE * REPORTERS)) * 60 - 1500 * 1.2
-		Register(R, REPORTERS)
-		local late = R.Comm.PackList("NR", Rows(21, "ab9", "a", "Late"))
-		HandIn(R, "Desk Number9-CAMWOWUS2Realm3PvE", late, "29")
-		eq(R.Relay.Stats().lists - admitted, fit + 1, "refilled at LIST_RATE, the next list is admitted")
-		-- LIST_OPEN sets collecting at once: within an origin's window its lists keep taking the waiting
-		-- batches' place (a first piece each opens a set), until LIST_OPEN sets are open. (The budget
-		-- refilled for one more list first.)
-		R.clock = R.clock + math.ceil(cost / (R.Relay.LIST_RATE * REPORTERS)) * 60
-		Register(R, REPORTERS)
-		local base = R.Comm.PackList("NR", Rows(21, "ac0", "m", "Z"))
-		HandIn(R, desk, base, "40") -- (admitted; its batches wait: nothing pumped)
-		local replaced, refusedBefore = R.Relay.Stats().listsReplaced, R.Relay.Stats().listsRefused
-		for k = 1, R.Relay.LIST_OPEN + 1 do
-			R.Relay.HandleIn("WHISPER", desk, "RL~P~" .. R.Codec.Chunk(R.Comm.PackList("NR", Rows(21, "ac" .. k, "m", "Z")), tostring(40 + k))[1])
-		end
-		eq(R.Relay.Stats().listsReplaced - replaced, R.Relay.LIST_OPEN - 1, "sets open until LIST_OPEN, the admitted one among them")
-		eq(R.Relay.Stats().listsRefused - refusedBefore, 2, "the rest refused")
+		refused = R.Relay.Stats().listsRefused
+		for k = 1, 20 do FirstPiece("Some Member-CAMWOWUS2Realm3PvE", k) end
+		eq(R.Relay.Stats().listsRefused, refused, "one origin's newer list takes its older one's place: one open")
+		for k = 2, R.Relay.LIST_OPEN do FirstPiece(("Some Member%s-CAMWOWUS2Realm3PvE"):format(("abcdefghijklmnopqrstuvwxyz"):sub(k, k)), 100 + k) end
+		eq(R.Relay.Stats().listsRefused, refused, ("%d open"):format(R.Relay.LIST_OPEN))
+		FirstPiece("Late Member-CAMWOWUS2Realm3PvE", 200)
+		eq(R.Relay.Stats().listsRefused, refused + 1, "one more origin not trusted: refused")
+		local proven = R.Comm.PackList("NM", MasterList("Olympus Ember", 1800000300, 3, "Pm"))
+		HandIn(R, "Proven Master-CAMWOWUS2Realm3PvE", proven, "301")
+		eq(R.Relay.Stats().listsRefused, refused + 1, "the proven master's list opens past them")
+		Run(600)
+		eq(Reporters(R, sent, REPORTERS, proven), REPORTERS, "and reaches every reporter")
+		-- A list of a kind the relay does not carry whole: its pieces keep the trickle (none, here).
+		local unknown = R.Comm.PackList("X1", (function() local t = {} for i = 1, 20 do t[i] = ("X1~row %d %s"):format(i, ("w"):rep(40)) end return t end)())
+		HandIn(R, DESK, unknown, "17")
+		Run(300)
+		eq(Reporters(R, sent, REPORTERS, unknown), 0, "a list of a kind not carried whole is no list to the relay")
 	end)
 end)
 
--- Fails before (keyed by the piece's id, the older short list went too).
-test("relay lists (1.5.4): a list in one piece is one word of the trickle keyed by its kind: a newer short list of the kind takes the waiting one's place in the queue, a list of another kind keeps its own", function()
+-- Fails before (keyed by the piece's id, the older short list went too; now as any list in the drip).
+test("relay lists (1.5.4): a list in one piece goes by the drip as any list: a newer one takes the waiting batches' place; a list of a kind not carried whole stays a word of the trickle keyed by its kind", function()
 	Relayed(function(R, sent, Run)
 		local REPORTERS = 3
+		Trusting(R)
 		Register(R, REPORTERS)
 		R.clock = R.clock + 120
-		local desk = "Church Desk-CAMWOWUS2Realm3PvE"
 		local older, newer = R.Comm.PackList("NR", Rows(1, "abc", "m", "A")), R.Comm.PackList("NR", Rows(1, "abd", "m", "B"))
 		local other = R.Comm.PackList("X1", { "X1~one", "X1~two" })
 		eq(#R.Codec.Chunk(older, "0"), 1, "one piece")
-		HandIn(R, desk, older, "51")
-		HandIn(R, desk, newer, "52")
-		HandIn(R, desk, other, "53")
+		HandIn(R, DESK, older, "51")
+		HandIn(R, DESK, newer, "52")
+		HandIn(R, DESK, other, "53")
 		Run(100)
 		eq(R.Comm.QueueSize(), 0, "everything went out")
-		eq(Reporters(R, sent, REPORTERS, older), 0, "no reporter is sent the short list the newer one replaced")
-		eq(Reporters(R, sent, REPORTERS, newer), REPORTERS, "every reporter gets the newer")
-		eq(Reporters(R, sent, REPORTERS, other), REPORTERS, "and the other kind's")
+		eq(Reporters(R, sent, REPORTERS, older), 1, "the reporter whose batch had begun keeps the older")
+		eq(Reporters(R, sent, REPORTERS, newer), REPORTERS - 1, "the others get the newer in its place")
+		eq(Reporters(R, sent, REPORTERS, other), REPORTERS, "and the other kind's, by the trickle")
+	end)
+end)
+
+-- The first cut of 1.5.4 had one share for every list, taken first come: a member's list every few
+-- minutes kept the Church desk's longer one out of it. Fails before (neither of the desk's two lists
+-- reaches the reporters).
+test("relay lists (1.5.4): a member flooding lists of the Church's kind takes only the share of origins the relay cannot trust: the keeper's lists still reach every one of 35 reporters, and the flood a list or two in 70 minutes", function()
+	Relayed(function(R, sent, Run)
+		local REPORTERS = 35
+		Trusting(R)
+		Register(R, REPORTERS)
+		R.clock = R.clock + 120
+		local desk, flood, n = {}, {}, 0
+		for pump = 1, 3600 do
+			if pump % 100 == 1 then Register(R, REPORTERS) end
+			if pump % 102 == 1 then
+				n = n + 1
+				flood[n] = R.Comm.PackList("NR", Rows(8, "fl" .. n, "a", "Flood"))
+				HandIn(R, "Flood Member-CAMWOWUS2Realm3PvE", flood[n], tostring(400 + n))
+			end
+			if pump == 250 or pump == 3400 then -- (more than an hour apart: the Church's hold)
+				desk[#desk + 1] = R.Comm.PackList("NR", Rows(21, "dk" .. pump, "m", "Desk"))
+				HandIn(R, DESK, desk[#desk], tostring(pump))
+			end
+			Run(1)
+		end
+		Run(600)
+		eq(#R.Codec.Chunk(flood[1], "0"), 2, "the flood's lists in two pieces")
+		eq(Reporters(R, sent, REPORTERS, desk[1]), REPORTERS, "the desk's first list reaches every reporter")
+		eq(Reporters(R, sent, REPORTERS, desk[2]), REPORTERS, "and its second")
+		local through = 0
+		for k = 1, n do if Reporters(R, sent, REPORTERS, flood[k]) > 0 then through = through + 1 end end
+		eq(through <= 3, true, ("the flood's %d lists: %d went, within LIST_OTHERS"):format(n, through))
+	end)
+end)
+
+-- Fails before (the master changing his list every two minutes took the share the other's needed).
+test("relay lists (1.5.4): one trusted origin takes its own share of its kind's, never the whole: a guild master changing his list every two minutes leaves room for another master's, repeated as masters do", function()
+	Relayed(function(R, sent, Run)
+		local REPORTERS = 35
+		Trusting(R, { ["Garrick Ashby"] = true, ["Selene Moor"] = true })
+		Register(R, REPORTERS)
+		R.clock = R.clock + 120
+		local hers, n = nil, 0
+		for pump = 1, 1500 do
+			if pump % 100 == 1 then Register(R, REPORTERS) end
+			if pump % 102 == 1 then
+				n = n + 1
+				HandIn(R, "Garrick Ashby-CAMWOWUS2Realm3PvE", R.Comm.PackList("NM", MasterList("Olympus Ember", 1800000000 + n, 2, "G" .. n)), tostring(500 + n))
+			end
+			if pump >= 500 and pump % 250 == 0 then
+				-- (Hers from the tenth minute, repeated every five as a master's client does.)
+				hers = hers or R.Comm.PackList("NM", MasterList("Olympus Thorn", 1800000000, 2, "Selene"))
+				HandIn(R, "Selene Moor-CAMWOWUS2Realm3PvE", hers, tostring(700 + pump % 99))
+			end
+			Run(1)
+		end
+		Run(600)
+		eq(Reporters(R, sent, REPORTERS, hers), REPORTERS, "the other master's list reaches every reporter")
+	end)
+end)
+
+-- Fails before (every repeat went to every reporter again).
+test("relay lists (1.5.4): a guild is sent a list it does not hold: an unchanged repeat goes to nobody, a new guild's reporter gets it at the next repeat, a guild whose reporter changed does not get it again, a changed list goes to every guild, and past `refresh` an unchanged one goes again", function()
+	Relayed(function(R, sent, Run)
+		Trusting(R, { ["Garrick Ashby"] = true })
+		local GM = "Garrick Ashby-CAMWOWUS2Realm3PvE"
+		local A = R.Comm.PackList("NM", MasterList("Olympus Ember", 1800000000, 2, "A"))
+		local B = R.Comm.PackList("NM", MasterList("Olympus Ember", 1800000600, 2, "B"))
+		local function Step(text, id, reporters)
+			R.clock = R.clock + 600
+			Register(R, reporters)
+			HandIn(R, GM, text, id)
+			Run(100)
+		end
+		local function Times(word, i) return Assembled(R, sent, ("Rep Number%d-"):format(i))[word] or 0 end
+		Step(A, "1", 3)
+		for i = 1, 3 do eq(Times(A, i), 1, "the list, once each") end
+		Step(A, "2", 3)
+		for i = 1, 3 do eq(Times(A, i), 1, "its repeat goes to nobody") end
+		eq(R.Relay.Stats().listsSame, 1)
+		Step(A, "3", 4)
+		eq(Times(A, 4), 1, "a new guild's reporter gets it at the next repeat")
+		for i = 1, 3 do eq(Times(A, i), 1, "and nobody else again") end
+		-- Guild 1's reporter changes (another member is elected): the guild holds the list already.
+		R.Relay.HandleIn("WHISPER", "Other Member-CAMWOWUS2Realm7PvE", "RL~P~RR~Guild 1")
+		Step(A, "4", 4)
+		eq(Assembled(R, sent, "Other Member-")[A], nil, "a guild whose reporter changed does not get it again")
+		R.Relay.HandleIn("WHISPER", "Rep Number1-CAMWOWUS2Realm7PvE", "RL~P~RR~Guild 1")
+		Step(B, "5", 4)
+		for i = 1, 4 do eq(Times(B, i), 1, "a changed list goes to every guild") end
+		R.clock = R.clock + R.Relay.LIST_KINDS.NM.refresh
+		Step(B, "6", 4)
+		for i = 1, 4 do eq(Times(B, i), 2, "past refresh, an unchanged one goes again") end
+	end)
+end)
+
+-- Fails before (nothing was kept: after a /reload every guild was sent every list again).
+test("relay lists (1.5.4): a relay's /reload keeps which guild holds which list (its saved data): an unchanged repeat goes to nobody, a changed one to every guild", function()
+	Relayed(function(R, sent, Run)
+		local REPORTERS = 3
+		Trusting(R, { ["Garrick Ashby"] = true })
+		local GM = "Garrick Ashby-CAMWOWUS2Realm3PvE"
+		local A = R.Comm.PackList("NM", MasterList("Olympus Ember", 1800000000, 2, "A"))
+		local B = R.Comm.PackList("NM", MasterList("Olympus Ember", 1800000600, 2, "B"))
+		Register(R, REPORTERS)
+		R.clock = R.clock + 120
+		HandIn(R, GM, A, "1")
+		Run(100)
+		-- The /reload: Relay.lua loaded again over the same saved data, its reporters registering again.
+		assert(loadfile(ADDON_DIR .. "Relay.lua"))("Olympus", R)
+		Trusting(R, { ["Garrick Ashby"] = true })
+		R.clock = R.clock + 600
+		Register(R, REPORTERS)
+		HandIn(R, GM, A, "2")
+		Run(100)
+		for i = 1, REPORTERS do eq(Assembled(R, sent, ("Rep Number%d-"):format(i))[A], 1, "after the reload, its repeat goes to nobody") end
+		R.clock = R.clock + 600
+		Register(R, REPORTERS)
+		HandIn(R, GM, B, "3")
+		Run(100)
+		for i = 1, REPORTERS do eq(Assembled(R, sent, ("Rep Number%d-"):format(i))[B], 1, "a changed list to every guild") end
+	end)
+end)
+
+-- Fails before (the relay's own repeat, the King's Legates every five minutes, went to every reporter
+-- each time).
+test("relay lists (1.5.4): the relay's own list skips the shares but never goes again to a reporter who holds it", function()
+	Relayed(function(R, sent, Run)
+		local REPORTERS = 3
+		local own = R.Comm.PackList("NM", MasterList("Olympus", 1800000000, 3, "Own"))
+		local changed = R.Comm.PackList("NM", MasterList("Olympus", 1800000900, 3, "Own"))
+		for step, text in ipairs({ own, own, changed }) do
+			R.clock = R.clock + 300
+			Register(R, REPORTERS)
+			HandIn(R, R.me, text, tostring(step))
+			Run(100)
+		end
+		for i = 1, REPORTERS do
+			local got = Assembled(R, sent, ("Rep Number%d-"):format(i))
+			eq(got[own], 1, "its list once, its repeat to nobody")
+			eq(got[changed], 1, "its changed list to every reporter")
+		end
 	end)
 end)
 
@@ -546,4 +716,225 @@ test("Church public rows (1.5.4): a member who is no keeper sends the same rows 
 		eq(dropped.keeper, before + 11, "each row refused where the rows were always refused: the sender is no keeper")
 		eq(PC.Comm.Stats().listWords, 11, "the list's words were handed to the Church's handler")
 	end)
+end)
+
+---------------------------------------------------------------------------
+-- 1.5.4 (the dev: "E as nomeações também"): a guild master's nominees and the shared block terms
+-- over the real relay, with the real Nominees.lua and Filter.lua where they are said and heard. A
+-- node is a real Comm and Relay (RelayWorld), its own drip timers, its guild while it is used, and
+-- the game's send API pointed at it while it is pumped.
+---------------------------------------------------------------------------
+local EMBER, THORN = "Olympus Ember", "Olympus Thorn"
+local MASTER, CLAIMANT, EDITOR = "Garrick Ashby-Realm", "Mallory Crane-Realm", "Editor Quill-Realm"
+local function OverRelay(fn)
+	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild, server = GetServerTime }
+	local ok, err = pcall(function()
+		GetChannelName = function() return 0 end
+		ns.IsMember = function() return true end
+		IsInGuild = function() return true end
+		GetServerTime = function() return 1800000000 end
+		local function Node(name, guild, rank, files)
+			GetGuildInfo = function() return guild, rank == 0 and "Master" or "Member", rank end
+			local cns, Deliver, sent = RelayWorld(name, guild)
+			local send, logged = C_ChatInfo.SendAddonMessage, C_ChatInfo.SendAddonMessageLogged
+			local timers = {}
+			cns.After = function(delay, _, f) timers[#timers + 1] = { at = cns.clock + (tonumber(delay) or 0), f = f } end
+			cns.Fire, cns.MasterHeld = function() end, function() return false end
+			-- (The census proves MASTER the master of Olympus Ember, nobody else anything.)
+			cns.Data = setmetatable({
+				KnownRank = function(who, g) if g == EMBER and ns.ShortName(who) == ns.ShortName(MASTER) then return 0, 2 end return nil end,
+				Guild = function() return nil end }, { __index = ns.Data })
+			cns.IsHighCouncillor = function(n) return type(n) == "string" and ns.ShortName(n) == ns.ShortName(EDITOR) end
+			cns.King, cns.WatchChat, cns.Chronicle = { missing = true }, { missing = true }, { Add = function() end }
+			for _, file in ipairs(files or {}) do assert(loadfile(ADDON_DIR .. file .. ".lua"))("Olympus", cns) end
+			local node = { ns = cns, sent = sent, name = name }
+			local function Mine()
+				GetGuildInfo = function() return guild, rank == 0 and "Master" or "Member", rank end
+				C_ChatInfo.SendAddonMessage, C_ChatInfo.SendAddonMessageLogged = send, logged
+			end
+			function node.Deliver(dist, from, msg) Mine(); Deliver(dist, from, msg) end
+			function node.Do(f, ...) Mine(); return f(...) end
+			function node.Run(pumps)
+				Mine()
+				for _ = 1, pumps do
+					cns.clock = cns.clock + 1.2
+					local due, keep = {}, {}
+					for _, t in ipairs(timers) do if t.at <= cns.clock then due[#due + 1] = t else keep[#keep + 1] = t end end
+					timers = keep
+					for _, t in ipairs(due) do t.f() end
+					cns.Comm.Pump()
+				end
+			end
+			-- What it sent since `since`, fed to `to` as the server would (dist, and the one name for a whisper).
+			function node.CarryTo(to, dist, since)
+				local n = 0
+				for i = (since or 0) + 1, #sent do
+					local s = sent[i]
+					if s.dist == dist and (dist ~= "WHISPER" or ns.ShortName(s.target) == ns.ShortName(to.name)) then
+						n = n + 1
+						to.Deliver(dist, name, s.msg)
+					end
+				end
+				return n
+			end
+			return node
+		end
+		fn(Node)
+	end)
+	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild, GetServerTime = saved.channel, saved.member, saved.guild, saved.inGuild, saved.server
+	C_ChatInfo = nil
+	if not ok then error(err, 0) end
+end
+-- The relay a node picks, answered (RY), as a node of its own that trusts as its receivers do.
+local function RelayFor(node, Node)
+	local relay = node.ns.Relay.Pick()
+	node.Deliver("WHISPER", relay .. "-Realm", "RY~")
+	local R = Node(relay .. "-Realm", "Olympus Relay", 3)
+	R.ns.Nominees = { Proven = function(n, g) return g == EMBER and ns.ShortName(n) == ns.ShortName(MASTER) end }
+	R.ns.Filter = { IsEditorName = function(n) return ns.ShortName(n) == ns.ShortName(EDITOR) end }
+	return R
+end
+local function Named(prefix, i) return prefix .. " " .. LETTERS2:sub(i, i):upper() .. LETTERS2:sub(i, i):rep(2) end
+
+-- Fails before (part by part, the relay's trickle kept one part of the three for the reporter, keyed
+-- by their type, and the list never came together anywhere).
+test("nominees over the relay (1.5.4): a proven guild master's whole list (25 Legates, 6 correspondents, three parts) reaches another guild's reporter and his guildmate, every entry; the same list from a member who is no master reaches them and is refused there, the master's kept", function()
+	OverRelay(function(Node)
+		local G = Node(MASTER, EMBER, 0, { "Nominees" })
+		local list = {}
+		for i = 1, 25 do list[#list + 1] = { r = "c", n = Named("Legate", i) } end
+		for i, dept in ipairs(G.ns.Nominees.Departments()) do list[#list + 1] = { r = "d", d = dept, n = Named("Envoy", i) } end
+		G.ns.rdb.nominees = { [G.ns.me] = { guild = EMBER, rev = 1800000000, list = list } }
+		local parts = G.Do(G.ns.Nominees.Parts, EMBER, 1800000000, (function()
+			local out = {}
+			for _, e in ipairs(list) do out[#out + 1] = e.r == "c" and { role = "centurion", name = e.n } or { role = "correspondent", dept = e.d, name = e.n } end
+			return out
+		end)())
+		eq(#parts, 3, "the list in three parts")
+		local R = RelayFor(G, Node)
+		eq(G.Do(G.ns.Nominees.Send, true), true, "the master's client sends his list")
+		G.Run(60)
+		local P = Node("Rhea Lindgren-Realm", THORN, 3, { "Nominees" })
+		R.Do(R.ns.Relay.HandleIn, "WHISPER", P.name, "RL~P~RR~" .. THORN)
+		eq(G.CarryTo(R, "WHISPER") > 0, true, "the master's whispers reached the relay")
+		R.Run(200)
+		eq(R.CarryTo(P, "WHISPER") > 0, true, "the relay's whispers reached the reporter")
+		P.Run(60)
+		local Q = Node("Tobin Marsh-Realm", THORN, 3, { "Nominees" })
+		eq(P.CarryTo(Q, "GUILD") > 0, true, "the reporter handed it to his guild")
+		for _, node in ipairs({ P, Q }) do
+			local l = node.Do(node.ns.Nominees.ListOf, EMBER)
+			eq(l and #l.entries or 0, 31, node.name .. " holds every entry of the master's list")
+			eq(node.Do(node.ns.Nominees.RoleOf, Named("Legate", 25), EMBER), "centurion")
+			eq(select(2, node.Do(node.ns.Nominees.RoleOf, Named("Envoy", 5), EMBER)), "Department of Heraldry")
+		end
+		eq(P.ns.Comm.Stats().listWords, 3, "the reporter's Comm handed the list's three parts to Nominees.Handle")
+		eq(R.ns.Relay.Stats().lists, 1, "the relay took one list, from its trusted share")
+		-- A member of the master's guild sends a list of the same guild: the relay carries it (its
+		-- share of origins it cannot trust), each receiver refuses it.
+		local M = Node(CLAIMANT, EMBER, 3, { "Nominees" })
+		local relay = M.ns.Relay.Pick()
+		M.Deliver("WHISPER", relay .. "-Realm", "RY~")
+		local fake = M.Do(M.ns.Nominees.Parts, EMBER, 1800000900, { { role = "centurion", name = "Usurper Zed" }, { role = "centurion", name = Named("Legate", 1) } })
+		eq(M.Do(M.ns.Comm.SendList, "NM", fake, nil, "nominees"), true)
+		M.Run(30)
+		local rs, ps = #R.sent, #P.sent
+		eq(M.CarryTo(R, "WHISPER") > 0, true)
+		R.Run(100)
+		eq(R.CarryTo(P, "WHISPER", rs) > 0, true, "the relay carried the member's list too")
+		P.Run(30)
+		P.CarryTo(Q, "GUILD", ps)
+		eq(P.ns.Comm.Stats().listWords, 4, "it reached the reporter's Nominees.Handle")
+		for _, node in ipairs({ P, Q }) do
+			local l = node.Do(node.ns.Nominees.ListOf, EMBER)
+			eq(l and l.by, MASTER, node.name .. " keeps the master's list")
+			eq(node.Do(node.ns.Nominees.RoleOf, "Usurper Zed", EMBER), nil, "nothing of the member's")
+		end
+	end)
+end)
+
+-- Fails before (page by page, the reporter kept the page the relay's trickle let through last).
+test("block terms over the relay (1.5.4): an editor's whole shared list in five pages (Filter.SendAll) reaches another guild's reporter as one list, every page taken by Filter.Receive as it came", function()
+	OverRelay(function(Node)
+		local E = Node(EDITOR, EMBER, 3, { "Filter" })
+		local shared = {}
+		for i = 1, 40 do
+			shared["scamword" .. LETTERS2:sub(math.floor((i - 1) / 26) + 1, math.floor((i - 1) / 26) + 1) .. LETTERS2:sub((i - 1) % 26 + 1, (i - 1) % 26 + 1)] =
+				{ on = true, at = 1800000000 - 3600, by = "Somebody Else-Realm", lv = 1 }
+		end
+		E.ns.rdb.filterShared = shared
+		local pages = E.Do(E.ns.Filter.Pages)
+		eq(#pages, 5, "five pages")
+		local R = RelayFor(E, Node)
+		eq(E.Do(E.ns.Filter.SendAll), 5)
+		E.Run(60)
+		local P = Node("Rhea Lindgren-Realm", THORN, 3, { "Filter" })
+		R.Do(R.ns.Relay.HandleIn, "WHISPER", P.name, "RL~P~RR~" .. THORN)
+		eq(E.CarryTo(R, "WHISPER") > 0, true)
+		R.Run(200)
+		eq(R.CarryTo(P, "WHISPER") > 0, true)
+		eq(#P.Do(P.ns.Filter.SharedTerms), 40, "the reporter holds every term of the editor's list")
+		eq(P.ns.Comm.Stats().listWords, 5, "each of the five pages taken as it came")
+	end)
+end)
+
+-- Fails before (no keys: two lists sent at once both went; a list too long for the relay went as one
+-- word it could never carry whole).
+test("Comm.SendList (1.5.4): keyed as the words were (word i by key .. i where the channel works, the list word by key where the relay carries it): a newer list takes a waiting one's place; past the relay's LIST_MAX_PIECES the words go one by one, counted, never cut short", function()
+	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild }
+	local ok, err = pcall(function()
+		ns.IsMember = function() return true end
+		IsInGuild = function() return true end
+		GetGuildInfo = function() return "Olympus II", "Member", 3 end
+		GetChannelName = function() return 5 end
+		local cns = FreshComm()
+		local sent = {}
+		C_ChatInfo.SendAddonMessage = function(_, msg, dist, target) sent[#sent + 1] = { msg = msg, dist = dist, target = target } return 0 end
+		C_ChatInfo.SendAddonMessageLogged = C_ChatInfo.SendAddonMessage
+		cns.Comm.JoinChannel()
+		local older, newer = Rows(3, "abc", "a", "Old"), Rows(3, "abd", "a", "New")
+		cns.Comm.SendList("NR", older, nil, "rows")
+		cns.Comm.SendList("NR", newer, nil, "rows")
+		for _ = 1, 30 do cns.Comm.Pump() end
+		local words = {}
+		for _, s in ipairs(sent) do if s.dist == "CHANNEL" then words[#words + 1] = s.msg end end
+		eq(table.concat(words, "\n"), table.concat(newer, "\n"), "where the channel works: each newer word in its older one's place")
+		-- Forever.
+		GetChannelName = function() return 0 end
+		local R, Deliver, rsent = RelayWorld("Church Desk-CAMWOWUS2Realm3PvE", "Olympus II")
+		local relay = R.Relay.Pick()
+		Deliver("WHISPER", relay .. "-Realm", "RY~")
+		local first, second = Rows(21, "abc", "m", "Old"), Rows(21, "abd", "m", "New")
+		R.Comm.SendList("NR", first, nil, "rows")
+		R.Comm.SendList("NR", second, nil, "rows")
+		for _ = 1, 60 do R.Comm.Pump() end
+		local outer, inner, got = R.Codec.NewAssembler(), R.Codec.NewAssembler(), {}
+		for _, s in ipairs(rsent) do
+			local rl = s.msg:sub(1, 3) == "RL~" and s.msg or R.Codec.Feed(outer, "origin", s.msg, 0)
+			local body = rl and rl:match("^RL~P~(.*)$")
+			local word = body and R.Codec.Feed(inner, "origin", body, 0)
+			if word then got[#got + 1] = word end
+		end
+		eq(#got, 1, "one list word went")
+		eq(got[1], R.Comm.PackList("NR", second), "the newer, in the older's place")
+		-- Too long for the relay to carry whole: word by word, every word, counted.
+		local big = {}
+		for i = 1, 40 do big[i] = ("NR~1~p~abg~m~%d~%s~1~1"):format(i, ("n"):rep(220)) end
+		eq(#R.Codec.Chunk(R.Comm.PackList("NR", big), "0") > R.Relay.LIST_MAX_PIECES, true)
+		eq(R.Comm.ListRoom("NR", big), 40, "a place for each word")
+		local before = #rsent
+		eq(R.Comm.SendList("NR", big, nil, "big"), true)
+		for _ = 1, 100 do R.Comm.Pump() end
+		local each, packed = 0, 0
+		for i = before + 1, #rsent do
+			local m = rsent[i].msg
+			if m:find("^RL~P~NR~1~p~abg~") then each = each + 1 end
+			if m:find("LS~1~", 1, true) then packed = packed + 1 end
+		end
+		eq(each, 40, "every word, one by one"); eq(packed, 0, "no list word")
+		eq(R.Comm.Stats().listsSplit, 1, "counted")
+	end)
+	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild = saved.channel, saved.member, saved.guild, saved.inGuild
+	C_ChatInfo = nil
+	if not ok then error(err, 0) end
 end)

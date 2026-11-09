@@ -234,7 +234,7 @@ function Comm.Stats()
 		lane = Lane(), laneRefused = laneRefused, laneMoves = stats.lanes or 0,
 		peerLanes = (function() local n = {} for name, l in pairs(peerLane) do n[#n + 1] = ns.DisplayName(name) .. ":" .. l end table.sort(n) return n end)(),
 		-- 1.5.4: lists heard (Comm.SendList's envelope), the words they carried, lists dropped whole.
-		lists = stats.lists or 0, listWords = stats.listWords or 0, listsBad = stats.listsBad or 0,
+		lists = stats.lists or 0, listWords = stats.listWords or 0, listsBad = stats.listsBad or 0, listsSplit = stats.listsSplit or 0,
 	}
 end
 
@@ -493,8 +493,9 @@ end
 --   the relay's answer to a ping, and 1.4.6 a relay's copy to the other relays); 1.5.4 RW (guild
 --   verification between relays alone: a verifier's decision, an ask, an answer to a relay's ask).
 --   1.5.4, lists: Comm LS (words of one kind packed as one word where the relay carries the channel,
---   Comm.SendList: the Church's public rows first; each receiver hands the words inside to their own
---   handler, one by one, as if each had come on its own).
+--   Comm.SendList: the Church's public rows, the guild masters' nominees, the shared block terms;
+--   each receiver hands the words inside to their own handler, one by one, as if each had come on
+--   its own).
 --   1.5.4, modified builds: Builds BD (a guild master's, an officer's or a councillor's sighting of a
 --   client whose version is no release, over GUILD and on the channel; the record the right-click
 --   menu and /oly builds show, and the lock on such a client's words).
@@ -611,8 +612,9 @@ end
 Comm.pieceHooks = {}
 -- Long payloads (> 255 bytes) go through the same chunking as reports; urgent ones (a
 -- question to the army) ahead of the census, their pieces still in order. On the channel, or
--- over GUILD (1.0.0), where only the types in GUILD_PIECES are put together again.
-function Comm.SendChunked(payload, urgent, dist, done, options)
+-- over GUILD (1.0.0), where only the types in GUILD_PIECES are put together again. key (1.5.4,
+-- Comm.SendList): a newer payload of the key takes a waiting one's place, as Comm.Send's does.
+function Comm.SendChunked(payload, urgent, dist, done, options, key)
 	dist = dist == "GUILD" and "GUILD" or "CHANNEL"
 	if type(payload) ~= "string" then return Refuse(done, "size") end
 	if Held(payload) then return Refuse(done, "held") end
@@ -628,11 +630,11 @@ function Comm.SendChunked(payload, urgent, dist, done, options)
 		guard = function()
 		return not Held(payload) and not QuietHolds(payload) and (not guard or guard() == true)
 	end }
-	return Comm.SendBatch(dist, Codec.Chunk(payload, tostring(msgId)), nil, nil, urgent, done, guarded)
+	return Comm.SendBatch(dist, Codec.Chunk(payload, tostring(msgId)), key, nil, urgent, done, guarded)
 end
 
 -- (1.5.4) A list of words of one kind as one word. The Church's public rows first (Count.SendPublic:
--- up to 22 rows, two lists, every half hour): on Forever each row went by the relay on its own, and
+-- up to 22 rows of two rankings, every half hour): on Forever each row went by the relay on its own, and
 -- there another client's words pass a reporter's trickle one by one, keyed by their type in the
 -- relay's queue (a newer row took the waiting row's place), so a reporter got one to four rows of the
 -- 22, and the Church's scores were wrong in every guild but the desk's. The rows now go packed in one
@@ -640,7 +642,9 @@ end
 -- (Relay.lua, ListSet); every receiver splits it and hands each row to its own handler as if it had
 -- come on its own from the same sender, so what each handler trusts (the Church's keeper) is asked
 -- where it always was. Where the channel works (Relay.On() false) each word goes as before, one
--- channel message each: nothing changes on those realms, and no older client reads a list.
+-- channel message each: nothing changes on those realms, and no older client reads a list. The
+-- guild masters' nominees (NM, Nominees.Send) and the shared block terms (BW, Filter.SendAll) go
+-- the same way; another list is one line for its sender and one in Relay.LIST_KINDS.
 --   LS~1~<kind>~<n>~<word>\255<word>...   kind: the words' own type (two letters); n: how many
 -- The separator is the byte 255. The unit separator (\30) is a control byte, and Comm takes every
 -- control byte out of each message as it arrives (Codec.Plain, 0.9.2), before the pieces are put
@@ -677,27 +681,46 @@ function Comm.UnpackList(text)
 	end
 	return kind, words
 end
--- How many places in the queue the list takes here: one for each word where the channel works, its
--- pieces where the relay carries it (Count.SendPublic keeps the census's room past them).
-function Comm.ListRoom(kind, words)
-	if not RelayOn() then return type(words) == "table" and #words or 0 end
-	local text = Comm.PackList(kind, words)
-	return text and math.max(1, math.ceil(#text / Codec.CHUNK)) or 0
-end
--- Sends the list: each word as one channel message where the channel works, as one chunked LS word
--- where the relay carries it (Comm.SendChunked, never urgent). options as Comm.Send's. True when
--- every word was handed to the queue; false and why when the list is refused.
-function Comm.SendList(kind, words, options)
+-- Whether the list goes as one word here: where the relay carries the channel, and within the
+-- relay's pieces (Relay.LIST_MAX_PIECES) and LIST_MAX words. Else its words go one by one, as
+-- before 1.5.4 (a guild master's longest list of nominees with realms in every name, the block
+-- terms' fullest list): sent whole that way, never cut short, and counted (listsSplit).
+local function OneWord(kind, words)
+	if not RelayOn() then return nil end
 	local text, why = Comm.PackList(kind, words)
-	if not text then return false, why end
-	if not RelayOn() then
-		local all = true
-		for _, word in ipairs(words) do
-			if not Comm.Send("CHANNEL", word, nil, false, false, nil, options) then all = false end
-		end
-		return all
+	if not text then return nil, why end
+	local R = ns.Relay
+	local most = type(R) == "table" and tonumber(R.LIST_MAX_PIECES) or 10
+	if math.ceil(#text / Codec.CHUNK) > most then return nil, "pieces" end
+	return text
+end
+-- How many places in the queue the list takes here: its pieces as one word, or one for each word
+-- (Count.SendPublic keeps the census's room past them).
+function Comm.ListRoom(kind, words)
+	local text = OneWord(kind, words)
+	if text then return math.ceil(#text / Codec.CHUNK) end
+	return type(words) == "table" and #words or 0
+end
+-- Sends the list: as one chunked LS word where the relay carries the channel (Comm.SendChunked,
+-- never urgent), else each word as one channel message, as before. options as Comm.Send's; key:
+-- as the words were keyed before (Nominees "nominees", Filter "filterterms"), word i by key .. i,
+-- the list word by key itself, so a newer list takes a waiting one's place. True when every word
+-- was handed to the queue; false and why when the list is refused (no words, a word of another
+-- kind or with the separator).
+function Comm.SendList(kind, words, options, key)
+	local _, why = Comm.PackList(kind, words)
+	if why == "kind" or why == "empty" or why == "mixed" or why == "separator" then return false, why end
+	local text, split = OneWord(kind, words)
+	if text then return Comm.SendChunked(text, false, "CHANNEL", nil, options, key) == true end
+	if split then
+		stats.listsSplit = (stats.listsSplit or 0) + 1
+		ns.Log("list %s: %d words (%s): one by one, past what the relay carries as one", kind, #words, split)
 	end
-	return Comm.SendChunked(text, false, "CHANNEL", nil, options) == true
+	local all = true
+	for i, word in ipairs(words) do
+		if not Comm.Send("CHANNEL", word, key and (key .. i) or nil, false, false, nil, options) then all = false end
+	end
+	return all
 end
 -- A list heard: its words to their own handler, one by one, as if each had come on its own from the
 -- same sender, so each handler asks of the sender what it always asked (the Church's rows: the
