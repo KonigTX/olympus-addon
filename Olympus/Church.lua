@@ -1155,6 +1155,9 @@ local function SwitchAllowed(name)
 	local M = ns.Moderation
 	return Church.MayPublish(name) and not (M and M.Hides and M.Hides(name, nil))
 end
+-- (2026-11-09) Also who keeps the whole ranking for the Companion on his own computer (BridgePeople.lua's
+-- churchRanking section, local only).
+Church.SwitchAllowed = SwitchAllowed
 ---------------------------------------------------------------------------
 
 function Church.Public()

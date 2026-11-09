@@ -28569,6 +28569,26 @@ do
 		end
 	end)
 
+	-- 2026-11-09 (the author: "Pode abrir"; "Sim, só local"): members of the Olympus Discord who sign in
+	-- to the Companion read the census, the public rankings and the Most Wanted list from Olympus's
+	-- server, so the privacy section's first words say so on every page (the privacy page's own,
+	-- tests/locales-full.lua); and the README's table has the Companion's churchRanking row: the whole
+	-- Church ranking, on the author's, the King's or a signed High Councillor's computer alone.
+	test("docs (2026-11-09): the privacy section's first words on the README, the CurseForge page and the store page say Olympus Discord members signed in to the Companion can see the census, the public rankings and the Most Wanted list on Olympus's server; the README's table has the local churchRanking row", function()
+		for _, path in ipairs({ "README.md", "docs/CURSEFORGE.md", "docs/CURSEFORGE-STORE.md" }) do
+			local privacy = assert(Section(Doc(path), "Privacy"), path .. ": a Privacy section")
+			local intro = Flat(privacy:match("^(.-)\n[|*]") or privacy)
+			Has(intro, "On Olympus's server, members of the Olympus Discord signed in to the Companion can see the census, the public rankings (with character names) and the Most Wanted list.",
+				path .. ": the privacy section's first words")
+		end
+		local row = Row(PrivacyRows("README.md"), "README.md", "`churchRanking`")
+		for _, must in ipairs({ "whole Church ranking as your Church tab's Ranking page shows it", "1000 places a board at most",
+			"never sends it to Olympus's server or over your network", "only on the author's, the King's or a signed High Councillor's client",
+			"while moderation does not hide him", "whether the Church's public ranking is open or closed", "never a recruit's or a registration's name" }) do
+			Has(row, must, "README: the churchRanking row")
+		end
+	end)
+
 	-- The author asked on 2026-09-27 that the Credits line of the controller player whose 0.9.8
 	-- report showed the block came when the world map opened name that report (fixed in 1.0,
 	-- 1705a331); since 0.9.6 the line had said only "the gamepad UI". (No player is named here: the
