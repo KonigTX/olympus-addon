@@ -318,7 +318,10 @@ function Filter.SendAll()
 	Prune()
 	if next(Shared()) == nil then return 0 end
 	local pages = Filter.Pages()
-	for i, page in ipairs(pages) do ns.Comm.Send("CHANNEL", page, "filterterms" .. i) end
+	-- (1.5.4) As one list (Comm.SendList): where the relay carries the channel, one word the relay
+	-- hands each reporter whole, where page by page a reporter kept the last page that passed its
+	-- trickle; where the channel works, each page as before. Each page stands alone as it always did.
+	ns.Comm.SendList("BW", pages, nil, "filterterms")
 	lastSent = ns.Now()
 	return #pages
 end

@@ -21,6 +21,19 @@ local L = ns.L
 --   LR~<id>                      (whisper) please invite me
 --   LN~<id>                      (whisper) I can't now
 --   LX~<id>                      (whisper) your time in my group is up: please leave it
+--
+-- (1.5.4) WoW: Forever splits a realm group into sub-realms, and a group invite alone does not
+-- cross them (the dev, 2026-11-08: "o layer hop só funciona no mesmo realm, mas tem como ir lá:
+-- precisa estar no grupo, deslogar e logar"; and a logout alone does not always do it, closing the
+-- game does). A layer there is (zone, zone UID, sub-realm), Layers.lua. A hop to a layer on another
+-- sub-realm goes as any other up to the group: then no NPC can confirm it yet, so the asker is told
+-- to log out and back in (and to restart the game when that is not enough), the pending hop is
+-- kept in the saved variables (ns.db.hopPending) and, back in the game within RELOG_WINDOW, still
+-- in the helper's group and on the helper's sub-realm, the usual confirmation and leave finish it
+-- (Hop.Resume). Out of the group, or the window over, the hop ends with a line and the group is
+-- left alone. The helper's addon keeps such a guest up to RELOG_WINDOW instead of GUEST_TIME. The
+-- whole hop is experimental: each entry point says so, and the first ask of a session (for a layer
+-- here, and for one on another sub-realm) shows a window telling the player the flow first.
 
 local Hop = {}
 ns.Hop = Hop
@@ -48,6 +61,12 @@ Hop.RECENT = 600        -- invites counted in the load we announce
 Hop.MAX_OFFERS = 30     -- offers kept per ask
 Hop.GUEST_TIME = 90     -- a guest the addon invited on its own is let go after this long
 Hop.PROMPT_EVERY = 10   -- how often we check whether we are alone on the King's layer
+-- (1.5.4) A hop to a layer on another Forever sub-realm: how long after joining the helper's
+-- group the asker has to log out and back in, or restart the game (a full restart takes a while);
+-- the helper's addon keeps such a guest as long. And how long after a login the group may still
+-- be unnamed before "not in the helper's group" ends the pending hop.
+Hop.RELOG_WINDOW = 15 * 60
+Hop.RELOG_GRACE = 20
 
 -- Swappable in tests.
 Hop.random = math.random
@@ -75,8 +94,26 @@ local kingMode        -- this session's answer to the King's layer window: auto,
 local groupAuto
 local promptShown, lastPromptCheck = false, -math.huge
 local privateHinted = false -- told this session what an ask says while the player shares nothing
+-- (1.5.4) The experimental hop's window was answered with Ask this session: .same for a layer on
+-- our own sub-realm, .other for one on another Forever sub-realm (the flow with the relog). A field,
+-- so the tests of what follows the window set it (Hop.Reset, the tests' clean slate for an ask,
+-- leaves it: a /reload starts the session over).
+Hop.confirmed = {}
 
 local function Changed() ns.Fire("HOP_CHANGED") end
+
+-- (1.5.4) The sub-realm of our Forever family a player is on when it is not ours, from his hello
+-- (Layers.RealmOf); nil for ours, for one not known and off Forever.
+function Hop.SubRealmOf(name)
+	local Lr = ns.Layers
+	if type(Lr) ~= "table" or type(Lr.RealmOf) ~= "function" then return nil end
+	return Lr.RealmOf(name)
+end
+local function RealmLabel(realm)
+	local Lr = ns.Layers
+	if type(Lr) == "table" and type(Lr.RealmLabel) == "function" then return Lr.RealmLabel(realm) end
+	return tostring(realm)
+end
 -- Quiet presence (1.2.5.1, Core.lua): we offer no help and answer no request (Comm.QUIET_WORDS).
 local function Quiet() return ns.QuietPresence ~= nil and ns.QuietPresence() == true end
 
@@ -287,15 +324,19 @@ function Hop.HandleAsk(dist, sender, text)
 	end)
 end
 
--- release: the addon lets the guest go after GUEST_TIME (the helper chose that).
-local function Invite(name, id, release) -- gp:hop-group
+-- release: the addon lets the guest go after GUEST_TIME (the helper chose that). other (1.5.4): the
+-- guest plays on another Forever sub-realm: he arrives only after logging out and back in, so he is
+-- kept RELOG_WINDOW instead, and the helper is told not to wait for him to show up.
+local function Invite(name, id, release, other) -- gp:hop-group
 	local target = ns.TellName(name)
 	if C_PartyInfo and C_PartyInfo.InviteUnit then C_PartyInfo.InviteUnit(target) elseif InviteUnit then InviteUnit(target) end
-	guests[ns.ShortName(name)] = { name = name, id = id or 0, t = ns.Now(), release = release and true or false }
+	guests[ns.ShortName(name)] = { name = name, id = id or 0, t = ns.Now(), release = release and true or false,
+		relog = other ~= nil or nil }
 	recent[#recent + 1] = ns.Now()
 	stats.invites = stats.invites + 1
-	ns.Print(L.HOP_INVITING:format(target))
-	ns.Log("hop: invited %s", tostring(name))
+	if other then ns.Print(L.HOP_INVITING_RELOG:format(target, math.floor(Hop.RELOG_WINDOW / 60)))
+	else ns.Print(L.HOP_INVITING:format(target)) end
+	ns.Log("hop: invited %s%s", tostring(name), other and (" (on " .. tostring(other) .. ")") or "")
 end
 
 local function SayNo(name, id)
@@ -328,7 +369,10 @@ function Hop.HandleRequest(dist, sender, text)
 	-- pinned); a member of another guild the census names gets the window, a click.
 	local wanted = ns.db.layerAutoInvite or (KingChoice() == "auto" and OnKingLayer(true))
 	local auto = wanted and Hop.Trusted(sender)
-	if auto and (OnlyGuests() or GroupAutoActive()) then return Invite(sender, id, true) end
+	-- (1.5.4) An asker on another Forever sub-realm arrives only after logging out and back in: his
+	-- window says so, and he is kept RELOG_WINDOW (Invite).
+	local other = Hop.SubRealmOf(sender)
+	if auto and (OnlyGuests() or GroupAutoActive()) then return Invite(sender, id, true, other) end
 	if auto then
 		stats.autoBlocked = stats.autoBlocked + 1
 		ns.Print(L.HOP_AUTO_PAUSED_GROUP)
@@ -336,13 +380,14 @@ function Hop.HandleRequest(dist, sender, text)
 	-- unvouched: the player chose not to be asked, and only Hop.Trusted brought this window up
 	-- (Answer: its no is no step towards the pause).
 	pending = { from = sender, id = id, t = ns.Now(), mapID = offer.mapID, zoneUID = offer.zoneUID,
-		unvouched = (wanted and not auto) and true or nil }
+		unvouched = (wanted and not auto) and true or nil, other = other }
 	-- In an instance or on Busy (1.1, ns.Alert): no sound and no window; they come once the player
 	-- is out, while the asker still waits (Hop.WAIT), else the request only lapses.
 	local ask = pending
+	local which = other and "OLYMPUS_HOP_REQUEST_RELOG" or "OLYMPUS_HOP_REQUEST"
 	ns.Alert("hop", "soft", { what = L.HELD_HOP:format(ns.DisplayName(sender)), key = "hop:" .. id,
 		open = function() return pending == ask and ns.Now() - ask.t <= Hop.WAIT end,
-		show = function() if pending == ask then ns.ShowDialog("OLYMPUS_HOP_REQUEST", ns.DisplayName(sender), nil, ask) end end })
+		show = function() if pending == ask then ns.ShowDialog(which, ns.DisplayName(sender), nil, ask) end end })
 	Changed()
 end
 
@@ -365,7 +410,7 @@ local function Answer(data, invite, always)
 	end
 	if invite then
 		declines = 0
-		Invite(data.from, data.id, always)
+		Invite(data.from, data.id, always, data.other)
 	else
 		SayNo(data.from, data.id)
 		-- Not now (or no answer) twice in a row: a break from requests. 1.2.1: never for a window
@@ -398,6 +443,21 @@ StaticPopupDialogs["OLYMPUS_HOP_REQUEST"] = {
 	hideOnEscape = true,
 	preferredIndex = 3,
 }
+-- (1.5.4) The same request from an asker on another Forever sub-realm: the window adds that he
+-- arrives only after logging out and back in, so the helper does not kick him for not showing up.
+StaticPopupDialogs["OLYMPUS_HOP_REQUEST_RELOG"] = {
+	text = L.HOP_REQUEST_RELOG,
+	button1 = L.HOP_INVITE,
+	button2 = L.HOP_NOT_NOW,
+	button3 = L.HOP_ALWAYS,
+	OnAccept = StaticPopupDialogs["OLYMPUS_HOP_REQUEST"].OnAccept,
+	OnAlt = StaticPopupDialogs["OLYMPUS_HOP_REQUEST"].OnAlt,
+	OnCancel = StaticPopupDialogs["OLYMPUS_HOP_REQUEST"].OnCancel,
+	timeout = Hop.POPUP_TIME,
+	whileDead = true,
+	hideOnEscape = true,
+	preferredIndex = 3,
+}
 
 ---------------------------------------------------------------------------
 -- Asking
@@ -407,6 +467,9 @@ StaticPopupDialogs["OLYMPUS_HOP_REQUEST"] = {
 local function Finish(message, fromPopup)
 	if not ask then return end
 	if not fromPopup and ask.leaveShown then ns.HideDialog("OLYMPUS_HOP_LEAVE", ask) end
+	if not fromPopup and ask.relogShown then ns.HideDialog("OLYMPUS_HOP_RELOG", ask) end
+	-- (1.5.4) The hop kept in the saved variables for the relog step is this ask's: over with it.
+	if ask.pending and ns.db then ns.db.hopPending = nil end
 	ask.phase = "done"
 	ask.result = message
 	ns.Comm.Cancel(ask)
@@ -466,10 +529,10 @@ function Hop.DiscoverySent()
 	Changed()
 end
 
-function Hop.AskDiscovered(mapID, zoneUID, label)
+function Hop.AskDiscovered(mapID, zoneUID, label, realm)
 	local previous = discoveryHandoff
 	discoveryHandoff = true
-	local result = Hop.Ask(mapID, zoneUID, label)
+	local result = Hop.Ask(mapID, zoneUID, label, realm)
 	discoveryHandoff = previous
 	return result
 end
@@ -565,8 +628,10 @@ function Hop.Next()
 	Changed()
 end
 
--- Ask for an invite to a layer (a zone and its zone UID), named for the messages.
-function Hop.Ask(mapID, zoneUID, label)
+-- Ask for an invite to a layer (a zone and its zone UID), named for the messages. realm (1.5.4):
+-- the Forever sub-realm the layer is on when it is not ours (Layers.ForMap's rows): only a helper
+-- there is taken, and the hop ends with the relog step (BeginRelog) instead of an NPC's word.
+function Hop.Ask(mapID, zoneUID, label, realm)
 	if not ns.IsMember() then return ns.Print(ns.MembersOnlyText()) end
 	-- 1.1: the moderators took this character off (net-off, Moderation.lua): nobody would answer.
 	local off = ns.Moderation.SelfOff and ns.Moderation.SelfOff()
@@ -577,7 +642,8 @@ function Hop.Ask(mapID, zoneUID, label)
 	-- A zone UID only means something in its zone: the player must be there already.
 	if ns.Layers.CurrentMap() ~= mapID then return ns.Print(L.HOP_OTHER_MAP:format(Hop.ZoneName(mapID))) end
 	local mine = ns.Layers.Mine()
-	if mine and mine.mapID == mapID and mine.zoneUID == zoneUID and ns.Now() - (mine.t or 0) <= Hop.LAYER_FRESH then
+	-- "Already there" only for a layer on our own sub-realm (1.5.4): its UID on another is another layer.
+	if realm == nil and mine and mine.mapID == mapID and mine.zoneUID == zoneUID and ns.Now() - (mine.t or 0) <= Hop.LAYER_FRESH then
 		return ns.Print(L.HOP_ALREADY)
 	end
 	if IsInGroup and IsInGroup() then return ns.Print(L.HOP_IN_GROUP) end
@@ -591,8 +657,18 @@ function Hop.Ask(mapID, zoneUID, label)
 		if wait > 0 then return ns.Print(L.HOP_WAIT:format(math.ceil(wait))) end
 	end
 	if not ns.Comm.ChannelReady() then return ns.Print(L.CHAN_NOT_READY) end
+	-- (1.5.4, the dev: the hop is experimental, and the player is told the whole flow when he clicks.)
+	-- The first ask of a session for a layer here, and the first for one on another sub-realm, show
+	-- the flow first: Ask sends it (Hop.Confirmed), Cancel sends nothing and the window comes back
+	-- at the next ask. Under the gamepad UI it is Olympus's own window, as the hop's others.
+	local kind = realm and "other" or "same"
+	if not Hop.confirmed[kind] then
+		local data = { mapID = mapID, zoneUID = zoneUID, label = label, realm = realm, kind = kind, handoff = discoveryHandoff }
+		ns.ShowDialog("OLYMPUS_HOP_CONFIRM", realm and L.HOP_CONFIRM_OTHER or L.HOP_CONFIRM_SAME, nil, data)
+		return Changed()
+	end
 	ask = {
-		id = Hop.random(1, 99999), mapID = mapID, zoneUID = zoneUID, label = label or L.LAYER_UNKNOWN,
+		id = Hop.random(1, 99999), mapID = mapID, zoneUID = zoneUID, label = label or L.LAYER_UNKNOWN, realm = realm,
 		guild = GetGuildInfo("player"), phase = "queued", sendAt = now, offers = {}, count = 0, tried = {}, tries = 0,
 		from = mine and { mapID = mine.mapID, zoneUID = mine.zoneUID },
 	}
@@ -606,6 +682,29 @@ function Hop.Ask(mapID, zoneUID, label)
 	end
 	Hop.SendAsk()
 end
+
+-- The experimental hop's window answered with Ask: this kind of ask (a layer here, or one on another
+-- sub-realm) goes without the window for the rest of the session, this one now. A discovery's
+-- hand-over (Hop.AskDiscovered) stays one: the public question it came from paid the channel gap.
+function Hop.Confirmed(data)
+	if type(data) ~= "table" or type(data.kind) ~= "string" then return end
+	Hop.confirmed[data.kind] = true
+	if data.handoff then return Hop.AskDiscovered(data.mapID, data.zoneUID, data.label, data.realm) end
+	return Hop.Ask(data.mapID, data.zoneUID, data.label, data.realm)
+end
+
+StaticPopupDialogs["OLYMPUS_HOP_CONFIRM"] = {
+	text = "%s",
+	button1 = L.HOP_CONFIRM_ASK,
+	button2 = L.HOP_CONFIRM_CANCEL,
+	OnAccept = function(self, data) ns.SafeCall("hop confirm", Hop.Confirmed, data or self.data) end,
+	-- Cancel, Escape, or another window taking its place: nothing was asked.
+	OnCancel = function() end,
+	timeout = 0,
+	whileDead = true,
+	hideOnEscape = true,
+	preferredIndex = 3,
+}
 
 function Hop.SendAsk()
 	if not ask or ask.phase ~= "queued" then return end
@@ -663,6 +762,14 @@ function Hop.HandleOffer(dist, sender, text)
 	if ask.offers[sender] or ask.count >= Hop.MAX_OFFERS then return end
 	-- 1.2.1: only a member's offer (Member): the ask's id is on the channel for anyone to answer.
 	if not Member(sender) then stats.strangers = (stats.strangers or 0) + 1 return end
+	-- (1.5.4) The ask names a zone UID, which on another Forever sub-realm is another layer: for a
+	-- layer there only a helper his hello places there (Hop.SubRealmOf), for one here none his hello
+	-- places elsewhere. Anyone else's offer would group the asker on the wrong layer.
+	local his = Hop.SubRealmOf(sender)
+	if (ask.realm ~= nil and his ~= ask.realm) or (ask.realm == nil and his ~= nil) then
+		stats.elsewhere = (stats.elsewhere or 0) + 1
+		return
+	end
 	ask.offers[sender] = { name = sender, group = math.min(tonumber(group), 40), load = math.min(tonumber(load), 99), t = ns.Now(),
 		trusted = Hop.Trusted(sender) }
 	ask.count = ask.count + 1
@@ -729,7 +836,7 @@ end
 -- Out of the helper's group, the hop done (a layer stays after the group is left).
 local function Leave(message)
 	Hop.OnRoster()
-	if not ask or ask.phase ~= "joined" then return end
+	if not ask or (ask.phase ~= "joined" and ask.phase ~= "relog") then return end
 	LeaveGroup()
 	Finish(message)
 end
@@ -767,9 +874,128 @@ StaticPopupDialogs["OLYMPUS_HOP_LEAVE"] = {
 	preferredIndex = 3,
 }
 
+---------------------------------------------------------------------------
+-- (1.5.4) A hop to a layer on another Forever sub-realm: the relog step
+---------------------------------------------------------------------------
+
+-- The hop ends without touching the group: the window over, the group gone or another's.
+local function EndRelog(message)
+	if not ask or ask.phase ~= "relog" then return end
+	stats.relogEnded = (stats.relogEnded or 0) + 1
+	Finish(message)
+end
+
+-- In the helper's group, he on another sub-realm: no NPC can confirm the move before the player
+-- logs out and back in (or restarts the game), so the pending hop goes to the saved variables,
+-- which a logout, a restart and a /reload keep, and the player is told what to do (the window:
+-- OK, or Leave group to give the hop up).
+local function BeginRelog(helper, realm)
+	local now = ns.Now()
+	ask.phase, ask.realm, ask.pending, ask.joined = "relog", realm, true, now
+	ns.db.hopPending = { me = ns.ShortName(ns.me or ""), helper = ns.ShortName(helper), mapID = ask.mapID,
+		zoneUID = ask.zoneUID, realm = realm, from = ns.realm, t = now, id = ask.id, label = ask.label }
+	stats.relogs = (stats.relogs or 0) + 1
+	ns.Print(L.HOP_JOINED_RELOG:format(ns.DisplayName(helper)))
+	ns.Log("hop: in %s's group on %s (ours %s): the relog step", tostring(helper), tostring(realm), tostring(ns.realm))
+	ask.relogShown = true
+	ns.PlayAlert("soft", "hop")
+	ns.ShowDialog("OLYMPUS_HOP_RELOG", ns.DisplayName(helper), nil, ask)
+	Changed()
+end
+
+-- Every second while the hop waits for the relog, and at each roster change. Over after
+-- RELOG_WINDOW, and once the player is out of the helper's group (the group is never left for him:
+-- it may be one he is in for other reasons). Back in the game on the helper's sub-realm: the usual
+-- confirmation (two NPCs on the layer, OnLayer) and the leave, counted from now. Back on the old
+-- one (a logout alone does not always move the player, a restart does): one line, the wait goes on.
+local function CheckRelog(now)
+	if not ask or ask.phase ~= "relog" then return end
+	if now - ask.joined > Hop.RELOG_WINDOW then return EndRelog(L.HOP_RELOG_EXPIRED:format(math.floor(Hop.RELOG_WINDOW / 60))) end
+	-- Just logged in: the group and its names come a moment later.
+	local fresh = ask.resumedAt ~= nil and now - ask.resumedAt < Hop.RELOG_GRACE
+	local gone = L.HOP_RELOG_NO_GROUP:format(ns.DisplayName(ask.helper))
+	if not (IsInGroup and IsInGroup()) then
+		if fresh then return end
+		return EndRelog(gone)
+	end
+	local names = GroupNames()
+	if not names[ns.ShortName(ask.helper)] then
+		for name in pairs(names) do
+			if name ~= "" and name ~= (UNKNOWNOBJECT or "Unknown") then return EndRelog(gone) end -- (another group)
+		end
+		if ask.resumedAt and not fresh then return EndRelog(gone) end
+		return -- (nobody named yet: a moment later)
+	end
+	if not ask.resumedAt then return end -- (still the session he joined in: the logout is his to do)
+	if ns.realm ~= ask.realm then
+		if not ask.saidOld then
+			ask.saidOld = true
+			ns.Print(L.HOP_RELOG_STILL)
+		end
+		return
+	end
+	-- On the helper's sub-realm: from here the hop is any other, the confirmation counted from now.
+	ask.phase, ask.joined, ask.t = "joined", now, now
+	if ask.relogShown then ns.HideDialog("OLYMPUS_HOP_RELOG", ask); ask.relogShown = nil end
+	stats.arrived = (stats.arrived or 0) + 1
+	ns.Print(L.HOP_RELOG_ARRIVED:format(ns.DisplayName(ask.helper)))
+	Changed()
+	Hop.OnLayer()
+end
+
+-- At login (and a /reload): the hop kept for the relog step, when it is this character's and its
+-- window is still open; one over the window is dropped, whoever's. Then CheckRelog, from Tick.
+function Hop.Resume()
+	local p = ns.db and ns.db.hopPending
+	if type(p) ~= "table" then return false end
+	local now, me = ns.Now(), ns.ShortName(ns.me or "")
+	if type(p.t) ~= "number" or now - p.t > Hop.RELOG_WINDOW or type(p.helper) ~= "string"
+		or type(p.mapID) ~= "number" or type(p.zoneUID) ~= "number" then
+		ns.db.hopPending = nil
+		if p.me == me then ns.Print(L.HOP_RELOG_EXPIRED:format(math.floor(Hop.RELOG_WINDOW / 60))) end
+		return false
+	end
+	if p.me ~= me then return false end -- (another character's: his, while its window lasts)
+	if ask and ask.phase ~= "done" then return false end
+	local helper = ns.FullName(p.helper) -- (as the game names him here: a whisper of his matches, HandleRelease)
+	ask = {
+		id = p.id or 0, mapID = p.mapID, zoneUID = p.zoneUID, label = p.label or L.LAYER_UNKNOWN, realm = p.realm,
+		guild = GetGuildInfo("player"), phase = "relog", helper = helper, joined = p.t, t = p.t, sendAt = p.t,
+		offers = {}, count = 0, tried = { [helper] = true }, tries = 1, pending = true, resumedAt = now, from = p.from,
+	}
+	stats.resumed = (stats.resumed or 0) + 1
+	ns.Log("hop: resumed the hop to map %d zone %d on %s (we are on %s)", p.mapID, p.zoneUID, tostring(p.realm), tostring(ns.realm))
+	Changed()
+	return true
+end
+
+StaticPopupDialogs["OLYMPUS_HOP_RELOG"] = {
+	text = L.HOP_RELOG,
+	button1 = L.HOP_RELOG_OK,
+	button2 = L.HOP_LEAVE,
+	OnAccept = function() end, -- (OK: the player goes to log out; the hop waits for him)
+	-- Leave group, the button alone (Escape, a timeout or another window taking its place leave the
+	-- group alone): the hop is given up here, the group left as the hop's own.
+	OnCancel = function(self, data, reason)
+		if reason ~= "clicked" then return end
+		ns.SafeCall("hop relog leave", function()
+			if not ask or ask.phase ~= "relog" or (data or (self and self.data)) ~= ask then return end
+			LeaveGroup()
+			stats.relogEnded = (stats.relogEnded or 0) + 1
+			Finish(L.HOP_DONE, true)
+		end)
+	end,
+	timeout = 0,
+	whileDead = true,
+	hideOnEscape = true,
+	noCancelOnEscape = true,
+	preferredIndex = 3,
+}
+
 function Hop.OnRoster()
 	if groupAuto and not (IsInGroup and IsInGroup()) then groupAuto = nil end -- (the group "Always invite" covered ended)
 	if not ask or ask.phase == "done" then return end
+	if ask.phase == "relog" then return CheckRelog(ns.Now()) end
 	local grouped = IsInGroup and IsInGroup()
 	if ask.phase == "joined" then
 		if not grouped then return Finish() end
@@ -795,10 +1021,15 @@ function Hop.OnRoster()
 	-- invite we or the player accepted made this group. Anyone else named: not the hop's.
 	if not helper and not named and (ask.phase == "accepted" or ask.invitedBy) then helper = ask.invitedBy or ask.helper end
 	if not helper then return Finish() end
-	ask.helper, ask.phase, ask.joined = helper, "joined", ns.Now()
+	ask.helper, ask.joined = helper, ns.Now()
 	ns.Comm.Cancel(ask)
 	fails = 0 -- someone could help: the usual wait again
 	stats.joins = stats.joins + 1
+	-- (1.5.4) The helper on another Forever sub-realm (the layer's, or the one his hello named): no
+	-- NPC can confirm the move before the player logs out and back in. The relog step instead.
+	local other = ask.realm or Hop.SubRealmOf(helper)
+	if other then return BeginRelog(helper, other) end
+	ask.phase = "joined"
 	ns.Print(L.HOP_JOINED:format(ns.DisplayName(helper)))
 	Changed()
 	-- NPC/nameplate events can arrive before GROUP_ROSTER_UPDATE.
@@ -829,16 +1060,18 @@ end
 
 -- The helper's addon lets us go (their guests stay GUEST_TIME at most).
 function Hop.HandleRelease(dist, sender, text)
-	if dist ~= "WHISPER" or not ask or ask.phase ~= "joined" or not ask.helper then return end
+	if dist ~= "WHISPER" or not ask or (ask.phase ~= "joined" and ask.phase ~= "relog") or not ask.helper then return end
 	if tonumber(text:match("^LX~(%d+)$")) ~= ask.id then return end
 	if ns.FullName(sender) ~= ask.helper then return end -- (1.2.1: the whole name, not a namesake's)
 	Leave(L.HOP_RELEASED:format(ns.DisplayName(ask.helper)))
 end
 
--- Helping on our own: the guests whose time is up are asked to leave (their addon does it).
+-- Helping on our own: the guests whose time is up are asked to leave (their addon does it). A guest
+-- from another Forever sub-realm (1.5.4) has RELOG_WINDOW: he arrives only after logging out and in.
 local function ReleaseGuests(now)
 	for short, g in pairs(guests) do
-		if g.release and not g.released and now - g.t >= Hop.GUEST_TIME then
+		local limit = g.relog and Hop.RELOG_WINDOW or Hop.GUEST_TIME
+		if g.release and not g.released and now - g.t >= limit then
 			g.released = true
 			-- Only those still with us (a whisper to someone gone prints an error).
 			if GroupNames()[short] then
@@ -846,7 +1079,7 @@ local function ReleaseGuests(now)
 				ns.Comm.Whisper(g.name, ("LX~%d"):format(g.id))
 			end
 		end
-		if now - g.t >= Hop.GUEST_TIME * 3 then guests[short] = nil end
+		if now - g.t >= limit + Hop.GUEST_TIME * 2 then guests[short] = nil end
 	end
 end
 
@@ -867,7 +1100,7 @@ function Hop.Tick()
 		if not next(askers) then heard[key] = nil end
 	end
 	if not ask or ask.phase == "done" then return end
-	if ask.phase ~= "joined" then
+	if ask.phase ~= "joined" and ask.phase ~= "relog" then
 		if not Current(ask) or (IsInInstance and IsInInstance()) then return Finish(L.HOP_CONTEXT_CHANGED) end
 		if IsInGroup and IsInGroup() then Hop.OnRoster() end
 		if ask.phase == "done" then return end
@@ -887,6 +1120,8 @@ function Hop.Tick()
 	elseif ask.phase == "joined" then
 		Hop.OnLayer()
 		if ask.phase == "joined" and now - ask.joined >= Hop.JOIN_WAIT then OfferLeave() end
+	elseif ask.phase == "relog" then
+		CheckRelog(now)
 	end
 end
 
@@ -903,9 +1138,57 @@ end
 -- and Layers.lua call Hop.HeardKing for the character pinned by name, ns.IsKingCharacter).
 -- A census report is anyone's word: one forged report from another realm of our group placed him
 -- there ("he plays on another realm"), and his layer could not be asked for. This session's alone.
-local kingFrom
+-- (1.5.4) And when: a word of his own (his presence T1~o, his crown, his layer, his commands, his
+-- global census snapshot, each held by his quiet presence: Comm.QUIET_WORDS) heard within
+-- KING_HEARD_FRESH says he is online (Hop.SignedKingPresence). Two of his presence periods and a minute.
+Hop.KING_HEARD_FRESH = 11 * 60
+local kingFrom, kingHeardAt
 function Hop.HeardKing(sender)
-	if type(sender) == "string" and ns.IsKingCharacter(sender) then kingFrom = ns.FullName(sender) end
+	if type(sender) == "string" and ns.IsKingCharacter(sender) then kingFrom, kingHeardAt = ns.FullName(sender), ns.Now() end
+end
+
+-- (1.5.4, the dev's report of 2026-11-08: "não tá mostrando quando ele tá online") The presence of the
+-- King the author's signed list names (ns.KingCharacter), whatever his guild and rank. On Forever he
+-- is a Captain of another Olympus guild and no guild there is named Olympus, so the King guild's
+-- leader flag (Hop.King's loop below) and /who (Views.SeenNow, a click's 50 names) never saw him.
+-- Returns online, days, dim, at, as Views.PresenceNow does:
+--   our own client, or his own word heard within KING_HEARD_FRESH: online (all that `strict` takes);
+--   else a fresh report naming him its leader or a Captain (the census has him only at those ranks),
+--   the newest, or our own roster (his guildmates; not while his private presence told our guild);
+--   else his word heard earlier: nil and when ("online <age> ago"); nothing known: nil (no claim).
+function Hop.SignedKingPresence(strict)
+	local pin = ns.KingCharacter()
+	if not pin then return nil end
+	if ns.IsKingCharacter(ns.me) then return true, 0, false end
+	local now = ns.Now()
+	if kingHeardAt and now - kingHeardAt <= Hop.KING_HEARD_FRESH then return true, 0, false end
+	if not strict then
+		-- (His name's first letters first: the census holds hundreds of names, the realm check is dearer.)
+		local function His(name, realm)
+			return type(name) == "string" and name:sub(1, #pin) == pin and ns.IsKingCharacter(ns.FullName(ns.Normal(name), realm)) == true
+		end
+		local P = ns.PrivatePresence
+		for _, m in ipairs(ns.Roster and ns.Roster.online or {}) do
+			if type(m) == "table" and His(m.name) and not (P and P.Offline and P.Offline(ns.FullName(ns.Normal(m.name)))) then
+				return true, 0, false
+			end
+		end
+		local best
+		for _, g in pairs(ns.rdb.guilds or {}) do
+			local t = type(g) == "table" and tonumber(g.t) or nil
+			if t and now - t <= ns.Data.FRESH and (not best or t > best.t) and ns.ReportInGroup(g, ns.group) then
+				local realm = g.realm or ns.realm
+				if His(g.leader, realm) then best = { t = t, online = g.leaderOnline == true, days = tonumber(g.leaderDays) } end
+				for _, o in ipairs(type(g.officers) == "table" and g.officers or {}) do
+					if type(o) == "table" and His(o.name, realm) then best = { t = t, online = o.online == true, days = tonumber(o.days) } end
+				end
+			end
+		end
+		if best and best.online then return true, 0, false end
+		if best and (not kingHeardAt or best.t >= kingHeardAt) then return false, best.days, false end
+	end
+	if kingHeardAt then return nil, nil, false, kingHeardAt end
+	return nil
 end
 
 -- The King when he is online (leader of the guild named exactly "Olympus"), and his layer
@@ -923,6 +1206,21 @@ end
 function Hop.King(strict)
 	local now = ns.Now()
 	local pin = ns.KingCharacter()
+	-- (1.5.4) Where the signed launch list names the King on Forever (King.IsKing's rule since 1.4.3:
+	-- his character, whatever his rank or guild), his own presence says he is online; his realm and
+	-- his layer from his own messages alone, as below. The loop after it looks for a guild named
+	-- exactly Olympus, which Forever's census does not have.
+	if pin ~= nil and ns.splitNames == true and ns.LaunchListHeld and ns.LaunchListHeld() and Hop.SignedKingPresence(strict) == true then
+		local at = kingFrom or (ns.IsKingCharacter(ns.me) and ns.me or nil)
+		-- (The review of the 1.5.4 candidate.) His words reach us stamped with the sub-realm of whichever
+		-- relay's client handed them on (a whisper arrives with the bare name, Relay.HandleIn stamps its
+		-- own), his layer word maybe under another (his guild's copy over GUILD, under the reader's): a
+		-- name is one across a Forever family, so his layer is his under any stamp of it. The exact
+		-- look-up alone said "layer not known" with his layer known.
+		local where = at and (ns.Layers.Of(at, true) or ns.Layers.Of(at, false))
+		return { name = ns.KingName(pin), mapID = where and where.mapID, zoneUID = where and where.zoneUID,
+			t = where and where.t, realm = at and ns.RealmOf(at) }
+	end
 	for name, g in pairs(ns.rdb.guilds or {}) do
 		if ns.IsKingGuild(name) and type(g) == "table" and g.leader
 			and now - (g.t or 0) <= ns.Data.FRESH and g.leaderOnline then
@@ -955,8 +1253,16 @@ end
 -- is pinned by name, the census). A layer is a copy of a zone inside one realm: nobody here can
 -- join his, even when his crown and his layer reach us (a channel shared across realms,
 -- Comm.ElectsAcrossRealms). Checked before his layer.
+-- (The review of the 1.5.4 candidate.) On Forever his realm is the sub-realm of whichever relay's
+-- client handed his word on (a whisper arrives with the bare name, Relay.HandleIn stamps its own),
+-- not where he plays: a sub-realm of our own family is ours here as everywhere else (ns.InGroup,
+-- Relay.Deliver, the roster). Compared as a plain string, it refused the hop to his layer for every
+-- member whose sub-realm was not the relay's, "another realm" the relay's. A stamp of another
+-- family, and off Forever any other realm, is another realm as before.
 function Hop.KingOtherRealm(k)
-	return k ~= nil and k.realm ~= nil and ns.realm ~= nil and ns.realm ~= "?" and k.realm ~= ns.realm
+	if k == nil or k.realm == nil or ns.realm == nil or ns.realm == "?" or k.realm == ns.realm then return false end
+	if ns.splitNames == true and ns.InGroup(k.realm) then return false end
+	return true
 end
 
 -- Why nobody can ask for the King's layer now (1.0.0), instead of "try again in a minute"
@@ -1195,6 +1501,7 @@ function Hop.ProgressText()
 	if ask.phase == "requesting" then return L.HOP_SENDING_HELPER:format(ns.DisplayName(ask.helper)) end
 	if ask.phase == "requested" then return L.HOP_PROGRESS_INVITE:format(ns.DisplayName(ask.helper), ask.tries, Hop.TRIES) end
 	if ask.phase == "accepted" then return L.HOP_PROGRESS_GROUP:format(ns.DisplayName(ask.helper)) end
+	if ask.phase == "relog" then return L.HOP_PROGRESS_RELOG:format(ns.DisplayName(ask.helper)) end
 	return L.HOP_PROGRESS_LAYER:format(ask.zoneUID, Hop.ZoneName(ask.mapID))
 end
 
@@ -1207,13 +1514,20 @@ function Hop.Command(rest)
 	if rest == "status" then
 		if ns.LOCAL_BUILD then ns.Print("Olympus " .. ns.VERSION .. " / " .. ns.LOCAL_BUILD) end
 		ns.Print(Hop.ProgressText())
+		-- (1.5.4) The hop waiting for the relog: its layer's sub-realm against ours, for the dev's checks.
+		if ask and ask.phase == "relog" then
+			ns.Print(L.HOP_STATUS_RELOG:format(ask.label, RealmLabel(ask.realm), RealmLabel(ns.realm), math.max(0, math.floor(ns.Now() - (ask.joined or 0)))))
+		end
 		local mine = ns.Layers.Mine()
 		if mine and ns.Layers.CurrentMap() == mine.mapID then
 			ns.Print(L.HOP_LOCAL_READING:format(mine.zoneUID, Hop.ZoneName(mine.mapID), math.max(0, ns.Now() - (mine.t or 0))))
 		else ns.Print(L.HOP_NEED_NPC) end
 		return ns.Print(ns.Comm.ChannelReady() and L.HOP_NETWORK_READY or L.CHAN_NOT_READY)
 	end
-	if rest ~= "list" and rest ~= "any" and not rest:match("^#?%d+$") then return ns.Print(L.HELP_HOP) end
+	-- "<uid>" a layer here (or the one of that UID known, when none is here); "<uid>@<label>" (1.5.4) a
+	-- same-UID layer on another sub-realm, by the label the list shows it with ("@realm5").
+	local uid, at = rest:match("^#?(%d+)@?(%w*)$")
+	if rest ~= "list" and rest ~= "any" and not uid then return ns.Print(L.HELP_HOP) end
 	local mapID = ns.Layers.CurrentMap()
 	local layers = mapID and ns.Layers.ForMap(mapID) or {}
 	if rest == "list" then
@@ -1224,30 +1538,40 @@ function Hop.Command(rest)
 		end
 		return ns.Print(#layers > 0 and L.HOP_LIST_HINT or L.HOP_NO_ALTERNATIVE)
 	end
-	local uid = tonumber(rest:match("^#?(%d+)$"))
 	local chosen
 	if rest == "any" then
 		local mine = ns.Layers.Mine()
 		if not mine or mine.mapID ~= mapID or ns.Now() - (mine.t or 0) > Hop.LAYER_FRESH then return ns.Print(L.HOP_NEED_NPC) end
+		-- (A layer on another sub-realm is never the quick alternative: it ends with a relog.)
 		for _, layer in ipairs(layers) do
-			if layer.zoneUID ~= mine.zoneUID and ns.Now() - (layer.lastSeen or 0) <= Hop.LAYER_FRESH
+			if layer.zoneUID ~= mine.zoneUID and not layer.realm and ns.Now() - (layer.lastSeen or 0) <= Hop.LAYER_FRESH
 				and (not chosen or layer.lastSeen > chosen.lastSeen
 					or (layer.lastSeen == chosen.lastSeen and layer.zoneUID < chosen.zoneUID)) then chosen = layer end
 		end
 	else
-		for _, layer in ipairs(layers) do if layer.zoneUID == uid then chosen = layer; break end end
+		uid = tonumber(uid)
+		for _, layer in ipairs(layers) do
+			if layer.zoneUID == uid and ((at == "" and not layer.realm) or (at ~= "" and layer.realm ~= nil and RealmLabel(layer.realm):lower() == at)) then
+				chosen = layer
+				break
+			end
+		end
+		if not chosen and at == "" then
+			for _, layer in ipairs(layers) do if layer.zoneUID == uid then chosen = layer; break end end
+		end
 	end
 	if not chosen then return ns.Print(L.HOP_NO_ALTERNATIVE) end
-	Hop.Ask(mapID, chosen.zoneUID, ns.Layers.Name(chosen))
+	Hop.Ask(mapID, chosen.zoneUID, ns.Layers.Name(chosen), chosen.realm)
 end
 
 function Hop.StatusLine()
 	local s = stats
 	local n = 0
 	for _ in pairs(guests) do n = n + 1 end
-	return ("help=%s auto=%s group-auto=%s king=%s  |  asks=%d offers=%d requests=%d invites=%d noes=%d joins=%d moves=%d releases=%d guests=%d auto-paused=%d  |  now=%s | %s"):format(
+	return ("help=%s auto=%s group-auto=%s king=%s  |  asks=%d offers=%d requests=%d invites=%d noes=%d joins=%d moves=%d releases=%d guests=%d auto-paused=%d relogs=%d resumed=%d arrived=%d  |  now=%s | %s"):format(
 		tostring(Hop.Helps()), tostring(ns.db.layerAutoInvite == true), tostring(GroupAutoActive()), tostring(KingChoice() or "-"),
 		s.asks, s.offers, s.requests, s.invites, s.noes, s.joins, s.moves, s.releases, n, s.autoBlocked,
+		s.relogs or 0, s.resumed or 0, s.arrived or 0,
 		ask and ask.phase or "-", Hop.ProgressText())
 end
 
@@ -1304,7 +1628,7 @@ function Hop.Reset()
 	lastOffer, declines, pausedUntil = -math.huge, 0, -math.huge
 	wipe(offered); wipe(answeredAt); wipe(recent); wipe(guests)
 	for k in pairs(stats) do stats[k] = 0 end
-	kingFrom = nil
+	kingFrom, kingHeardAt = nil, nil
 end
 
 ns.Comm.Handle("LQ", function(...) Hop.HandleAsk(...) end)
@@ -1318,5 +1642,7 @@ ns.On("LAYERS_CHANGED", function() ns.SafeCall("hop layer", Hop.OnLayer) end)
 ns.On("LOGIN", function()
 	ns.RegisterEvent("PARTY_INVITE_REQUEST", function(name) Hop.OnInvite(ns.Normal(name)) end)
 	ns.RegisterEvent("GROUP_ROSTER_UPDATE", function() Hop.OnRoster() end)
+	-- (1.5.4) A hop kept for the relog step: taken up again here, finished by the ticks below.
+	ns.SafeCall("hop resume", Hop.Resume)
 	ns.Every(1, "hop", Hop.Tick)
 end)

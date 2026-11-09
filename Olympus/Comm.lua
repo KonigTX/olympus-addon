@@ -166,6 +166,28 @@ function Comm.PeerVersion(name)
 	return version, at
 end
 
+-- (1.5.4, the layer hop across Forever's sub-realms) The realm this guildmate's last hello named
+-- (H1's second field), and when it was heard; nil when none was heard this session or his version
+-- names none ("old"). By the whole name first, else by the short name folded, the newest: on
+-- Forever the server stamps a guildmate's words with the reader's own sub-realm, never his, so his
+-- hello is the one word that says where he plays (Layers.RealmOf, Hop.SubRealmOf).
+function Comm.PeerRealm(name)
+	if type(name) ~= "string" or name == "" then return nil end
+	local full = ns.FullName(ns.Normal(name))
+	local peer, at = nil, nil
+	if peers[full] then
+		peer, at = full, peers[full]
+	else
+		local short = ns.Fold(ns.ShortName(full))
+		for candidate, t in pairs(peers) do
+			if ns.Fold(ns.ShortName(candidate)) == short and (not at or t > at) then peer, at = candidate, t end
+		end
+	end
+	local realm = peer and peerRealm[peer]
+	if type(realm) ~= "string" or realm == "old" then return nil end
+	return realm, at
+end
+
 -- Guild peers counted now, by the realm their hello named.
 local function PeerRealms(now)
 	local out = {}
@@ -202,6 +224,8 @@ function Comm.Stats()
 		electAll = Comm.ElectsAcrossRealms(now), quietAfter = Comm.QuietAfter(now), presence = Comm.PresenceRealms(now),
 		-- 1.2.5.1: quiet presence on, and how many of our words it held (Comm.QuietHolds).
 		quietPresence = Quiet(), quietHeld = stats.quiet or 0,
+		-- (1.5.4) Words dropped at the door from clients marked as modified builds (Builds.lua).
+		quarantined = stats.quarantined or 0,
 		-- 1.4.0: the game's "not now" (a throttle, a lockdown): sends kept for another try, sends
 		-- held back by a lockdown, and whether the queue is held now.
 		retried = stats.retried or 0, lockHeld = stats.locked or 0, held = heldSince ~= nil,
@@ -209,6 +233,8 @@ function Comm.Stats()
 		-- 1.4.1: the channel lane we are on, refusals counted towards the next, moves made.
 		lane = Lane(), laneRefused = laneRefused, laneMoves = stats.lanes or 0,
 		peerLanes = (function() local n = {} for name, l in pairs(peerLane) do n[#n + 1] = ns.DisplayName(name) .. ":" .. l end table.sort(n) return n end)(),
+		-- 1.5.4: lists heard (Comm.SendList's envelope), the words they carried, lists dropped whole.
+		lists = stats.lists or 0, listWords = stats.listWords or 0, listsBad = stats.listsBad or 0, listsSplit = stats.listsSplit or 0,
 	}
 end
 
@@ -464,7 +490,17 @@ end
 --   logged; any member's ask; a verifier's client's answer with the words and the guilds' starts).
 --   1.4.3, Relay RL RM RG RY RX (Relay.lua: what the channel carried, by whisper where Forever delivers
 --   nothing on it: origin to relay, relay to each guild's reporter, reporter to its guild over GUILD,
---   the relay's answer to a ping, and 1.4.6 a relay's copy to the other relays).
+--   the relay's answer to a ping, and 1.4.6 a relay's copy to the other relays); 1.5.4 RW (guild
+--   verification between relays alone: a verifier's decision, an ask, an answer to a relay's ask).
+--   1.5.4, Relay RI RU (Relay.lua: a client's presentation of its version to a relay, and the relay
+--   rules the author's client makes and the relays keep and hand on).
+--   1.5.4, lists: Comm LS (words of one kind packed as one word where the relay carries the channel,
+--   Comm.SendList: the Church's public rows, the guild masters' nominees, the shared block terms;
+--   each receiver hands the words inside to their own handler, one by one, as if each had come on
+--   its own).
+--   1.5.4, modified builds: Builds BD (a guild master's, an officer's or a councillor's sighting of a
+--   client whose version is no release, over GUILD and on the channel; the record the right-click
+--   menu and /oly builds show, and the lock on such a client's words).
 local handlers = {}
 -- 1.1 (Moderation.lua): a client the moderators took off (net-off) sends none of what they hide.
 local function Held(msg)
@@ -489,6 +525,7 @@ Comm.QUIET_WORDS = {
 	"^LY~[RX]~",    -- an answer about the King's layer, or its withdrawal (HopSightings.lua)
 	"^PS~[RBXW]~",  -- a player-sighting answer, or its withdrawal (PlayerSightings.lua)
 	"^T1~[PQ]~",    -- the King's crown on the map, or its removal (King.lua)
+	"^T1~o~",       -- (1.5.4) the King's presence (King.lua)
 	"^CG~%d+~S~",   -- a global census snapshot (Data.lua)
 	"^CX~%d+~S~",   -- carried origin totals or guild detail (Data.lua)
 	"^V[248]~",     -- a roll call's answer, the author's presence, a version check's answer (Workshop.lua, Versions.lua)
@@ -577,8 +614,9 @@ end
 Comm.pieceHooks = {}
 -- Long payloads (> 255 bytes) go through the same chunking as reports; urgent ones (a
 -- question to the army) ahead of the census, their pieces still in order. On the channel, or
--- over GUILD (1.0.0), where only the types in GUILD_PIECES are put together again.
-function Comm.SendChunked(payload, urgent, dist, done, options)
+-- over GUILD (1.0.0), where only the types in GUILD_PIECES are put together again. key (1.5.4,
+-- Comm.SendList): a newer payload of the key takes a waiting one's place, as Comm.Send's does.
+function Comm.SendChunked(payload, urgent, dist, done, options, key)
 	dist = dist == "GUILD" and "GUILD" or "CHANNEL"
 	if type(payload) ~= "string" then return Refuse(done, "size") end
 	if Held(payload) then return Refuse(done, "held") end
@@ -594,8 +632,120 @@ function Comm.SendChunked(payload, urgent, dist, done, options)
 		guard = function()
 		return not Held(payload) and not QuietHolds(payload) and (not guard or guard() == true)
 	end }
-	return Comm.SendBatch(dist, Codec.Chunk(payload, tostring(msgId)), nil, nil, urgent, done, guarded)
+	return Comm.SendBatch(dist, Codec.Chunk(payload, tostring(msgId)), key, nil, urgent, done, guarded)
 end
+
+-- (1.5.4) A list of words of one kind as one word. The Church's public rows first (Count.SendPublic:
+-- up to 22 rows of two rankings, every half hour): on Forever each row went by the relay on its own, and
+-- there another client's words pass a reporter's trickle one by one, keyed by their type in the
+-- relay's queue (a newer row took the waiting row's place), so a reporter got one to four rows of the
+-- 22, and the Church's scores were wrong in every guild but the desk's. The rows now go packed in one
+-- chunked word, LS, which the relay collects whole and hands to each reporter whole, within bounds
+-- (Relay.lua, ListSet); every receiver splits it and hands each row to its own handler as if it had
+-- come on its own from the same sender, so what each handler trusts (the Church's keeper) is asked
+-- where it always was. Where the channel works (Relay.On() false) each word goes as before, one
+-- channel message each: nothing changes on those realms, and no older client reads a list. The
+-- guild masters' nominees (NM, Nominees.Send) and the shared block terms (BW, Filter.SendAll) go
+-- the same way; another list is one line for its sender and one in Relay.LIST_KINDS.
+--   LS~1~<kind>~<n>~<word>`<word>...   kind: the words' own type (two letters); n: how many
+-- The separator is the backtick, plain text: Comm takes every control byte and the escape mark out
+-- of each message as it arrives (Codec.Plain, 0.9.2), before the pieces are put together, so the
+-- unit separator (\30) never reached a handler; the byte 255 of the first cut travels in the game's
+-- guild messages (measured in game) but that its whispers carry it, which carry the relay's lists,
+-- could not be shown before the release. No name or guild name has a backtick (the game allows
+-- neither), the block terms are letters and digits (Filter.Term), and a list with one in a word goes
+-- word by word, as any list past the bounds.
+Comm.LIST_SEP = "`"
+Comm.LIST_MAX = 64        -- words in one list at most
+Comm.LIST_WORD_MAX = 255  -- bytes of one word at most (a channel message's)
+-- The list as one word, or nil and why: a kind that is not a type (or a list's), no words, too many,
+-- a word that is not a string, empty, too long, of another kind, or holding the separator.
+function Comm.PackList(kind, words)
+	if type(kind) ~= "string" or not kind:match("^%u%w$") or kind == "LS" then return nil, "kind" end
+	if type(words) ~= "table" or #words < 1 then return nil, "empty" end
+	if #words > Comm.LIST_MAX then return nil, "count" end
+	for _, word in ipairs(words) do
+		if type(word) ~= "string" or #word == 0 or #word > Comm.LIST_WORD_MAX then return nil, "size" end
+		if word:sub(1, 3) ~= kind .. "~" then return nil, "mixed" end
+		if word:find(Comm.LIST_SEP, 1, true) then return nil, "separator" end
+	end
+	return ("LS~1~%s~%d~%s"):format(kind, #words, table.concat(words, Comm.LIST_SEP))
+end
+-- The kind and the words of a list heard, or nil and why: the same bounds, a count that does not
+-- match its words, a word of another kind.
+function Comm.UnpackList(text)
+	if type(text) ~= "string" then return nil, "shape" end
+	local kind, n, body = text:match("^LS~1~(%u%w)~(%d+)~(.*)$")
+	n = tonumber(n)
+	if not kind or kind == "LS" or not n or n < 1 or n > Comm.LIST_MAX then return nil, "shape" end
+	local words = Codec.Split(body, Comm.LIST_SEP)
+	if #words ~= n then return nil, "count" end
+	for _, word in ipairs(words) do
+		if #word == 0 or #word > Comm.LIST_WORD_MAX or word:sub(1, 3) ~= kind .. "~" then return nil, "word" end
+	end
+	return kind, words
+end
+-- Whether the list goes as one word here: where the relay carries the channel, and within the
+-- relay's pieces (Relay.LIST_MAX_PIECES) and LIST_MAX words. Else its words go one by one, as
+-- before 1.5.4 (a guild master's longest list of nominees with realms in every name, the block
+-- terms' fullest list): sent whole that way, never cut short, and counted (listsSplit).
+local function OneWord(kind, words)
+	if not RelayOn() then return nil end
+	local text, why = Comm.PackList(kind, words)
+	if not text then return nil, why end
+	local R = ns.Relay
+	local most = type(R) == "table" and tonumber(R.LIST_MAX_PIECES) or 10
+	if math.ceil(#text / Codec.CHUNK) > most then return nil, "pieces" end
+	return text
+end
+-- How many places in the queue the list takes here: its pieces as one word, or one for each word
+-- (Count.SendPublic keeps the census's room past them).
+function Comm.ListRoom(kind, words)
+	local text = OneWord(kind, words)
+	if text then return math.ceil(#text / Codec.CHUNK) end
+	return type(words) == "table" and #words or 0
+end
+-- Sends the list: as one chunked LS word where the relay carries the channel (Comm.SendChunked,
+-- never urgent), else each word as one channel message, as before. options as Comm.Send's; key:
+-- as the words were keyed before (Nominees "nominees", Filter "filterterms"), word i by key .. i,
+-- the list word by key itself, so a newer list takes a waiting one's place. True when every word
+-- was handed to the queue; false and why when the list is refused (no words, a word of another
+-- kind or with the separator).
+function Comm.SendList(kind, words, options, key)
+	local _, why = Comm.PackList(kind, words)
+	if why == "kind" or why == "empty" or why == "mixed" then return false, why end
+	local text, split = OneWord(kind, words)
+	if text then return Comm.SendChunked(text, false, "CHANNEL", nil, options, key) == true end
+	if split then
+		stats.listsSplit = (stats.listsSplit or 0) + 1
+		ns.Log("list %s: %d words (%s): one by one, past what the relay carries as one", kind, #words, split)
+	end
+	local all = true
+	for i, word in ipairs(words) do
+		if not Comm.Send("CHANNEL", word, key and (key .. i) or nil, false, false, nil, options) then all = false end
+	end
+	return all
+end
+-- A list heard: its words to their own handler, one by one, as if each had come on its own from the
+-- same sender, so each handler asks of the sender what it always asked (the Church's rows: the
+-- keeper). The sender paid the admission above once, for the whole list, and its words do not pay
+-- again (a full list is more than ADMIT_BURST). Bounds: the declared kind alone, one with a handler,
+-- LIST_MAX words of LIST_WORD_MAX bytes each, never a list in a list; anything else is dropped whole
+-- and counted (Comm.Stats: lists, listWords, listsBad). On the channel alone, where lists are sent.
+Comm.Handle("LS", function(dist, sender, text)
+	local kind, words = Comm.UnpackList(text)
+	local handler = kind and handlers[kind]
+	if dist ~= "CHANNEL" or not handler then
+		stats.listsBad = (stats.listsBad or 0) + 1
+		return
+	end
+	stats.lists = (stats.lists or 0) + 1
+	for _, word in ipairs(words) do
+		stats.listWords = (stats.listWords or 0) + 1
+		Count(stats.byType, "ch:" .. kind)
+		ns.SafeCall("list word", handler, dist, sender, word)
+	end
+end)
 function Comm.ChannelReady()
 	return channelIndex > 0 or RelayOn()
 end
@@ -690,6 +840,14 @@ local function SendNow(dist, msg, logged, whisperTo)
 	if ok and IsSuccess(res) then
 		stats.sent = stats.sent + 1
 		refusedInRow = 0
+		-- (1.5.4, the dev's live report: "No player named <a reporter> is currently playing" kept
+		-- filling his chat.) The server's line answers the whisper that actually went, and a whisper
+		-- can wait in the queue (a relay's batch behind thirty reporters' turns) far longer than the
+		-- quiet window opened when it was handed in. The window opens again now, whoever sent it.
+		if dist == "WHISPER" then
+			local A = ns.Accord
+			if type(A) == "table" and type(A.Quiet) == "function" then pcall(A.Quiet, whisperTo) end
+		end
 		if dist == "CHANNEL" then laneRefused = 0 end -- (1.4.1: the channel takes our words)
 		return true
 	end
@@ -1647,8 +1805,18 @@ local function Electable(now)
 		-- Only a peer on our lane: his hello names it (none named: the first lane).
 		local sameLane = (peerLane[name] or 0) == Lane()
 		-- (1.4.3) Where the relay carries the channel, only a peer that carries it too can report.
-		local carries = not (ns.Relay and ns.Relay.On()) or peerRelay[name] == true
-		if (benched[name] or 0) <= now and (all or ours) and not peerBank[name] and sameLane and carries then pool[name] = t end
+		local relayed = ns.Relay and ns.Relay.On()
+		local carries = not relayed or peerRelay[name] == true
+		-- (1.5.4) And such a peer whatever his sub-realm or lane: the relay reads neither, and GUILD
+		-- reaches the whole guild. Counting them split one guild into a reporter per sub-realm and
+		-- lane, each reporting the same roster and each taking the relay's registration from the
+		-- others (the dev's relay: 9 members of one guild registered in turn).
+		if relayed and carries then ours, sameLane = true, true end
+		-- (1.5.4) Never a client marked as a modified build (Builds.lua): no relay takes its
+		-- registration and nobody takes its reports, so an election that chose it reported to nobody.
+		local B = ns.Builds
+		local locked = B ~= nil and not B.missing and B.Quarantined(name) == true
+		if (benched[name] or 0) <= now and (all or ours) and not peerBank[name] and sameLane and carries and not locked then pool[name] = t end
 	end
 	return pool
 end
@@ -2012,6 +2180,17 @@ local function OnAddonMessage(prefix, text, dist, sender, target, zoneChannelID,
 		return
 	end
 	if ns.db.blocked[sender:lower()] then return end
+	-- (1.5.4) A client marked as a modified build (Builds.lua) is locked out here, as a blocked one is:
+	-- nothing of its reaches a handler, the census or the relay, but its hello and its version answer,
+	-- which clear the mark when they name a release. Our own client is never marked.
+	local B = ns.Builds
+	if B and not B.missing and B.Quarantined(sender) then
+		B.Heard(sender) -- (online: the author's update ask may go to it, Builds.Prompt)
+		if not B.Passes(text) then
+			stats.quarantined = (stats.quarantined or 0) + 1
+			return
+		end
+	end
 	if not Comm.Admit(sender, GetTime()) then return end
 	stats.recv = stats.recv + 1
 	-- Olympus Link (0.9.10; 1.4.0 its own addon, Olympus_Link): a High Councillor's addon waiting to
@@ -2071,6 +2250,10 @@ local function OnAddonMessage(prefix, text, dist, sender, target, zoneChannelID,
 		peerRealm[sender] = named
 		local version = text:match("^H1~([^~]+)")
 		peerVersion[sender] = version and (version:match("^%d+%.%d+%.%d+$") or version:match("^%d+%.%d+%.%d+%.%d+$")) and version or "?"
+		-- (1.5.4) The version as the hello says it, to the builds' record (Builds.lua): a form that is
+		-- no release marks a modified build and locks its words out; a release clears the mark.
+		local B = ns.Builds
+		if B and not B.missing then B.Hello(sender, version or "", now) end
 		local sealed = text:match("^H1~[^~]*~[^~]*~([^~]*)")
 		peerSealed[sender] = (sealed == "s" or sealed == "p") and sealed or nil
 		peerZone[sender] = text:match("^H1~[^~]*~[^~]*~[^~]*~([^~]*)") == "z" or nil

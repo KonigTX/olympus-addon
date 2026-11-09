@@ -497,7 +497,9 @@ opened by a current signed issuer or the addon's author remains live.
 
 `handle:StartProfileSession(style)` asks the host to open the short shared session and returns
 `true`, or `false` and a reason. Opening is restricted to a current signed issuer or the addon's author. The host renews
-the session every 10 seconds while eligible; a missed lease expires after about 32 seconds.
+the session every 10 seconds while eligible; a missed lease expires after about 32 seconds. On WoW:
+Forever, where the relays carry the session to other guilds once a minute, the other clients keep
+a session they heard for about 150 seconds after its last renewal.
 Only one API owner can hold the local outgoing session at a time.
 
 `handle:StopProfileSession()` closes the session owned by this handle. It remains available after
@@ -567,7 +569,8 @@ before it succeeds counts the player online on other clients for up to 12 minute
 
 While it is on, `StartProfileSession` and `SetProfileEffect` return `false, "quiet"` for anything
 new, and a session or presentation already live on this client stops renewing on the others: they
-drop it after about 32 seconds, as after a logout, and it renews again once quiet presence is off.
+drop it after about 32 seconds (a session, on WoW: Forever, after about 150 seconds), as after a
+logout, and it renews again once quiet presence is off.
 
 `handle:GetQuietPresence()` returns a fresh copy of its state, with the usual permission and rate
 checks:

@@ -63,8 +63,8 @@ for _, name in ipairs({
 	"ChatEdit_ActivateChat", "ChatEdit_DeactivateChat", "ChatFrame_RemoveChannel", "ChatFrame_AddChannel",
 	-- bindings
 	"SetBinding", "SetBindingClick", "SetOverrideBinding", "SetOverrideBindingClick", "ClearOverrideBindings",
-	-- panels
-	"ShowUIPanel", "HideUIPanel", "CloseAllWindows", "CloseSpecialWindows", "ToggleCalendar", "ToggleWorldMap",
+	-- panels (SetItemRef: the game's link window, ItemRefTooltip, from a link clicked; 1.5.4)
+	"ShowUIPanel", "HideUIPanel", "CloseAllWindows", "CloseSpecialWindows", "ToggleCalendar", "ToggleWorldMap", "SetItemRef",
 	-- the game's frame helpers
 	"RaidNotice_AddMessage", "SendMailRadioButton_OnClick", "MoneyInputFrame_SetCopper", "LoadAddOn", "ReloadUI",
 	"Screenshot", "SetCVar", "WhoFrameColumn_SetWidth", "CompactUnitFrame_UpdateName",

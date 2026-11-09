@@ -256,6 +256,42 @@ test("bridge origin metadata: preserves source scope and validation without assi
 	end)
 end)
 
+-- 1.5.4 (the dev, 2026-11-08: "só para diferenciar, para não cruzar os dados"): the Companion's
+-- origins are this side's alone (Data.Groups lists our side's rows; the section keeps to them too).
+-- Fails before: the Horde row went out among the Alliance's origins and in their sum.
+test("census continuity (1.5.4): the Horde apart: the companion's origins and their sum are this side's alone; the other side's rows stay kept", function()
+	local oldGroups, oldDetails, login = ns.db.groupCensus, ns.db.groupDetails, ns.Comm.loginAt
+	local ok, err = pcall(function()
+		With({}, function()
+			ns.db.groupCensus = {
+				["Alliance|Foreign"] = { group = "Foreign", faction = "Alliance", characters = 640, people = 600, guilds = 1, observed = NOW - 600, src = "witnessed", w = 2 },
+				["Horde|Foreign"] = { group = "Foreign", faction = "Horde", characters = 400, people = 380, guilds = 1, observed = NOW - 600, src = "witnessed", w = 2 },
+			}
+			ns.db.groupDetails = {}
+			ns.Comm.loginAt = NOW
+			local function Origins(side)
+				local origins = Data("censusOrigins")
+				local sum, foreign = 0, nil
+				for _, r in ipairs(origins.origins) do
+					eq(r.faction, side, r.group .. " among the " .. side .. "'s origins")
+					if r.counted then sum = sum + r.characters end
+					if r.group == "Foreign" then foreign = r end
+				end
+				eq(origins.characters, sum, "the sum is of this side's origins")
+				return foreign
+			end
+			local foreign = Origins("Alliance")
+			assert(foreign, "the Alliance's Foreign origin"); eq(foreign.characters, 640)
+			ns.faction = "Horde"
+			foreign = Origins("Horde")
+			assert(foreign, "the Horde's Foreign origin"); eq(foreign.characters, 400)
+			eq(ns.db.groupCensus["Alliance|Foreign"].characters, 640, "the other side's row stays kept")
+		end)
+	end)
+	ns.db.groupCensus, ns.db.groupDetails, ns.Comm.loginAt = oldGroups, oldDetails, login
+	if not ok then error(err, 0) end
+end)
+
 test("census continuity: companion exports distinct origins and dated retained counts without authority or private fields", function()
 	local oldGroups, oldDetails, login = ns.db.groupCensus, ns.db.groupDetails, ns.Comm.loginAt
 	local ok, err = pcall(function()

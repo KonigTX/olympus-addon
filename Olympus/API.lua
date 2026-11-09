@@ -1064,7 +1064,7 @@ local leaderTimer = false
 local function WatchLeaderExpiry(data)
 	if leaderTimer or not ns.After or type(data) ~= "table" or type(data.position) ~= "table" then return end
 	local seenAt = data.position.seenAt
-	local life = Has("King", "Location") and tonumber(ns.King.LOCATION_EXPIRE) or nil
+	local life = Has("King", "Location") and tonumber(ns.King.LocationExpire and ns.King.LocationExpire() or ns.King.LOCATION_EXPIRE) or nil
 	if type(seenAt) ~= "number" or not life then return end
 	local now = ns.Now and ns.Now() or 0
 	leaderTimer = true

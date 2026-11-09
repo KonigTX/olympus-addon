@@ -25,6 +25,10 @@ Effects.VERSION = 2
 Effects.HEARTBEAT = 10
 Effects.LEASE_TTL = 32
 Effects.SESSION_TTL = 32
+-- (1.5.4) Where names split (WoW: Forever) another guild's issuer's grant comes by the relay once
+-- each Relay.GRANT_EVERY (60 s; his own guild's, each beat): a grant heard there lives this long,
+-- past two such beats. The issuer's own session keeps SESSION_TTL, and off Forever nothing changes.
+Effects.SESSION_TTL_RELAYED = 150
 Effects.DISPLAY_FOR = 2.5
 -- The look the operators tuned in the effect sandbox (2026-10-19): a black winged frame with a
 -- violet glow over it, and no shade over the target's portrait.
@@ -179,6 +183,11 @@ local function AuthorizedSelf()
 	return type(ns.me) == "string" and Authorized(ns.me)
 end
 
+-- How long a grant heard from an issuer lives here (SESSION_TTL_RELAYED above).
+local function HeardSessionTTL()
+	return ns.splitNames == true and Effects.SESSION_TTL_RELAYED or Effects.SESSION_TTL
+end
+
 local function GuardedComm()
 	local C = ns.Comm
 	return type(C) == "table" and type(C.Send) == "function" and C or nil
@@ -260,8 +269,8 @@ end
 
 -- Quiet presence (1.2.5.1, Core.lua): each heartbeat says this character is online, so none goes
 -- while it is on (Comm.QUIET_WORDS), nor a stop or a close: the others drop the lease (LEASE_TTL,
--- SESSION_TTL) as after a logout. Nothing new starts meanwhile ("quiet"); what is still live here
--- beats again once it is off.
+-- SESSION_TTL; SESSION_TTL_RELAYED where names split) as after a logout. Nothing new starts
+-- meanwhile ("quiet"); what is still live here beats again once it is off.
 local function Quiet() return ns.QuietPresence ~= nil and ns.QuietPresence() == true end
 
 local function Heartbeat()
@@ -509,6 +518,8 @@ local function Prune(now)
 		for id, heard in pairs(list) do if now - heard > Effects.SESSION_TTL * 2 then list[id] = nil end end
 		if next(list) == nil then grantRetired[key] = nil end
 	end
+	-- (SESSION_TTL * 2 here and above outlasts the 60 s window Handle accepts a word's time in; it is
+	-- no grant's life. A live grant, a relayed one's SESSION_TTL_RELAYED too, keeps its issuer's order.)
 	for key, word in pairs(grantOrder) do
 		if not IssuerHasGrant(key) and (type(word.heard) ~= "number" or now - word.heard > Effects.SESSION_TTL * 2) then
 			grantOrder[key], grantRetired[key], grantOrderCount = nil, nil, grantOrderCount - 1
@@ -923,7 +934,7 @@ function Effects.Handle(dist, sender, text)
 				if heldKey ~= grantKey and Fold(grant.issuer) == key then DropGrant(heldKey) end
 			end
 			if not PutGrant({ issuer = sender, guild = word.guild, style = word.style, id = word.grantID,
-				key = grantKey, at = word.at, expires = now + Effects.SESSION_TTL }) then return Drop("full") end
+				key = grantKey, at = word.at, expires = now + HeardSessionTTL() }) then return Drop("full") end
 		end
 		Effects.Refresh()
 		return true

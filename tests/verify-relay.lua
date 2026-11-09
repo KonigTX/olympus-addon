@@ -22,6 +22,10 @@ local function World(fn)
 		local n = { c = c, deliver = deliver, sent = sent, pump = pump, sentOf = sentOf,
 			guild = guild, chat = C_ChatInfo, cursor = 0 }
 		c.clock, c.realm, c.RealmPages = now, "Realm", {}
+		-- (1.5.4) T0 is a date past the code's presentation deadline: this world runs before it (its
+		-- registrations are handed to the relays by hand, bare, ahead of any member's presentation).
+		-- The presentation and the deadline have their own suite (tests/relay-admit.lua).
+		c.Relay.PRESENT_REQUIRED_AT = T0 + 30 * 86400
 		c.rdb.guilds = { [GUILD] = { leader = MASTER, realm = "Realm" },
 			[REVOKED] = { leader = MASTER, realm = "Realm" } }
 		c.IsHighCouncillor = function(who) return c.FullName(who) == HC end
@@ -195,10 +199,12 @@ test("verification recovery: waiting for a relay cannot bypass a revoked capabil
 		eq(Send(), true); Flush()
 		eq(results[1], false); eq(carried, 0); eq(member.c.Relay.Stats().pending, 0)
 		allowed = true
-		eq(Send(), true); eq(carried, 1); eq(member.c.Relay.Stats().pending, 1)
+		-- (1.5.4) No channel text while waiting for a relay at all: Forever blocked that timer send
+		-- (ChatHall.lua says why). The held message is still checked again at the flush below.
+		eq(Send(), true); eq(carried, 0); eq(member.c.Relay.Stats().pending, 1)
 		allowed = false
 		As(member, member.deliver, "WHISPER", "Hildryn Payne-Realm", "RY~"); Flush()
-		eq(results[2], false); eq(carried, 1)
+		eq(results[2], false); eq(carried, 0)
 		eq(#member.sentOf("RL~P~X1~held-capability"), 0, "flush checks revocation again before the actual whisper")
 	end)
 end)
@@ -219,19 +225,21 @@ test("verification recovery: snapshot reservation rejects untrusted, malformed, 
 		Send(HC, "Cs:1:3:" .. first .. "x")
 		Send(HC, "Cp:2:3:" .. middle)
 		Flush(); eq(hub.c.Relay.Stats().forwarded, 4, "no unreserved fragment bypasses the exhausted trickle")
+		-- (#76) A reserved snapshot is held until every piece is here, then goes to each reporter
+		-- as one whole batch: `forwarded` counts that batch once, not each piece as it came.
 		Send(HC, "Cg:1:3:" .. first); Flush()
-		eq(hub.c.Relay.Stats().forwarded, 5)
+		eq(hub.c.Relay.Stats().forwarded, 4, "a reserved piece waits for the rest of its set")
 		Send(HC, "Cg:1:3:" .. first)
 		Send(HC, "Cg:2:4:" .. middle)
 		Send(HC, "Ch:1:3:" .. first)
-		Flush(); eq(hub.c.Relay.Stats().forwarded, 5, "one id/total per origin; repeats do not reserve twice")
+		Flush(); eq(hub.c.Relay.Stats().forwarded, 4, "one id/total per origin; repeats do not reserve twice")
 		Send(HC, "Cg:2:3:" .. middle); Send(HC, "Cg:3:3:tail"); Flush()
-		eq(hub.c.Relay.Stats().forwarded, 7, "every admitted fragment can finish")
+		eq(hub.c.Relay.Stats().forwarded, 5, "every admitted fragment can finish: the whole set, one batch")
 		Advance(61)
 		-- Exhaust the ordinary allowance again, then a new snapshot can reserve.
 		for i = 5, 8 do Send("Ordinary Member-Realm", "X1~" .. i) end
 		Send(HC, "Cn:1:3:" .. first); Flush()
-		eq(hub.c.Relay.Stats().forwarded, 12, "a new transfer is eligible after the fixed window")
+		eq(hub.c.Relay.Stats().forwarded, 9, "a new transfer is eligible after the fixed window (its set still waits for the rest)")
 	end)
 end)
 
@@ -264,17 +272,25 @@ test("verification recovery: cross-relay asks are bounded, never sent to reporte
 			As(hub, hub.deliver, "WHISPER", "Asker " .. i .. "-Realm", "RL~P~GV~1~Q~0~0~0")
 		end
 		Flush()
-		eq(#hub.sentOf("RX~P~"), 1, "one across request per cadence, not one per client")
-		eq(#hub.sentOf("RM~"), 0); eq(#other.sentOf("RM~"), 0)
-		eq(#other.sentOf("RX~"), 0, "incoming RX asks never circulate")
+		-- (1.5.4) Asks cross as RW to every relay not left out (RX reached only relays that had
+		-- answered our pings, which a relay never sends on Forever: tests/verify-mesh.lua).
+		local function Asks() return #hub.sentOf("RW~P~Asker") end
+		eq(Asks(), 1, "one across request per cadence, not one per client")
+		local function ToReporter(n, name)
+			local k = 0
+			for _, p in ipairs(n.sent) do if p.msg:find("^RM~") and ns.ShortName(p.target or "") == ns.ShortName(name) then k = k + 1 end end
+			return k
+		end
+		eq(#hub.sentOf("RM~"), 0); eq(ToReporter(other, "Reporter Two-Realm"), 0, "nor to the other relay's reporters")
+		eq(#other.sentOf("RX~") + #other.sentOf("RW~P~Asker"), 0, "incoming asks never circulate")
 		As(hub, hub.c.Verify.Ask); Flush()
 		eq(#hub.sentOf("RM~"), 0, "the relay's own ask stays off guild reporters too")
 		Advance(301)
 		As(hub, hub.deliver, "WHISPER", "Asker 1-Realm", "RL~P~GV~1~Q~0~0~0")
 		Flush()
-		eq(#hub.sentOf("RX~P~"), 2, "the same inventory can recover again after dedupe expiry")
+		eq(Asks(), 2, "the same inventory can recover again after dedupe expiry")
 		Advance(301)
 		As(hub, hub.deliver, "WHISPER", "Asker 1-Realm", "RL~P~GV~1~Q~not-a-query")
-		Flush(); eq(#hub.sentOf("RX~P~"), 2, "malformed asks never cross")
+		Flush(); eq(Asks(), 2, "malformed asks never cross")
 	end)
 end)

@@ -6,6 +6,15 @@ local L = ns.L
 -- zoneUID in the same zone share a layer. Each addon user announces its layer and rank on
 -- OlympusNet, and a layer is named after the highest ranked Olympus member on it:
 -- "Asmongold's layer". Experimental until tested on a live realm.
+--
+-- (1.5.4) WoW: Forever splits a realm group into sub-realms (CAMWOWUS2Realm1PvE, ...Realm5PvE),
+-- and a layer is a copy of a zone inside one of them: the same zone UID on another sub-realm is
+-- another layer, which a group invite alone does not reach (the dev, 2026-11-08: "o layer hop só
+-- funciona no mesmo realm, mas tem como ir lá: precisa estar no grupo, deslogar e logar"). So on
+-- Forever a layer is (zone, zone UID, sub-realm): a guildmate's word is filed under the sub-realm
+-- his hello named (Comm.PeerRealm; the server stamps his word with the reader's own sub-realm,
+-- never his), apart from a same-UID layer here, and shows with that sub-realm's label. A sender
+-- whose sub-realm is not known counts here, as before.
 
 local Layers = {}
 ns.Layers = Layers
@@ -22,9 +31,40 @@ Layers.KING_EVERY = 55
 local mine          -- { mapID, zoneUID, t }
 local lastAnnounce = 0
 local sentAt        -- when our layer last went out (Layers.SentAt: /oly status)
-local seen = {}     -- [mapID][zoneUID]["Name-Realm"] = { rank, guild, t }
-local where = {}    -- ["Name-Realm"] = { mapID, zoneUID }: each sender counts on one layer only
+-- A layer's key under its map: the zone UID (a number) for one on our own sub-realm, and
+-- "<zoneUID>@<sub-realm>" for one on another sub-realm of our Forever family (1.5.4).
+local seen = {}     -- [mapID][key]["Name-Realm"] = { rank, guild, t }
+local where = {}    -- ["Name-Realm"] = { mapID, key, zoneUID, realm }: each sender counts on one layer only
 local lastFire, fireQueued = -math.huge, false -- LAYERS_CHANGED for the announcements (Receive)
+
+local function LayerKey(zoneUID, realm)
+	if realm then return zoneUID .. "@" .. realm end
+	return zoneUID
+end
+-- A layer's zone UID and sub-realm (nil: ours) from its key.
+local function SplitKey(key)
+	if type(key) == "number" then return key, nil end
+	local uid, realm = tostring(key):match("^(%d+)@(.+)$")
+	return tonumber(uid) or tonumber(key), realm
+end
+
+-- (1.5.4) The sub-realm a layer word's sender plays on, when it is another of our Forever family
+-- than ours: the one his last hello named (Comm.PeerRealm). nil for ours, for one not known (his
+-- hello not heard yet, or an older version's that names none: counted here, as before) and off
+-- Forever, where a realm group's realms share their layers and the stamp on a name is the realm.
+function Layers.RealmOf(sender)
+	if not ns.splitNames then return nil end
+	local C = ns.Comm
+	local realm = type(C) == "table" and type(C.PeerRealm) == "function" and C.PeerRealm(sender) or nil
+	if type(realm) ~= "string" or realm == "" or realm == ns.realm then return nil end
+	return realm
+end
+
+-- The short label a sub-realm shows with ("Realm5" for CAMWOWUS2Realm5PvE; another realm as it is).
+function Layers.RealmLabel(realm)
+	if type(realm) ~= "string" then return "?" end
+	return realm:match("(Realm%d+)") or realm
+end
 
 local function ZoneUIDFromGUID(guid)
 	if not guid then return nil end
@@ -210,7 +250,8 @@ function Layers.AskChoice()
 	return true
 end
 
--- Where a player last announced their layer: { mapID, zoneUID, t } while fresh, else nil.
+-- Where a player last announced their layer: { mapID, zoneUID, t, realm } while fresh, else nil
+-- (realm, 1.5.4: the sub-realm of our Forever family it is on when not ours, Layers.RealmOf).
 -- The census and the channel may write a name with different realms: short names match too,
 -- unless `exact` (the King's: nobody else's announcement may pass for his).
 function Layers.Of(name, exact)
@@ -220,7 +261,7 @@ function Layers.Of(name, exact)
 	for sender, w in pairs(where) do
 		if sender == name or (not exact and ns.ShortName(sender) == short) then
 			local m = seen[w[1]] and seen[w[1]][w[2]] and seen[w[1]][w[2]][sender]
-			if m and now - m.t <= EXPIRE then return { mapID = w[1], zoneUID = w[2], t = m.t } end
+			if m and now - m.t <= EXPIRE then return { mapID = w[1], zoneUID = w[3], t = m.t, realm = w[4] } end
 		end
 	end
 	return nil
@@ -280,13 +321,16 @@ function Layers.Receive(sender, l)
 	local here = CurrentMap()
 	local urgent = (here and (l.mapID == here or (old and old[1] == here))) or FromKing(sender)
 	if old and seen[old[1]] and seen[old[1]][old[2]] then seen[old[1]][old[2]][sender] = nil end
-	where[sender] = { l.mapID, l.zoneUID }
+	-- (1.5.4) On another sub-realm of our Forever family (his hello's word): a layer of its own.
+	local realm = Layers.RealmOf(sender)
+	local key = LayerKey(l.zoneUID, realm)
+	where[sender] = { l.mapID, key, l.zoneUID, realm }
 	seen[l.mapID] = seen[l.mapID] or {}
-	seen[l.mapID][l.zoneUID] = seen[l.mapID][l.zoneUID] or {}
+	seen[l.mapID][key] = seen[l.mapID][key] or {}
 	-- The rank written in the message is not trusted: only verified Lords and Captains
 	-- (or ranks from our own roster) can give a layer its name.
 	local rank = ns.Data.KnownRank(sender, l.guild) or 9
-	seen[l.mapID][l.zoneUID][sender] = { rank = rank, guild = l.guild, t = ns.Now() }
+	seen[l.mapID][key][sender] = { rank = rank, guild = l.guild, t = ns.Now() }
 	if urgent then FireNow() else FireSoon() end
 end
 
@@ -314,13 +358,16 @@ local function Better(a, b, sizes)
 	return a.name < b.name
 end
 
--- Layers seen in a zone, each with its name, head count and whether we are on it.
+-- Layers seen in a zone, each with its name, head count and whether we are on it; realm (1.5.4):
+-- the sub-realm of our Forever family a layer is on when not ours (nil here), a same-UID layer
+-- there apart from one here. Our own layer is always on our sub-realm.
 function Layers.ForMap(mapID)
 	local source = seen
 	local sizes = {}
 	for _, e in ipairs(ns.Data.Summary().guilds) do sizes[e.name] = e.g.total or 0 end
 	local now, out = ns.Now(), {}
-	for zoneUID, members in pairs(source[mapID] or {}) do
+	for key, members in pairs(source[mapID] or {}) do
+		local zoneUID, realm = SplitKey(key)
 		local best, count, lastSeen = nil, 0, 0
 		for name, m in pairs(members) do
 			-- (1.1: never a name the moderators took off since, Moderation.lua.)
@@ -331,7 +378,7 @@ function Layers.ForMap(mapID)
 				if not best or Better(cand, best, sizes) then best = cand end
 			end
 		end
-		local isMine = mine and mine.mapID == mapID and mine.zoneUID == zoneUID
+		local isMine = mine and mine.mapID == mapID and realm == nil and mine.zoneUID == zoneUID
 		if isMine then
 			count = count + 1
 			lastSeen = math.max(lastSeen, mine.t or 0)
@@ -339,7 +386,7 @@ function Layers.ForMap(mapID)
 			if not best or Better(me, best, sizes) then best = me end
 		end
 		if count > 0 then
-			out[#out + 1] = { zoneUID = zoneUID, count = count, head = best, mine = isMine, lastSeen = lastSeen }
+			out[#out + 1] = { zoneUID = zoneUID, realm = realm, count = count, head = best, mine = isMine, lastSeen = lastSeen }
 		end
 	end
 	if mine and mine.mapID == mapID and not (source[mapID] and source[mapID][mine.zoneUID]) then
@@ -350,7 +397,10 @@ function Layers.ForMap(mapID)
 	end
 	table.sort(out, function(a, b)
 		if a.count ~= b.count then return a.count > b.count end
-		return a.zoneUID < b.zoneUID
+		if a.zoneUID ~= b.zoneUID then return a.zoneUID < b.zoneUID end
+		-- (The same UID here and on another sub-realm: ours first, then by the sub-realm's name.)
+		if (a.realm == nil) ~= (b.realm == nil) then return a.realm == nil end
+		return (a.realm or "") < (b.realm or "")
 	end)
 	return out
 end
@@ -379,9 +429,13 @@ function Layers.CountSharedInZone(mapID)
 	return count
 end
 
+-- A layer's name; one on another sub-realm (1.5.4) with that sub-realm's label after it,
+-- "Someone's layer [Realm5]", wherever the name shows (the Realm tab, /oly hop list, the ask).
 function Layers.Name(layer)
 	if not layer or not layer.head then return L.LAYER_UNKNOWN end
-	return L.LAYER_OF:format(layer.head.name)
+	local name = L.LAYER_OF:format(layer.head.name)
+	if layer.realm then return name .. " [" .. Layers.RealmLabel(layer.realm) .. "]" end
+	return name
 end
 
 function Layers.CurrentMap() return CurrentMap() end

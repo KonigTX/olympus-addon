@@ -73,10 +73,12 @@ approved list, it counts again, with no new version. Until a player updates, the
 such a guild off the network live.
 
 **Guild verification (launch).** A guild's guild master verifies it once, with a verifier: the King,
-a High Councillor of the signed list or the author. Each Olympus guild has a 48-hour clock from its
+a High Councillor of the signed list or the author. Each Olympus guild has a 7-day clock from its
 start: the first time a verifier's client saw it, the same on every client (each client keeps the
 earliest start a verifier's client gave, so a reinstall, a rejoin or a new guild master never
-restarts it; until one reaches it, a client counts from its own first sighting). Meanwhile its guild
+restarts it; until one reaches it, a client counts from its own first sighting). 1.5.4 started every
+guild's clock again on its release night (2026-11-09, 00:00 Brasília time): a guild seen before
+then has its 7 days from that moment (the grace was 48 hours before 1.5.4). Meanwhile its guild
 master sees **GM verification pending** (once a session, and the line on top of the Census or
 `/oly verify` opens it again) with the steps: whisper a verifier (**Whisper a verifier** writes it
 for him in Olympus's own whisper window, with a short code), or **Resend verification request**
@@ -90,7 +92,7 @@ who may not have the addon yet; **Copy the list** opens it in a window to copy f
 back. The verifiers are told once of each pending guild (and of each new guild master to check)
 and reminded 12 hours before its deadline. A verification belongs to the guild **and** its guild
 master: while the census names someone else as guild master, it lapses until the new one is
-verified, on the guild's same clock. Past 48 hours an unverified guild is overdue. Member-facing popups, chat warnings and Census
+verified, on the guild's same clock. Past its 7 days an unverified guild is overdue. Member-facing popups, chat warnings and Census
 notices are temporarily paused; the guild master still receives the verification reminder.
 The guild stays on the verifiers' list, marked overdue; and its guild master's own
 powers in Olympus wait for his verification (others take him as an officer: his public card, his
@@ -411,6 +413,21 @@ a minute". A layer is a copy of a zone inside one realm: when the census places 
 realm than yours, the line says that, even if his layer reaches your channel. The `king:` line
 of `/oly status` (and of `/oly bug`) says what your addon knows of him: online and how sure,
 his realm, his layer and his crown, and how long ago each was heard.
+
+**On WoW: Forever (1.5.4, experimental).** Forever splits a realm group into sub-realms, and a
+group invite alone does not move you between them. A guildmate's layer on another sub-realm is
+listed apart from a same-numbered layer on yours, with that server's label (`[Realm5]`), and
+asking for it works the same up to the group: once you are in the helper's group, Olympus tells
+you to log out to the character screen and back in (the others' portraits show dark blue until
+then: you are not with them yet), and to close the game and open it again if that was not enough.
+The pending hop is kept in your saved variables for 15 minutes: back in the game, in the helper's
+group and on his server, the usual confirmation (two different NPCs on the layer) and the leave
+finish it; still on your old server, one line says to restart; out of the group, or 15 minutes
+later, the hop ends with a line and your group is left alone. The helper's addon keeps such a
+guest 15 minutes instead of 90 seconds, and his window says the guest arrives after a relog. Every
+hop entry point is marked experimental, and the first ask of a session (for a layer here, and for
+one on another server) shows the whole flow first, with **Ask** and **Cancel**. `/oly hop
+<UID>@<label>` asks for a listed layer on another server; `/oly hop status` shows the pending hop.
 
 ### Party Guard
 While the King is online, clear whispers asking for a party invite can appear in the Census
@@ -765,7 +782,9 @@ bottom-to-top always gives the same tab order; changing role or debug view never
 - A line your block terms hide shows as a grey bubble, and a click shows it, marked. Over the
   lines, like the pinned line, how many your filter hides in the channel (no room while it hides
   none), and a click there shows them all (another hides them again). A link shows its tooltip
-  when you hover it, and a Shift-click puts it in the tab's box.
+  when you hover it, a click opens it as a click in the game's chat does (1.5.4; with mouse and
+  keyboard), and a Shift-click puts it in the tab's box. An item shows with the name and colour
+  your client knows it by, whatever the line said (1.5.4).
 - Right-click any saved line and choose **Reply**. The box shows a compact reference to its writer
   and words, and the **x** beside it cancels it without sending. Your answer's bubble, on your
   screen and everyone else's, shows the quoted line over the answer: smaller, on a darker inset,
@@ -2508,6 +2527,18 @@ retires the old private key so a delayed message cannot split them again.
 3. The reporter sends a compact summary of its guild about every 3 minutes on the hidden Olympus channel.
 4. Every client adds up all the summaries: that is the census.
 
+On WoW: Forever the hidden channel delivers nothing, so since 1.4.3 these words travel by whisper
+through the relays (the signed High Council's characters, the King's, the Treasurer's and the
+author's): each guild's reporter registers with a relay, the relay passes every guild's words to
+every reporter, and each reporter hands them to its guild. Since 1.5.4 a client identifies itself
+with its version to each relay that answers it. Until the date in the release notes a relay serves
+every client as before; from then on it registers and serves only the clients that presented
+themselves with a published version, and an older client still receives the census through a
+guildmate who updated. The rules a relay applies (that date, a switch that pauses it, the list of
+published versions) are not a private module: the author's client hands them to the relays in
+game, the relays pass them to one another and keep the newest, and `/oly relay admitted` on a relay
+lists whom it serves, whom it refused and why, and the rules in force.
+
 The addon itself talks only in game, through the game's own addon messages: it has no server of
 its own, and nothing it sends leaves the game. One exception is the Olympus Companion app, only if
 you install it (its rows in [Privacy](#privacy)).
@@ -2538,6 +2569,8 @@ players' links, and its own documentation says what then goes where. Your name i
 
 | What | Who receives it | When |
 |---|---|---|
+| Your addon's version, as your presentation to the relays that answer your client on WoW: Forever (1.5.4), and in your guild's reporter's registration | each relay that answered your client alone (a signed High Council member's, the King's, the Treasurer's or the author's character); it keeps your character's name and version on its client, in its saved variables, 30 minutes past your last word | whenever a relay answers your client's ping (to each relay once a minute at most), and in each registration to a relay that named its version; from the date in the release notes a relay serves only the clients that presented themselves |
+| The relay rules (1.5.4): the presentation's deadline, its switch and the list of published versions a relay admits, with their revision | the relays alone, by whisper: from the author's client, and among themselves | at the author's `/oly relay rules`, at a relay's login and every 30 minutes (a relay's ask, a holder's newer copy) |
 | Your guild's census: size, online count, classes, levels, rank names, the leader and officers (name, online, days away, class, level), addon versions | everyone on the Olympus channel | from one elected member per guild (and a runner-up), every few minutes |
 | The census names people: your guild's leader and officers (above) and its five highest-level members (name, level and class), online or not, with the addon or not; the Realm's level race shows them | everyone on the Olympus channel | in every census report of your guild, from the member it elects: nobody named is asked |
 | Zones in that census: members per zone (numbers only), a leader's or officer's zone | everyone on the Olympus channel | only if the member sending it shares their zone and layer; a leader's or officer's zone only if they share theirs too |
@@ -2571,6 +2604,9 @@ players' links, and its own documentation says what then goes where. Your name i
 | Check version (1.1.2): nothing but a number to match the answer | the player you right-clicked, alone (a whisper) | only when you pick **Check version** (a player once every 2 minutes, 6 a minute) |
 | The answer to a version check (1.1.2): your addon's version | the player whose addon asked, alone (a whisper) | when a player's addon asks: each once every 30 seconds at most, 20 a minute in all; never to a player you block or ignore, and to the author only after your yes to his roll calls (his checks are roll calls) |
 | Ask to update (1.1.2): the newest version your addon knows | the player you right-clicked, alone (a whisper) | only after you pick **Ask to update** and confirm (the author, the King and the High Council alone, since 1.2.1), for a player on 1.1.2 or newer (a player once a day, 5 an hour); cancelling sends nothing and spends no limit, and for an older one confirmation only opens a whisper you send yourself |
+| A modified-build sighting (1.5.4): a character's name, the version string its addon announced (a form that is no release: a release is x.y.z or x.y.z.w), how it was seen (its guild check-in or its answer to Check version), when first and last, your guild and theirs; or that the character since announced a release to the sender | the guild masters and officers of every Olympus guild, the High Council, the King, the author and the relays (your guild and everyone on the Olympus channel hear the word; only their clients keep it, a plain member's drops it unread). The relays pass it to one another and lock the character out as if they had seen it themselves, until it announces a release to one of them | only from a guild master's, an officer's, a councillor's, the King's, the author's or a relay's client, when it sees such a build itself, or such a character announce a release to it (once an hour per character, 6 a minute at most). Kept in the receivers' saved variables (account-wide) with the reporter's name: 400 sightings at most, the oldest out |
+| What your own addon saw of modified builds (1.5.4): the same, from a guildmate's check-in or an answer to your Check version, and "silent to version checks" after three unanswered checks of yours over five minutes with their check-ins between (shown, never a lock) | nobody: it stays in your saved variables (account-wide, 400 sightings at most, the oldest out) and shows in `/oly builds` and the right-click menu. A client your addon saw announce a modified build is locked out: your addon drops its words until it announces a release version (its own check-in and version answer still pass, so it can); a relay takes no registration from it and forwards nothing to it | whenever your addon hears one |
+| The author's update ask to a modified build (1.5.4): the newest version, as his Ask to update names it | that player alone (a whisper from the author's character) | from the author's client alone, while it carries the relay: every 30 minutes, to each character it holds as a modified build that is online (in his guild, or heard by his client in the last 5 minutes), each once every 30 minutes, 20 every 30 minutes at most; never to anyone else |
 | Your bug report (the same text as `/oly bug`) | the author alone (whispers); since 1.1.5 his addon keeps the last 30 it got in his saved variables | only when you press **Send to** him in Report a bug, or **Send** in the window his ask opens (1.1.2) |
 | The shared block terms (1.1): each word, whether it was added or removed, and when; for 15 minutes after an edit, the editor's own client adds his name to it (never to anyone else's) | everyone on the Olympus channel | only from the client of the King, his Steward, a Hand or a High Councillor: at once when they edit it, and every 10 minutes while they play (not when another client just sent the same list). Your own filter is never sent |
 | Your position as a dot on the map | your guild | only with `/oly share` (off by default) |
@@ -2619,6 +2655,7 @@ players' links, and its own documentation says what then goes where. Your name i
 | The Church: what your addon read in your guild's log (an invite by a Church person and the join after it: both names, your guild, the hours), a registration (the name), your public-row choice | the Church's keepers online (the Head, the Apostles, the author), alone (whispers); kept on your client up to 7 days while none is online | a Church person's own addon every 5 minutes; any other member's only where a Church person was heard in the guild lately, drawn so that about two of each guild read; your own invite count and your guild's joins and leaves are never sent |
 | The Church's seen-check (a name) and its answer (the guild your roster saw him in, the first and last day, whether he is in it now) | the check: everyone on the Olympus channel, from the desk (a keeper). The answer: that keeper alone (a whisper) | the desk asks about each new recruit, a registered one on its days and 7 days after a join; about two clients of each guild that knew the name answer |
 | The Church's numbers (rankings, a person's detail) and the keepers' ledger | the Church's audience who asked (the Church, the High Council, the King, the author), alone; the ledger between keepers alone, and a keeper's copy of it to the signed High Councillors' addons online, which pass it to each other only while no keeper is online (never the King's). A councillor's addon saves its copy apart from the ledger of a keeper character on the same account, which never reads it | when a member of that audience opens the tab or refreshes; the ledger when a keeper confirms a record or closes its check, and in a catch-up; never on the channel, except, while the author's switch is open, the rows of the people who chose to show theirs and the top 3 of each ranking (names only), the top 3 said again as it came by the King's and the signed High Councillors' addons (1.3.4) |
+| A list as one message (LS, 1.5.4): the Church's public rows, a guild master's nominees (each part as before) or the shared block terms, the same words as before packed into one message where the relay carries the channel (Forever); where the channel works the words go one by one as before, a list too long for the relay to carry whole goes word by word, and a client that knows no list reads nothing of it | everyone on the Olympus channel, as the words always went: by the relay to each guild's reporter whole, then to its guild | as each was sent before (the Church's desk every 30 minutes while the author's switch is open, a guild master's client every 5 minutes, an editor's every 10); a relay sends a guild a list it does not hold yet, the Church's rows once an hour at most, an unchanged list again only days later, and spends on lists a bounded share of its whispers, most of it for the senders its own client can trust (the Church's keepers, a proven guild master, the block terms' editors). A relay's client keeps in its saved variables which guilds it sent each sender's last list (a sum of it, never its words) and when, 3 days at most |
 | Most Wanted, your own death to a Horde player or your own killing blow on one (WK, 1.2.3): the Horde player's GUID and name, your GUID, the time and month, bounty or claim, your guild, the realm group's digest, and what it is worth (your office as your client verifies it, your level, the Horde player's level as your client saw him) | everyone on the Olympus channel | at once, by itself (no Send, no review), and again after a login if the channel did not take it; once a login, the deaths the game's death recaps still hold this session, each once; your own killing blow again in answer to a member's avenged ask (W7) that names that Horde player; never where it happened, never in an instance |
 | A reviewer's relay of a member's row (WK, 1.2.3): the same row, the member's name, and whether the reviewer's client proved the GUID his | everyone on the Olympus channel | from the King's, a High Councillor's or the author's client: once for each row it took from a member, and in its answer to a late login's catch-up (W4), the newest rows only, and (1.2.4) in its answer to a member's avenged ask (W7), the kills of the Horde players it names |
 | Most Wanted, your avenged ask (W7, 1.2.4): up to 4 digests (8 hex each), each made from the realm group's digest and the GUID of a Horde player who killed you in the last 14 days and whose death your client holds no kill for yet (no GUID, name, time or count on the wire), and the realm group's digest | everyone on the Olympus channel | only while such a death is open on your client: 2 minutes after login, then 10 minutes apart, three times a login at most, until none is open. A member's addon answers only with his own killing blows on those Horde players (a reviewer's also with the other members' rows he holds, as his relay), two answers to one asker in 10 minutes and 10 asks a minute at most. Anyone who knows a Horde player's GUID can tell whether a digest is his |
@@ -2632,7 +2669,7 @@ players' links, and its own documentation says what then goes where. Your name i
 | The Royal Writs' ask (T7, 1.2.4): nothing but your name | everyone on the Olympus channel | once a login, a minute and a half after it; only the King's addon answers, with his writs of the last seven days, once every 5 minutes at most |
 | A Most Wanted sighting (WS, 1.2.0): a listed Horde player's name and GUID, your map position (rounded) and layer, the time, your name and guild | the one reviewer you chose (**Sightings to** on the Most Wanted page; 1.2.2: the one you sent evidence to), alone (whispers), three a minute at most | only after your own Yes on its privacy line, or **Authorize all** while that visible line is pending; only while you share your zone and layer, only for players on your Most Wanted list, never in an instance; `/oly sightings off` stops it |
 | A requested player sighting (PS, 1.2.5): an exact query carries one Name-Realm; a hostile-area query carries one selected zone or micro-map ID and lasts five minutes. Both use a short opaque request id. Exact answers carry the consenting observer's name and guild; public area rows omit both. Every answer carries target, observation time, expiry, layer, point kind and map position. The point is the target's native visible-unit or matching party/raid-unit position when WoW returns one; otherwise it is the observer's encounter position, rounded to 0.1% of the map | the query: everyone on the Olympus channel, only from a currently signed authorized requester; each answer: that requester alone (a whisper). One observer contributes at most six rows to an area search and the requester keeps at most 48 distinct players. On an explicit action Olympus can show sanitized rows as host-owned world-map pins, cleared on cancel, expiry, permission revocation or reload | only after the requester's addon permission is enabled by its own **Yes** or the page's deliberate **Authorize all** action; an observer answers only after the separate **Guild tools: player sightings** permission is enabled the same way and while sharing location. The exact-name session's visible Start declares selected/configured names and any included list source. One handle has one live area, on its current map or an owned exact-result map until its row expires, and rotates only after cancel plus 60 seconds. Its visible UI shows the map and rotation position, never opens the world map automatically, and stops on Off, No or reload without automatic resume. The game must have shown the exact or hostile target, mouseover or nameplate either now or within the last 15 minutes while both choices stayed on. Each client keeps at most 64 such observations only in memory and clears them on permission, location-sharing or network opt-out. A live answer rechecks the visible identity and coordinate before send; a cached answer rechecks its age and fields plus current eligibility. Requests and results expire; cancellation, either No and net-off cancel queued data and withdraw or discard live results |
-| A bounded profile presentation (FX): the open/close word of a current signed issuer or the addon's author carries the fixed host style, a short session/grant id, time and guild. While that grant is live, an admitted member's self-presentation word carries the same fixed style and the one pre-approved caption; it names no target player and accepts no texture path, atlas, colour, coordinate, layout or arbitrary message | everyone on the Olympus channel. Receivers keep it only in memory and render it only while directly targeting that member. The issuer renews every 10 seconds; a missed session or presentation lease expires after about 32 seconds | only after the controlling addon, one the Olympus team has authorized, has its own API **Yes** or **Authorize all**. Only a current signed issuer or the addon's author can open the shared session; each member can enable the presentation only on themself while that session is live. No closes and disables that addon's own state before saving the answer. `/reload`, logout, guild/authority loss, the local moderation hold and network loss clear it. Screenshot events hide Olympus's own transient frames on a best-effort basis only; they cannot guarantee that pixels were not captured |
+| A bounded profile presentation (FX): the open/close word of a current signed issuer or the addon's author carries the fixed host style, a short session/grant id, time and guild. While that grant is live, an admitted member's self-presentation word carries the same fixed style and the one pre-approved caption; it names no target player and accepts no texture path, atlas, colour, coordinate, layout or arbitrary message | everyone on the Olympus channel. Receivers keep it only in memory and render it only while directly targeting that member. The issuer renews every 10 seconds; a missed session or presentation lease expires after about 32 seconds (a session, on WoW: Forever, where the relays carry it to other guilds once a minute, after about 150 seconds) | only after the controlling addon, one the Olympus team has authorized, has its own API **Yes** or **Authorize all**. Only a current signed issuer or the addon's author can open the shared session; each member can enable the presentation only on themself while that session is live. No closes and disables that addon's own state before saving the answer. `/reload`, logout, guild/authority loss, the local moderation hold and network loss clear it. Screenshot events hide Olympus's own transient frames on a best-effort basis only; they cannot guarantee that pixels were not captured |
 | A reviewer's word that he takes sightings (WS) | everyone on the Olympus channel | from a reviewer who said Yes to sightings: 45 seconds after login and every 5 minutes, and off at once on his No |
 | Your BattleTag, the Olympus Accord's version and when you accepted it, your guild, and your game account's random follow key (made at your first accept: the code a sanction that follows your BattleTag carries needs it) (BT, 1.2.5.1) | one moderation team member alone (the author, the King, a High Councillor or an Olympus moderator they named) at your team level or higher, by a logged whisper; never the Olympus channel, guild chat or any other player | once you accepted the Accord, only to a team member whose addon just asked on your channel, at most once every 20 hours to each, from each of your characters; his client keeps it up to 180 days after he last got it |
 | A moderation team member's ask for BattleTags (BQ, 1.2.5.1): nothing but his name | everyone on the Olympus channel | from a team member's addon, 90 seconds after login and every 30 minutes |
@@ -3177,6 +3214,7 @@ Other limits:
 | `/oly council list` · `/oly council help on\|off` | the High Council as your addon knows it; moderators: take help requests or not. The list is signed by the author on his own computer and checked by every client: no name is written in the addon's code, and nobody can forge or change it. An addon without the list (`High Council: -`) asks the channel for it a minute or so after login, and again until it has it (two and a half minutes later when nobody answered, up to 3 times). Since 1.0.0 the list also crosses realms through guild chat: guildmates on another realm answer the ask and pass the list on, and it goes on to your realm's channel |
 | `/oly council icon` (or **My council icon** on the Realm tab, councillors only; 1.2.4: **My profile**'s **Icons**) | moderators: a councillor's name always carries the High Council's mark, which nobody can change: in the game's own chat (1.1.5, `/oly chatmarks`) the game's silver elite dragon, on their tooltip and in the census the game's target-frame skull. An icon of your own after it is optional: pick it from the game's icons, like a macro's. Your addon announces it on the channel (at once, then every 20 minutes), and other clients take it only from a councillor and only as a game icon |
 | `/oly discord ...` | Olympus Link, the Discord role: its own addon, Olympus_Link (1.4.0), with its own commands when it is installed; without it, one line says it is not installed |
+| `/oly relay admitted` · `/oly relay rules` | on a relay's client (1.5.4): whom it serves, whom it refused and why, and the relay rules in force, in a copy window; the rules in force in one line. The author's client alone: `/oly relay rules on\|off [YYYY-MM-DD\|epoch\|now] [versions, comma-separated]` makes a new revision of the rules and hands it to the relays |
 | `/oly hop` | ask for an invite to the King's layer (while he is online) |
 | `/oly lfg` · `/oly lfg dungeon\|raid\|pvp\|layer [note]` · `/oly lfg off` | the Board (1.1): who is looking for a group; raise your flag (a box with your note first) or lower it |
 | `/oly group` · `/oly group dungeon\|raid\|pvp\|quest` · `/oly group off` | the Board's groups (1.4.0): list your group, apply to one, answer applications; lower yours |
@@ -3211,6 +3249,7 @@ Other limits:
 | `/oly sound <kind> on\|off` | one kind's sound (1.1): `arms`, `muster`, `royal`, `court`, `vox`, `agenda`, `throne`, `help`, `hop`, `treasury`, `patrol`, `update` (1.4.0: `groups`); also a click on its line at the bottom of the Decrees tab |
 | `/oly arena watch [name]` · `/oly arena watch off` | 1.2.6: the duel view (also **Watch duel** in a duelling player's right-click menu): your own duel, your target and his target, your target and your focus, or a named fighter in sight and his target; off closes it |
 | `/oly bug` | copyable bug report (also: the help button left of the window's X, then **Report a bug**) |
+| `/oly builds` | the modified Olympus builds your addon saw (a version that is no release, in a guildmate's check-in or a Check version answer: locked out until they announce a release) and, for guild masters, officers and the High Council, those the others reported, in a copyable window (1.5.4) |
 | `/oly log [n \| word \| copy \| clear]` | the acts this client saw (decrees, gates, pardons, visibility switches), each with the sender's name; kept on this computer, never sent (1.1) |
 | `/oly status` | diagnostics in chat (1.0.0: whom your addon knows as the King's Steward, and the lists of Hands it holds, whose each is; 1.1.2: the author's in a copy window) |
 | `/oly perf` · `/oly perf on\|off\|reset` | the profiler (1.2.1): on, it measures which of Olympus's calls take the game's time (each listener on a line of its own, the frames with 30 ms or more of Olympus's work, the 40 slowest calls) and stays on through /reload until off; reset clears it; alone, its report in a copy window. Off, nothing of it runs. A listener is named by its place, #n: `luajit scripts/perf-listeners.lua` gives each its file and line |
@@ -3620,17 +3659,21 @@ its changes listed at its top).
   Issue Reporter), bjess9 (CI and the shared checks), hypertectonic (Chattynator's tabs),
   Bernardo Costa / Costafitness (exact layer-hop confirmation and stale-request regressions,
   adapted from PR #51), Rick-laboratory (bounded transport, cancellation and admission
-  regressions, adapted from PR #52), and HTX (the Board's group listings, applications and
-  invites, adapted from PR #62).
+  regressions, adapted from PR #52), HTX (the Board's group listings, applications and
+  invites, adapted from PR #62), XOData (a relay's snapshot sent whole to each reporter and
+  wrapped once, and guildmates on other Forever sub-realms recognised, from PRs #81 and #82),
+  ArithmeticLogic (Dues History asks that skip a Treasurer already reported offline, from PR #86),
+  and fiddlecat (chunk assemblies kept alive while their pieces keep arriving, from PR #80).
 - **Feature requests:** Fernmelder, whose 39 posts became 1.1 (the Fernmelder release);
   shenanigans_ (the nameplate marks), Valdericht (`<OLYMPIAN>`), Pyralis Ashandar (taking
-  donations), Zeal (what the King hides stays off the channel), and FedGuy / Fed Olympus
-  (nameplate-assisted layer hopping).
+  donations), and FedGuy / Fed Olympus (nameplate-assisted layer hopping).
 - **Art:** Max (the bronze elite borders, drawn over the game's own; the winged one remains the guild masters') and Kaise (the Queen's red, gold and white-winged dragon frame).
 - **Reports from the field:** Riukensei and PartyRockAce (the gamepad UI; PartyRockAce's report
   of the world map blocked in controller mode, fixed in 1.0), Ignitheus (whispers to Forever
-  names), Pyralis Ashandar, the Treasurer (the treasury and the guild bank), and the player who
-  told us WoW had handed him the channel.
+  names), Pyralis Ashandar, the Treasurer (the treasury and the guild bank), the player who
+  told us WoW had handed him the channel, and, for the census on Forever, knomegnome (the relay
+  snapshot's queue loss, #85), fiddlecat (#79's measurements and the blocked channel text),
+  ForMooAz (#79's relay captures) and Legis (the 1.5.1 relay key collision, on CurseForge).
 - Everyone who reported a bug, tested in game or asked for a feature.
 
 ## License

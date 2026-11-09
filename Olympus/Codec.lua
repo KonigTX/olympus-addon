@@ -592,9 +592,74 @@ function Codec.SplitChat(s, budget, maxParts)
 	return parts, s ~= ""
 end
 
--- `text` must already be sanitized and split to fit (Channels.Send does both).
+---------------------------------------------------------------------------
+-- A line's links on the wire (1.5.4; the dev and Fernmelder: items "aparecendo quebrado" in the
+-- Olympus chat). Comm takes every "|" out of each addon message but a bare chat line before
+-- anything reads it (Codec.Plain, 0.9.2), and on Forever a chat line travels inside the relay's
+-- envelopes (RL, RM and RG, Relay.lua) and in pieces, which are not chat lines to that rule: a
+-- link lost its pipes on the way and showed as "cff1eff00Hitem:14342...h[Mooncloth]hr". So
+-- EncodeChat writes each link SanitizeChat allows as a token with no "|" in it,
+-- [name](kind:data/colour), never longer than the link, and DecodeChat makes the link again from
+-- it: the kind one of LINK_TYPES, the data as LinkData allows, the colour 8 hex digits, a
+-- Mainline colour name ("nIQ4:") or none, the name as a link's may be (LinkAt). Nothing else
+-- becomes a link: a token with any other kind, data, colour or name is text, as a typed "|cff"
+-- or "|T" is. The same text on every way a line travels (the relay, GUILD, the channel's own
+-- text, ChatHall.lua), so each client takes it once, and the sender's own echo is what the
+-- others see (Channels.Send unpacks a token typed by hand before it keeps the line). A client
+-- before 1.5.4 shows the token as text, the name first.
+---------------------------------------------------------------------------
+
+local function Token(link)
+	local colour, rest = link:match("^|c([^|]*)(|H.*)$")
+	if not colour then colour, rest = "", link end
+	local kind, data, name = rest:match("^|H(%a+):([^|]*)|h%[([^%]]*)%]|h")
+	if not kind then return link end
+	return "[" .. name .. "](" .. kind .. ":" .. data .. "/" .. colour .. ")"
+end
+
+-- The links of sanitized chat text as tokens; "||" and everything else as it is. Idempotent.
+function Codec.PackLinks(s)
+	s = tostring(s or "")
+	if not s:find("|H", 1, true) then return s end
+	local out, i, n = {}, 1, #s
+	while i <= n do
+		local j = s:find("|", i, true)
+		if not j then
+			out[#out + 1] = s:sub(i)
+			break
+		end
+		if j > i then out[#out + 1] = s:sub(i, j - 1) end
+		local len = s:byte(j + 1) ~= 124 and LinkAt(s, j) or nil
+		if len then
+			out[#out + 1] = Token(s:sub(j, j + len - 1))
+			i = j + len
+		else
+			out[#out + 1] = s:sub(j, j + 1)
+			i = j + 2
+		end
+	end
+	return table.concat(out)
+end
+
+local function Untoken(name, kind, data, colour)
+	if not LINK_TYPES[kind] or not LinkData(data) or name == "" or #name > 100 then return nil end
+	if colour ~= "" and not (colour:find("^%x%x%x%x%x%x%x%x$") or (#colour <= 38 and colour:find("^n[%w_]+:$"))) then return nil end
+	local link = "|H" .. kind .. ":" .. data .. "|h[" .. name .. "]|h"
+	if colour ~= "" then link = "|c" .. colour .. link .. "|r" end
+	return link
+end
+
+-- The tokens of sanitized chat text as links again, each one LinkAt lets through, the rest as it
+-- is. Idempotent: links stay links.
+function Codec.UnpackLinks(s)
+	s = tostring(s or "")
+	if not s:find("](", 1, true) then return s end
+	return (s:gsub("%[([^%[%]|%c]+)%]%((%a+):([%d:%-]*)/([^%)]*)%)", Untoken))
+end
+
+-- `text` must already be sanitized and split to fit (Channels.Send does both): its links go as tokens.
 function Codec.EncodeChat(tier, guild, id, class, text)
-	local msg = ("M1~%s~%s~%d~%s~"):format(tier, clean(guild), id % 10000, clean(class or "")) .. text
+	local msg = ("M1~%s~%s~%d~%s~"):format(tier, clean(guild), id % 10000, clean(class or "")) .. Codec.PackLinks(text)
 	if #msg > 255 then return nil end
 	return msg
 end
@@ -603,7 +668,7 @@ function Codec.DecodeChat(s)
 	if type(s) ~= "string" or #s > 255 then return nil end
 	local tier, guild, id, class, text = s:match("^M1~(%u)~([^~|]+)~(%d%d?%d?%d?)~(%u?%u?)~(.+)$")
 	if not tier or not Codec.CHAT_TIERS[tier] or LongGuild(guild) or guild:find("%c") then return nil end
-	text = Codec.SanitizeChat(text)
+	text = Codec.UnpackLinks(Codec.SanitizeChat(text))
 	if text == "" then return nil end
 	return { tier = tier, guild = guild, id = tonumber(id), class = class ~= "" and class or nil, text = text }
 end
@@ -620,6 +685,7 @@ end
 -- Pieces waiting for the rest are bounded (0.9.3): a few open messages per sender and a few
 -- hundred in all, so nobody can fill memory with pieces that never complete.
 Codec.OPEN_PER_SENDER = 4
+Codec.ASM_MAX_AGE = 300 -- an assembly never waits longer than this, however steadily its pieces come
 Codec.OPEN_MAX = 400
 function Codec.NewAssembler()
 	return { buf = {}, open = 0, bySender = {}, refused = 0, evicted = 0, changes = 0, none = -1, noneFor = 0 }
@@ -644,6 +710,8 @@ function Codec.Trusted(sender)
 	return ok and yes == true
 end
 
+-- When a message's first piece came (1.5.4: Feed moves e.t to its newest piece, e.first keeps this).
+local function Opened(e) return e.first or e.t end
 -- One open message of a stranger's closed for `sender`'s (who holds `mine`): true when one went.
 local function Room(asm, sender, trusted, mine)
 	if not trusted and asm.none == (asm.changes or 0) and mine >= (asm.noneFor or 0) then return false end
@@ -652,7 +720,7 @@ local function Room(asm, sender, trusted, mine)
 		if e.trusted == nil then e.trusted = Codec.Trusted(e.sender) end
 		if not e.trusted and e.sender ~= sender then
 			local o = oldest[e.sender]
-			if not o or e.t < asm.buf[o].t or (e.t == asm.buf[o].t and key < o) then oldest[e.sender] = key end
+			if not o or Opened(e) < Opened(asm.buf[o]) or (Opened(e) == Opened(asm.buf[o]) and key < o) then oldest[e.sender] = key end
 		end
 	end
 	local victim, most
@@ -660,7 +728,7 @@ local function Room(asm, sender, trusted, mine)
 		local held = asm.bySender[who] or 0
 		if trusted or held > mine + 1 then
 			local e, v = asm.buf[key], victim and asm.buf[victim]
-			if not victim or held > most or (held == most and (e.t < v.t or (e.t == v.t and key < victim))) then victim, most = key, held end
+			if not victim or held > most or (held == most and (Opened(e) < Opened(v) or (Opened(e) == Opened(v) and key < victim))) then victim, most = key, held end
 		end
 	end
 	if not victim then
@@ -703,6 +771,10 @@ function Codec.Feed(asm, sender, msg, now)
 	if not e.parts[i] then
 		e.parts[i] = body
 		e.got = e.got + 1
+		-- Keep an assembly alive while its pieces keep arriving: the window below is meant
+		-- to catch senders that stopped, not slow ones. ASM_MAX_AGE bounds the total wait.
+		e.first = e.first or e.t
+		e.t = now
 	end
 	if e.got == n then
 		Codec.Close(asm, key)
@@ -721,12 +793,14 @@ function Codec.Close(asm, key)
 	asm.changes = (asm.changes or 0) + 1
 end
 
--- Drops assemblies older than 60 s (70 s above 30 parts), with an incomplete sample
--- ("sender#id 2/3") so lost chunks show up in the diagnostics.
+-- Drops an assembly whose newest piece is older than 60 s (70 s above 30 parts), or that has been
+-- open ASM_MAX_AGE since its first piece, with an incomplete sample ("sender#id 2/3") so lost
+-- chunks show up in the diagnostics. Comm runs it once a minute, so an assembly can live up to
+-- ASM_MAX_AGE plus that minute.
 function Codec.Gc(asm, now)
 	local dropped, sample = 0, nil
 	for k, e in pairs(asm.buf) do
-		if now - e.t > (e.n > 30 and 70 or 60) then
+		if now - e.t > (e.n > 30 and 70 or 60) or now - (e.first or e.t) > Codec.ASM_MAX_AGE then
 			dropped = dropped + 1
 			sample = sample or ("%s %d/%d"):format(k, e.got, e.n)
 			Codec.Close(asm, k)

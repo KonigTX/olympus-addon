@@ -110,6 +110,11 @@ ns.GAMEPAD = {
 		pins = { "Blizzard_UIPanels_Game/Shared/ItemRefHandlersShared.lua:279 LinkUtil.RegisterLinkHandler(LinkTypes.AddOn, function(link, text, linkData, contextData)",
 			"Blizzard_UIPanels_Game/Mainline/ItemRef.lua:6 function SetItemRef(link, text, button, frame)",
 			"Blizzard_ChatFrameBase/Shared/ChatFrame.lua:19 function ChatFrameMixin:OnHyperlinkClick(link, text, button)" } },
+	{ id = "item-ref", kind = "panel", files = { "ChatWindow.lua" },
+		guard = "gate", toPad = "stays", toMouse = "on", safe = "off",
+		why = "1.5.4: a left click on an item, spell, enchant or quest link in a line of the Chat tab opens the game's link window as a click in the game's chat does (SetItemRef, which shows ItemRefTooltip, a game panel); never for another link type (a player link would open the chat box), and never with the gamepad UI, where the hover tooltip in Olympus's own bubble stays and the click does nothing.",
+		pins = { "Blizzard_UIPanels_Game/Mainline/ItemRef.lua:6 function SetItemRef(link, text, button, frame)",
+			"Blizzard_ChatFrameBase/Shared/ChatFrame.lua:19 function ChatFrameMixin:OnHyperlinkClick(link, text, button)" } },
 	{ id = "issue-reporter", kind = "frame-child", files = { "UI.lua" },
 		guard = "gate", toPad = "park", toMouse = "install", safe = "off",
 		why = "Olympus's Hide button on the game's Issue Reporter (beta clients): with the gamepad UI the game shows that box itself, and Olympus's button there would be a gamepad target." },
@@ -206,7 +211,7 @@ ns.GAMEPAD = {
 		why = "ReloadUI, from the Reload button of Olympus's own gamepad notice (1.2: and the Arena bank's Save, Wallet.lua): the player's click." },
 	{ id = "hop-group", kind = "restricted", files = { "Hop.lua", "ArenaMatch.lua" },
 		guard = "exempt", toPad = "stays", toMouse = "nothing", safe = "off", approved = APPROVED,
-		why = "The layer hop's group: the helper's addon invites a vouched guest (InviteUnit) and either side leaves after the hop (LeaveParty), from Olympus's own messages and timers; neither is protected, and the game's group frames follow from its own events. (1.2: a match's group the same way, ArenaMatch.lua: the invite inside the player's click, the leave at the match's end.)" },
+		why = "The layer hop's group: the helper's addon invites a vouched guest (InviteUnit) and either side leaves after the hop (LeaveParty), from Olympus's own messages and timers; neither is protected, and the game's group frames follow from its own events. (1.2: a match's group the same way, ArenaMatch.lua: the invite inside the player's click, the leave at the match's end.) (1.5.4: a hop to a layer on another Forever sub-realm leaves the same way once the player is back in the game on that sub-realm and the layer is confirmed, and from the Leave group button of Olympus's relog window; its wait never leaves a group on its own.)" },
 
 	-- 1.2 (the Blood Arena and its boards), registered with the audit at the 1.1.6 merge.
 	{ id = "arena-clicks", kind = "restricted", files = { "ArenaMatch.lua", "ArenaTourney.lua", "Core.lua", "FarkleTable.lua", "Lottery.lua", "Olympus_Arena/Games/Farkle.lua", "Olympus_Arena/Games/Bicho.lua" },

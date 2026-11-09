@@ -889,6 +889,11 @@ Data.GLOBAL_ASK_EVERY = 30 * 60
 Data.GLOBAL_ASK_AGAIN = 3 * 60
 Data.GLOBAL_ANSWER_GAP = 3 * 60
 Data.GLOBAL_MAX_BYTES = ns.Codec.CHUNK * ns.Codec.MAX_CHUNKS
+-- (1.5.4) A snapshot this client builds leaves room for a relay's label around it ("RM~P~<name>~",
+-- then "RG~P~<name>~"), so a relay sends it whole in one envelope of at most MAX_CHUNKS whispers: a
+-- full-size one took two batches, and a newer snapshot could replace the second after the first
+-- left. One taken may still be the whole GLOBAL_MAX_BYTES (an older relay's).
+Data.GLOBAL_SEND_BYTES = Data.GLOBAL_MAX_BYTES - 64
 Data.GLOBAL_MAX_ROWS = 180
 -- 1.4.0, the witnesses (the author's rule of 10-20: one person is one witness; a count is confirmed
 -- by a moderator alone, or by two or more people agreeing: observed within half an hour of each
@@ -1035,6 +1040,21 @@ local function PersonKey(name)
 	local realm = ns.RealmOf(full)
 	local group = realm and ns.GroupOf and ns.GroupOf(realm)
 	return group and (ns.ShortName(full):lower() .. "-" .. group:lower()) or full:lower()
+end
+-- (The review of the 1.5.4 candidate.) This client's own word back from the relay's hops. On Forever
+-- a whisper arrives with the sender's bare name and the relay's client stamps its own sub-realm on
+-- the origin (Relay.lua's HandleIn), so "Name-Realm3" comes back for "Name-Realm1": one name across
+-- a family, as PersonKey takes it. Comm's echo check (OnAddonMessage: sender == ns.me) sees another
+-- name, so the census receivers ask here; a trusted client's own look of the other family (CX 1)
+-- came back as another councillor's word, was noted as heard (groupHeard) and never said again that
+-- session. Off Forever (no family) whole names alone, as before: "Bob-A" and "Bob-B" are two people.
+local function OwnWord(sender)
+	if type(ns.me) ~= "string" or type(sender) ~= "string" then return false end
+	local me, other = ns.FullName(ns.me), ns.FullName(sender)
+	if me == other then return true end
+	if ns.ShortName(me):lower() ~= ns.ShortName(other):lower() then return false end
+	local family = ns.ForeverFamily and ns.ForeverFamily(ns.RealmOf(me) or "")
+	return family ~= nil and family == ns.ForeverFamily(ns.RealmOf(other) or "")
 end
 -- Two rows agree: observed within the window of each other, sizes within max(5, 5%).
 function Data.WitnessesAgree(a, b)
@@ -1214,7 +1234,7 @@ function Data.GlobalCensusPayload()
 		if #out >= Data.GLOBAL_MAX_ROWS then break end
 		local row = ("%s,%d,%d,%d,%d"):format(e.name, e.total, e.online, e.avg10, e.observed)
 		local extra = #row + (#out > 0 and 1 or 0)
-		if bytes + extra > Data.GLOBAL_MAX_BYTES then break end
+		if bytes + extra > Data.GLOBAL_SEND_BYTES then break end
 		out[#out + 1], bytes = row, bytes + extra
 	end
 	return head .. table.concat(out, ";")
@@ -1307,7 +1327,7 @@ function Data.ReceiveGlobalCensus(dist, sender, text)
 	ver = tonumber(ver)
 	if ver ~= Data.GLOBAL_PROTOCOL and ver ~= 2 then return false end
 	local now = ns.Now()
-	local self = type(ns.me) == "string" and ns.FullName(sender) == ns.FullName(ns.me)
+	local self = OwnWord(sender) -- (the relay's stamped copy of our own snapshot too)
 	if kind == "C" then
 		if ver == 1 and ScopedGroup(ns.group) then return false end
 		-- A member's claim: its snapshot follows. It counts as an answer heard (AnswerAsk).
@@ -1349,6 +1369,9 @@ function Data.ReceiveGlobalCensus(dist, sender, text)
 	if bad or count == 0 then return false end
 	globalLastHeard = now
 	HeardAnswer(now, trusted, sender)
+	-- (1.5.4) The King's own snapshot (his relay's, every Relay.GLOBAL_EVERY, held by his quiet
+	-- presence: Comm.QUIET_WORDS) is his word too: he is online (Hop.SignedKingPresence).
+	if ns.Hop and ns.Hop.HeardKing then ns.Hop.HeardKing(sender) end
 	return true
 end
 
@@ -1716,7 +1739,17 @@ local function TakeGroup(row, sender, trusted, now)
 		return true
 	end
 	if trusted then
+		-- (1.5.4) While a look is still counted, a newer trusted one covering under half its guilds
+		-- does not replace it: a client that saw only its own guild there is not the family's count.
+		-- (The review of the 1.5.4 candidate.) Refused before it is noted as heard (groupHeard: a
+		-- refused look silenced this client's own wider one), and the other way round too: a trusted
+		-- look covering more than twice the guilds of the counted one replaces it even when older,
+		-- while it still counts itself (a one-guild look heard first kept out the 19-guild one).
+		local counted = type(held) == "table" and now - (tonumber(held.observed) or 0) <= Data.GROUP_COUNT
+		local heldGuilds = counted and (tonumber(held.guilds) or 0) or 0
+		if row.guilds * 2 < heldGuilds then return false end
 		groupHeard[key] = math.max(groupHeard[key] or 0, row.observed)
+		if counted and heldGuilds * 2 < row.guilds and now - row.observed <= Data.GROUP_COUNT then held = nil end -- (Keep's age check)
 		return Keep(row, "relay", 1)
 	end
 	local who = PersonKey(sender)
@@ -1762,13 +1795,27 @@ end
 
 -- What this client sends: its rows of the OTHER groups (ours everyone here sees live), its own looks
 -- and those it took, newer than what was said here lately; the beta's never on a launch realm.
+-- (1.5.4) A Forever family's row only from a trusted client, whose word stands alone (1.4.0, "a
+-- moderator's alone"): 1.5.2 kept every family out, so no client that never played the other family
+-- ever counted it (the dev, 11-08: "para mim mostra os dados ... não mostra para ninguém"). A row
+-- kept under a plain realm (learned before 1.4.6, a sub-realm's partial view) never travels.
+-- (The review of the 1.5.4 candidate.) And only the trusted client's own look (src "own"): a row it
+-- took from someone else, a forged one among them, is never said again in its trusted name (in a
+-- later session nothing heard suppressed it).
+-- (1.5.4) Our side's rows alone: an account that plays both sides said its Horde look to the
+-- Alliance network and the reverse, so each side's totals held the other's (the dev, 11-08: "só
+-- para diferenciar, para não cruzar os dados"). The other side's rows stay kept, for its own
+-- characters' client (Data.Groups).
 function Data.GroupCensusPayload(now)
 	now = now or ns.Now()
+	local trusted = GlobalTrusted(ns.me)
 	local rows, byOrigin = {}, {}
+	local side = OurFaction()
 	for _, e in pairs(GroupStore()) do
-		local row = type(e) == "table" and GroupRow(e.group, e.faction, e.characters, e.people, e.guilds, e.observed)
+		local row = type(e) == "table" and e.faction == side and GroupRow(e.group, e.faction, e.characters, e.people, e.guilds, e.observed)
 		local key = row and GroupKey(row.faction, row.group)
-		if row and not ScopedGroup(row.group) and not e.unscoped and not (row.group == GroupField(ns.group) and row.faction == OurFaction()) and Listed(row.group)
+		if row and (not ScopedGroup(row.group) or (trusted and e.group == row.group and e.src == "own")) and not e.unscoped
+			and row.group ~= GroupField(ns.group) and Listed(row.group)
 			and row.observed > (groupHeard[key] or 0) + Data.FRESH then
 			if not byOrigin[key] or GroupLater(row, byOrigin[key]) then byOrigin[key] = row end
 		end
@@ -1779,7 +1826,9 @@ function Data.GroupCensusPayload(now)
 	local out = {}
 	for i = 1, math.min(#rows, Data.GROUP_SAY_MAX) do
 		local r = rows[i]
-		out[#out + 1] = ("%s|%s|%d|%d|%d|%d"):format(r.group, r.faction, r.characters, r.people, r.guilds, r.observed)
+		-- (1.5.4) Commas: every client's Comm drops a received message's "|" before any handler reads
+		-- it (0.9.2, Comm's OnAddonMessage), so the rows 1.4.0 sent with "|" never parsed anywhere.
+		out[#out + 1] = ("%s,%s,%d,%d,%d,%d"):format(r.group, r.faction, r.characters, r.people, r.guilds, r.observed)
 	end
 	return ("CX~%d~S~%d~%s"):format(Data.GROUP_PROTOCOL, math.floor(now), table.concat(out, ";"))
 end
@@ -1813,11 +1862,13 @@ end
 function Data.ReceiveGroupCensus(dist, sender, text)
 	if dist ~= "CHANNEL" or type(text) ~= "string" or type(sender) ~= "string"
 		or #text > Data.GLOBAL_MAX_BYTES or sender == "" or #sender > 100 or sender:find("[%c~]") then return false end
+	-- Our own word back (the relay's copy, stamped with its sub-realm: OwnWord): never news, of any
+	-- kind. Taken as another councillor's, a trusted client's own look was noted as heard and never said again.
+	if OwnWord(sender) then return true end
 	if text:sub(1, 5) == "CX~3~" then return Data.ReceivePortable(sender, text) end
 	if text:sub(1, 5) == "CX~2~" then return Data.ReceiveGroupDetails(sender, text) end
 	local ver, made, body = text:match("^CX~(%d+)~S~(%d+)~(.*)$")
 	if tonumber(ver) ~= Data.GROUP_PROTOCOL then return false end
-	if type(ns.me) == "string" and ns.FullName(sender) == ns.FullName(ns.me) then return true end
 	local now = ns.Now()
 	local at = GlobalNumber(made, 1, 4102444800)
 	if not at or at > now + 5 * 60 or now - at > Data.GROUP_KEEP then return false end
@@ -1826,10 +1877,12 @@ function Data.ReceiveGroupCensus(dist, sender, text)
 	for part in tostring(body):gmatch("[^;]+") do
 		if count >= Data.GROUP_SAY_MAX then break end
 		count = count + 1
-		local g, f, c, p, n, o = part:match("^([^|]+)|(%a+)|(%d+)|(%d+)|(%d+)|(%d+)$")
+		local g, f, c, p, n, o = part:match("^([^|,]+)[|,](%a+)[|,](%d+)[|,](%d+)[|,](%d+)[|,](%d+)$")
 		local row = g and GroupRow(g, f, c, p, n, o)
 		if row then
-			row.unproven = ScopedGroup(row.group) ~= nil
+			-- A Forever family's row without an original observer: a trusted sender's word alone,
+			-- anyone else's reported only (1.5.2: forwarders are not independent witnesses).
+			row.unproven = ScopedGroup(row.group) ~= nil and not trusted
 			if Listed(row.group) and TakeGroup(row, sender, trusted, now) then changed = true end
 		end
 	end
@@ -1890,18 +1943,22 @@ function Data.Groups(s, now)
 			observed = snapshot and snapshot.observed or observed, src = snapshot and snapshot.source or "live",
 			w = snapshot and snapshot.witnesses }, true, true)
 	end
+	-- (1.5.4) Our side's rows alone, listed and summed: the other side's are kept in the account-wide
+	-- store for its own characters' client (an account that plays both sides sees its Horde rows on
+	-- the Horde), never on this side's page or in its totals.
+	local side = OurFaction()
 	local kept = {}
 	for _, e in pairs(GroupStore()) do
-		if type(e) == "table" and GroupRow(e.group, e.faction, e.characters, e.people, e.guilds, e.observed) and Listed(e.group) then kept[#kept + 1] = e end
+		if type(e) == "table" and e.faction == side and GroupRow(e.group, e.faction, e.characters, e.people, e.guilds, e.observed) and Listed(e.group) then kept[#kept + 1] = e end
 	end
 	table.sort(kept, GroupLater)
 	for _, e in ipairs(kept) do
-		local ours = GroupField(e.group) == group and e.faction == OurFaction()
+		local ours = GroupField(e.group) == group
 		Add(e, not e.unscoped and now - e.observed <= (ours and Data.TOTAL_KEEP or Data.GROUP_COUNT), ours)
 	end
 	local heard = {}
 	for _, e in pairs(GroupStore("heard")) do
-		if type(e) == "table" and GroupRow(e.group, e.faction, e.characters, e.people, e.guilds, e.observed) and Listed(e.group) then heard[#heard + 1] = e end
+		if type(e) == "table" and e.faction == side and GroupRow(e.group, e.faction, e.characters, e.people, e.guilds, e.observed) and Listed(e.group) then heard[#heard + 1] = e end
 	end
 	table.sort(heard, GroupLater)
 	for _, e in ipairs(heard) do Add(e, false, false) end
@@ -2095,8 +2152,9 @@ function Data.SayGroupDetails()
 	if not GlobalMember() then return false end
 	PruneDetails(ns.Now())
 	local keys = {}
+	-- (1.5.4: our side's capsules alone, as GroupCensusPayload says only our side's rows.)
 	for key, e in pairs(DetailStore()) do
-		if not ScopedGroup(e.group) and not e.unscoped and Listed(e.group) and not (e.group == GroupField(ns.group) and e.faction == OurFaction()) then keys[#keys + 1] = key end
+		if e.faction == OurFaction() and not ScopedGroup(e.group) and not e.unscoped and Listed(e.group) and e.group ~= GroupField(ns.group) then keys[#keys + 1] = key end
 	end
 	if #keys == 0 then return false end
 	table.sort(keys)
@@ -2180,11 +2238,31 @@ function Data.CapturePortable(row)
 	PortableKeep(observer, row, head .. table.concat(parts, ";"), true)
 	return true
 end
+-- (1.5.4) One look carries an origin: this account's own, else the one covering the most guilds, then
+-- the newest. Walking every observer's look let a newer one-guild look stand for the origin through
+-- its window, and the account's own complete look was skipped every time (the dev's store of 11-07:
+-- 21 one-guild looks said in 45 minutes, never its own 19 guilds of PvP). One word per origin a window.
+local function PortableGuilds(e)
+	return tonumber(tostring(e.wire):match("^CX~3~S~[^~]+~[^~]+~%a+~%d+,%d+,(%d+),%d+~")) or 0
+end
+local function PortableBetter(a, b)
+	if (a.own == true) ~= (b.own == true) then return a.own == true end
+	local ga, gb = PortableGuilds(a), PortableGuilds(b)
+	if ga ~= gb then return ga > gb end
+	if a.observed ~= b.observed then return a.observed > b.observed end
+	return a.wire < b.wire
+end
 function Data.PortablePayload(now, sending)
 	now = now or ns.Now()
 	PortableTrim(now)
-	local store, keys = PortableStore(), {}
-	for key, e in pairs(store) do if Listed(e.group) then keys[#keys + 1] = key end end
+	local store, best, keys = PortableStore(), {}, {}
+	for key, e in pairs(store) do
+		if Listed(e.group) then
+			local origin = GroupKey(e.faction, e.group)
+			if not best[origin] or PortableBetter(e, store[best[origin]]) then best[origin] = key end
+		end
+	end
+	for _, key in pairs(best) do keys[#keys + 1] = key end
 	if #keys == 0 then return nil end
 	table.sort(keys)
 	for offset = 1, #keys do

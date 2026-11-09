@@ -166,7 +166,7 @@ end
 -- Load addon files like WoW does: each gets (addonName, sharedTable)
 ---------------------------------------------------------------------------
 local ns = {}
-for _, file in ipairs({ "Bootstrap", "Locales", "Locales/MapNamesText", "Locales/PlayerTooltipText", "Locales/deDE", "Locales/esES", "Locales/frFR", "Locales/DuesGraceText", "Locales/DuesRosterText", "Locales/JusticeResponseText", "Locales/CarryText", "Locales/CarryMergerText", "Locales/CampaignText", "Locales/GuildFinanceText", "Locales/RankingRulesText", "Locales/AccordText", "Core", "RankingRules", "GamepadRegistry", "Gamepad", "Diagnostics", "Dialog", "PlayerMenu", "Codec", "Sign", "Authority", "Zones", "Who", "Data", "Roster", "Comm", "Map", "Layers", "Hop", "Positions", "Decree", "Channels", "Filter", "MapNames", "Inspect", "PlayerTooltip", "King", "HopSightings", "Vox", "Court", "Board", "Groups", "Week", "Treasury", "Dues", "Bank", "Acts", "Loot", "War", "Crafters", "Chronicle", "Workshop", "Versions", "Ed25519", "libs/QREncode/qrencode", "LinkLoader", "ArmyExport", "Recruit", "PartyGuard", "AnswerBank", "Answers", "Views", "Accord", "Consent", "ChatRooms", "CraftRequests", "ViewAs", "TabardsV2", "Members", "Nominees", "CensusClean", "Bridge", "BridgeSections", "BridgePeople", "BridgeAffairs" }) do
+for _, file in ipairs({ "Bootstrap", "Locales", "Locales/MapNamesText", "Locales/PlayerTooltipText", "Locales/deDE", "Locales/esES", "Locales/frFR", "Locales/DuesGraceText", "Locales/DuesRosterText", "Locales/JusticeResponseText", "Locales/CarryText", "Locales/CarryMergerText", "Locales/CampaignText", "Locales/GuildFinanceText", "Locales/RankingRulesText", "Locales/AccordText", "Core", "RankingRules", "GamepadRegistry", "Gamepad", "Diagnostics", "Dialog", "PlayerMenu", "Codec", "Sign", "Authority", "Zones", "Who", "Data", "Roster", "Comm", "Map", "Layers", "Hop", "Positions", "Decree", "Channels", "Filter", "MapNames", "Inspect", "PlayerTooltip", "King", "HopSightings", "Vox", "Court", "Board", "Groups", "Week", "Treasury", "Dues", "Bank", "Acts", "Loot", "War", "Crafters", "Chronicle", "Workshop", "Versions", "Builds", "Ed25519", "libs/QREncode/qrencode", "LinkLoader", "ArmyExport", "Recruit", "PartyGuard", "AnswerBank", "Answers", "Views", "Accord", "Consent", "ChatRooms", "CraftRequests", "ViewAs", "TabardsV2", "Members", "Nominees", "CensusClean", "Bridge", "BridgeSections", "BridgePeople", "BridgeAffairs" }) do
 	local chunk = assert(loadfile(ADDON_DIR .. file .. ".lua"))
 	chunk("Olympus", ns)
 end
@@ -297,6 +297,47 @@ test("federation filter against 250 misspellings and 400 look-alike guild names 
 	eq(table.concat(wrong, ", "), "")
 end)
 
+-- 1.5.4 (the author, 2026-11-08): on the Horde a guild is Olympus's by its name's last word too, one
+-- of the community's banter words for the Horde's races (ns.HORDE_NAME_WORDS; <Mudhutters>, the beta's
+-- King guild, is one), beside the Olympus-word rule and the signed list. The Alliance is unchanged.
+-- Fails before: none of these names counted, on either side.
+test("federation filter (1.5.4): on the Horde a guild named by a Horde-race banter word last is Olympus's; not on the Alliance, not against Olympus, not a one-word name off the list, not a removed guild; the Olympus words still count", function()
+	local saved = { faction = ns.faction, removed = ns.REMOVED_BUILTIN.Horde }
+	local ok, err = pcall(function()
+		ns.faction = "Horde"
+		for _, name in ipairs({ "Dusk Bonebacks", "Mudhutters", "The Mudhutter", "Iron Greenskins", "Lazy Peons", "Dead Corpses",
+			"Night Roaches", "Mud Hut Zombies", "MOO", "Boneback" }) do
+			eq(ns.IsFederation(name), true, name); eq(ns.NamedOlympus(name), true, name)
+		end
+		for _, name in ipairs({ "Boneback Haters", "Deplorables", "Anti Mudhutters", "Kill the Greenskins", "Mudhutter Legion",
+			"Bonebacks of Ruin", "Olympia", "Greenskinss" }) do
+			eq(ns.IsFederation(name), false, name); eq(ns.NamedOlympus(name), false, name)
+		end
+		eq(ns.IsFederation("Olympus Horde"), true, "the Olympus words as before"); eq(ns.IsFederation("Sons of Olimpvs"), true)
+		-- The High Council's removal still wins (a Horde list; the addon ships none).
+		ns.REMOVED_BUILTIN.Horde = { realm = ns.KING_REALM, "Dusk Bonebacks" }
+		eq(ns.IsFederation("Dusk Bonebacks"), false, "removed"); eq(ns.NamedOlympus("Dusk Bonebacks"), true, "by its name still")
+		ns.REMOVED_BUILTIN.Horde = nil
+		eq(ns.IsFederation("Dusk Bonebacks"), true)
+		-- The author's list edited (a word taken off): the Horde's answers follow it.
+		local words = ns.HORDE_NAME_WORDS
+		ns.HORDE_NAME_WORDS = { "greenskin" }
+		eq(ns.IsFederation("Dusk Bonebacks"), false, "off the list"); eq(ns.IsFederation("Iron Greenskins"), true)
+		ns.HORDE_NAME_WORDS = words
+		eq(ns.IsFederation("Dusk Bonebacks"), true)
+		-- The Alliance: none of the words count there, and <Mudhutters> is nobody's.
+		ns.faction = "Alliance"
+		for _, name in ipairs({ "Dusk Bonebacks", "Mudhutters", "The Mudhutter", "Iron Greenskins", "MOO" }) do
+			eq(ns.IsFederation(name), false, name .. " on the Alliance"); eq(ns.NamedOlympus(name), false, name)
+		end
+		eq(ns.IsFederation("Olympus Horde"), true)
+		ns.faction = "Horde"
+		eq(ns.IsFederation("Dusk Bonebacks"), true, "each side's answers kept apart")
+	end)
+	ns.faction, ns.REMOVED_BUILTIN.Horde = saved.faction, saved.removed
+	if not ok then error(err, 0) end
+end)
+
 test("WoW: Forever names: first name and surname, never taken for a realm", function()
 	local saved = { UnitFullName = UnitFullName, GetUnitName = GetUnitName, realm = ns.realm, split = ns.splitNames, CurrentRealm = ns.CurrentRealm }
 	local ok, err = pcall(function()
@@ -353,12 +394,16 @@ test("federation filter: Olympus however it was spelled, but not other words", f
 		"Down with Olympus", "Death to Olympus", "Olympus Haters", "Olympus Sucks", "Kill Olympus",
 		"Ruin Olympus", "RUIN OLYMPUS", "Ruins of Olympus", "Ruined Olympus", "Olympus Ruined", "Burn Olympus",
 		"Crush Olympus", "Raze Olympus", "Doom of Olympus", "Olympus Falls",
-		"Olympus in Ruins", "Olympus In Ruin", "Olympus in the Ruins", "Olympus to Ashes", "Olympus of Ruin" }) do
+		"Olympus in Ruins", "Olympus In Ruin", "Olympus in the Ruins", "Olympus to Ashes", "Olympus of Ruin",
+		-- (1.5.4) the insults the verifiers' list caught, straight or after a linking verb or preposition
+		"Olympus is for Cucks", "Olympus Cucks", "Olympus is Trash", "Olympus Losers", "Olympus Are Losers", "Olympus is Dead",
+		"Olympus Fails", "OLYMPUS SUX" }) do
 		eq(ns.IsFederation(name), false, name)
 	end
 	for _, name in ipairs({ "Knights of Olympus", "Sons of Olympus", "Olympus No Mercy", "OLYMPUS NULLA", "Order of the Olympus",
 		"Olympus Killers", "Anti Horde Olympus", "Olympus Rising", "Olympus Reborn", "Rise of Olympus", "Dark Olympus", "DARK OLYMPUS",
-		"Olympus in Stormwind", "Olympus of Zeus", "Olympus on Top", "Olympus to Victory" }) do
+		"Olympus in Stormwind", "Olympus of Zeus", "Olympus on Top", "Olympus to Victory",
+		"Olympus for Life", "Olympus is Great", "Olympus Forever", "Olympus Is Rising" }) do
 		eq(ns.IsFederation(name), true, name)
 	end
 	eq(ns.Slips("olmps", "olympus", 2), 2); eq(ns.Slips("olympia", "olympus", 2), 2); eq(ns.Slips("abcdefg", "olympus", 2), 3)
@@ -5779,7 +5824,9 @@ test("sending is gated with a clear answer", function()
 		end)
 		eq(#sent, 1)
 		eq(sent[1]:sub(1, 16), "M1~C~Olympus II~")
-		assert(sent[1]:find("~PA~reunir em " .. ITEM, 1, true), sent[1])
+		-- (1.5.4, chat links) The item link travels packed as [name](kind:data/colour) (Codec.PackLinks),
+		-- which every receiver turns back into the game's link; the local echo below keeps the link itself.
+		assert(sent[1]:find("~PA~reunir em [Thunderfury](item:19019::::::::60:::::::::/ff0070dd)", 1, true), sent[1])
 		eq(#CHAT_LINES, 1, "local echo")
 		assert(CHAT_LINES[1]:find("[Captains]", 1, true) and CHAT_LINES[1]:find(ITEM, 1, true), CHAT_LINES[1])
 	end)
@@ -6925,12 +6972,14 @@ do -- (1.4.3: the relay's tests, their locals scoped)
 -- says "on the channel" travels by the relay instead (Relay.lua): origin -> a signed relay by whisper
 -- (RL), relay -> each guild's registered reporter by whisper (RM), reporter -> its guild (RG), and each
 -- client takes it once as if from the channel, its origin the sender. A client of each kind here.
-local function RelayWorld(me, guild)
+-- relayFile (the review of 1.5.4, mixed versions): another release's Relay.lua instead of this one
+-- (tests/fixtures/relay-1.5.3.lua: a client still on 1.5.3, as tests/hop-forever.lua runs one).
+local function RelayWorld(me, guild, relayFile)
 	local cns, Deliver = FreshComm()
 	cns.me, cns.splitNames = me, true
 	cns.rdb = { council = { names = { ["max ran"] = "Max Ran", ["hildryn payne"] = "Hildryn Payne" }, realm = "Realm" } }
 	cns.KingCharacter, cns.TreasurerPins, cns.AuthorCharacters = function() return nil end, function() return {} end, function() return {} end
-	assert(loadfile(ADDON_DIR .. "Relay.lua"))("Olympus", cns)
+	assert(loadfile(relayFile or (ADDON_DIR .. "Relay.lua")))("Olympus", cns)
 	cns.Relay.Reset()
 	local sent, heard = {}, {}
 	C_ChatInfo.SendAddonMessage = function(_, msg, dist, target) sent[#sent + 1] = { msg = msg, dist = dist, target = target, logged = false } return 0 end
@@ -6941,8 +6990,23 @@ local function RelayWorld(me, guild)
 	local function Sent(prefix) local out = {} for _, x in ipairs(sent) do if x.msg:sub(1, #prefix) == prefix then out[#out + 1] = x end end return out end
 	return cns, Deliver, sent, heard, Pump, Sent
 end
+Harness.RelayWorld = RelayWorld -- (1.5.4: the Chat tab's link tests, tests/chat-item-links.lua)
 
 assert(loadfile(ROOT .. "tests/census-relay.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
+assert(loadfile(ROOT .. "tests/hop-forever.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR, fixtures = ROOT .. "tests/fixtures/" })
+assert(loadfile(ROOT .. "tests/relay-fanout.lua"))(ns, test, eq, { RelayWorld = RelayWorld })
+-- 1.5.4: lists as one word by the relay (Comm.SendList, LS), the Church's public rows first.
+assert(loadfile(ROOT .. "tests/relay-lists.lua"))(ns, test, eq, { RelayWorld = RelayWorld, FreshComm = FreshComm, addon = ADDON_DIR, ROOT = ROOT })
+assert(loadfile(ROOT .. "tests/relay-presentation.lua"))(ns, test, eq, { RelayWorld = RelayWorld })
+-- 1.5.4: the presentation, the relay's admission and the relay rules (tests/relay-admit.lua).
+assert(loadfile(ROOT .. "tests/relay-admit.lua"))(ns, test, eq, { RelayWorld = RelayWorld, FreshComm = FreshComm, ROOT = ROOT })
+assert(loadfile(ROOT .. "tests/roster-subrealm.lua"))(ns, test, eq)
+assert(loadfile(ROOT .. "tests/king-crown-relay.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
+-- 1.5.4: the King's presence where he leads no guild named Olympus (tests/king-online.lua).
+assert(loadfile(ROOT .. "tests/king-online.lua"))(ns, test, eq, { RelayWorld = RelayWorld, ADDON_DIR = ADDON_DIR })
+assert(loadfile(ROOT .. "tests/hop-forever-king.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
+-- 1.5.4: modified builds (tests/builds.lua): detection, the record, the shared word, the views and the lock.
+assert(loadfile(ROOT .. "tests/builds.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
 
 test("1.4.3 the relay: where names split, a channel message goes to the picked signed relay by whisper (RL), pinged once; a chat line goes logged; the relay registers reporters (RR), forwards to each guild's reporter (RM) and hears it itself; a reporter takes it once and hands it to its guild (RG); a guildmate takes it once; a stranger's RM is dropped", function()
 	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild }
@@ -7069,7 +7133,11 @@ test("1.4.3 the relay: a relay that is offline (the server's word) or never answ
 		wipe(osent)
 		eq(O.Comm.Send("CHANNEL", "X1~c"), true)
 		opump()
-		eq(osent[1].dist, "CHANNEL"); eq(osent[1].msg, "X1~c")
+		-- (1.5.4) Our presentation to Max Ran, queued when it answered, leaves in this pump too: the
+		-- word itself goes on the channel, and no relay carries it.
+		local onChannel = osentOf("X1~c")
+		eq(#onChannel, 1); eq(onChannel[1].dist, "CHANNEL"); eq(onChannel[1].msg, "X1~c")
+		eq(#osentOf("RL~P~X1~c"), 0)
 		-- The reporter registers with its relay (MaybeBroadcast calls it) every REGISTER_EVERY.
 		O.Relay.Reset()
 		wipe(osent)
@@ -7105,7 +7173,14 @@ test("1.4.4 the relay: the first message with no relay answered pings every rela
 		GetGuildInfo = function() return "Olympus II", "Member", 3 end
 		local O, odeliver, osent, _, opump, osentOf = RelayWorld("Orig Inal-Realm", "Olympus II")
 		local quieted, timers, dones = {}, {}, {}
-		O.Accord = { Quiet = function(n) quieted[#quieted + 1] = n end }
+		-- (1.5.4: Comm opens the quiet window again when each whisper actually goes, so a name is
+		-- quieted when the relay hands its whisper in and again when it leaves. What matters here is
+		-- whose lines stay out of the chat, in order: each name once, as the relay first quieted it.)
+		O.Accord = { Quiet = function(n)
+			n = ns.TellName(n)
+			for _, q in ipairs(quieted) do if q == n then return end end
+			quieted[#quieted + 1] = n
+		end }
 		O.After = function(_, _, fn) timers[#timers + 1] = fn end
 		-- Held, every relay pinged at once, each ping's name quieted.
 		eq(O.Comm.Send("CHANNEL", "X1~one", "k1", false, false, function(sent) dones[#dones + 1] = sent end), true)
@@ -7131,7 +7206,10 @@ test("1.4.4 the relay: the first message with no relay answered pings every rela
 		opump()
 		local out = osentOf("RL~P~X1~")
 		eq(#out, 2); eq(out[1].msg, "RL~P~X1~two"); eq(out[1].target, "Max Ran"); eq(out[2].msg, "RL~P~X1~three"); eq(out[2].target, "Max Ran")
-		eq(table.concat(quieted, ","), "Max Ran,Max Ran")
+		-- (1.5.4) Our presentation to the relay that answered (RI, ahead of what waited) is quieted too,
+		-- a name already recorded once above.
+		eq(table.concat(quieted, ","), "Max Ran", "both messages' name quieted (each name once, see above)")
+		eq(#osentOf("RI~"), 1, "(1.5.4) presented once, to the relay that answered")
 		eq(O.Relay.Stats().pending, 0); eq(O.Relay.Stats().sure, true); eq(O.Relay.Pick(), "Max Ran", "the one that answered, while any did")
 		-- The next message goes straight out, no new ping (it answered within DEAD_FOR).
 		eq(O.Comm.Send("CHANNEL", "X1~four"), true)
@@ -7201,6 +7279,72 @@ test("1.4.5 the relay: a chat line goes to the sender's own guild at once over G
 		eq(#osentOf("RG~"), 0)
 	end)
 	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild = saved.channel, saved.member, saved.guild, saved.inGuild
+	C_ChatInfo = nil
+	if not ok then error(err, 0) end
+end)
+
+-- The review of the 1.5.4 candidate: a chat line travels both ways (hop 3 from the sender himself,
+-- and the relay's copy), and Deliver took it once by the origin's full name alone. On Forever the
+-- relay's client stamps the bare whisper with its own sub-realm, so the two copies of a guildmate
+-- on another sub-realm than the relay's were two words: his guild saw his line twice (the dev's
+-- saved chat of 2026-11-08 holds lines kept twice under two stamps), his reporter handed the relay's
+-- copy to the guild under the relay's stamp, and a relay client that is its own guild's reporter
+-- handed its own line to the guild twice, then saw it come back from another relay. A chat line is
+-- taken once by the short name, as a layer word is, and the sender's own line is taken as it leaves.
+-- Fails before (two RG over GUILD for one line; the second stamp shown).
+test("1.5.4 the relay: a chat line is taken once whichever sub-realm stamped its copies: a relay client that is its own guild's reporter hands its line to the guild once and takes neither copy that comes back; a guildmate's line heard over GUILD and from the relay is shown once and not handed on again; a guildmate hearing both stamps shows it once", function()
+	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild, realm = ns.realm }
+	local ok, err = pcall(function()
+		GetChannelName = function() return 0 end
+		ns.IsMember = function() return true end
+		IsInGuild = function() return true end
+		GetGuildInfo = function() return "Olympus II", "Member", 3 end
+		ns.realm = "CAMWOWUS2Realm1PvE" -- (the relay's sub-realm: what its client stamps a bare whisper with)
+		local LINE = "M1~W~Olympus II~1~WA~hello from a reporter"
+		local function Guild(sent, origin, line)
+			local n = 0
+			for _, s in ipairs(sent) do if s.dist == "GUILD" and s.msg == "RG~L~" .. origin .. "~" .. line then n = n + 1 end end
+			return n
+		end
+		-- Hildryn's client: a relay, and its own guild's reporter (Comm.Electable prefers a relay's client).
+		local R, rdeliver, rsent, rheard, rpump, rsentOf = RelayWorld("Hildryn Payne-CAMWOWUS2Realm1PvE", "Olympus II")
+		R.Relay.HandleIn("WHISPER", R.me, "RL~P~RR~Olympus II")
+		rdeliver("WHISPER", "Zed Far", "RL~P~RR~Olympus Zeus")
+		eq(R.Comm.SendChat(LINE), true)
+		rpump()
+		eq(Guild(rsent, R.me, LINE), 1, "its own line to the guild once, not again as its own reporter")
+		eq(#rsentOf("RM~L~" .. R.me .. "~"), 1, "and to the other guild's reporter")
+		eq(#rheard, 0, "its own line is not shown to it")
+		-- Its line back from another relay, stamped with that relay's sub-realm: neither shown nor handed on.
+		rdeliver("WHISPER", "Max Ran", "RM~L~Hildryn Payne-CAMWOWUS2Realm4PvE~" .. LINE)
+		rpump()
+		eq(#rheard, 0, "not shown to it under the other stamp")
+		eq(Guild(rsent, "Hildryn Payne-CAMWOWUS2Realm4PvE", LINE), 0, "nor handed to the guild under it")
+		-- A guildmate on Realm7 types a line: his own copy over GUILD at once, his whisper to the relay after
+		-- (the server hands it over bare; the relay's client stamps it with its own sub-realm).
+		local MATE = "M1~W~Olympus II~2~WA~hello from another sub-realm"
+		rdeliver("GUILD", "Mate Numberthree", "RG~L~Mate Numberthree-CAMWOWUS2Realm7PvE~" .. MATE)
+		eq(#rheard, 1, "his guild copy is shown"); eq(rheard[1].sender, "Mate Numberthree-CAMWOWUS2Realm7PvE")
+		rdeliver("WHISPER", "Mate Numberthree", "RL~L~" .. MATE)
+		rpump()
+		eq(#rheard, 1, "the relay's own copy of it is not shown again")
+		eq(Guild(rsent, "Mate Numberthree-CAMWOWUS2Realm1PvE", MATE), 0, "nor handed to the guild, which has the line")
+		eq(#rsentOf("RM~L~Mate Numberthree-CAMWOWUS2Realm1PvE~"), 1, "the other guild's reporter still gets it")
+		-- A reporter that is no relay, on Realm5, hearing the guild copy and then the relay's: once, nothing handed on.
+		ns.realm = "CAMWOWUS2Realm5PvE"
+		local P, pdeliver, psent, pheard, ppump = RelayWorld("Rep Orter-CAMWOWUS2Realm5PvE", "Olympus II")
+		pdeliver("GUILD", "Mate Numberthree", "RG~L~Mate Numberthree-CAMWOWUS2Realm7PvE~" .. MATE)
+		pdeliver("WHISPER", "Hildryn Payne", "RM~L~Mate Numberthree-CAMWOWUS2Realm1PvE~" .. MATE)
+		ppump()
+		eq(#pheard, 1, "the reporter shows the line once")
+		eq(#psent, 0, "and hands the relay's copy to nobody")
+		-- A guildmate hearing both stamps over GUILD (a 1.5.3 reporter hands the relay's copy on): once.
+		local G, gdeliver, _, gheard = RelayWorld("Gil Mate-CAMWOWUS2Realm5PvE", "Olympus II")
+		gdeliver("GUILD", "Rep Orter", "RG~L~Mate Numberthree-CAMWOWUS2Realm1PvE~" .. MATE)
+		gdeliver("GUILD", "Mate Numberthree", "RG~L~Mate Numberthree-CAMWOWUS2Realm7PvE~" .. MATE)
+		eq(#gheard, 1, "the relay's stamp first, his own after: shown once")
+	end)
+	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild, ns.realm = saved.channel, saved.member, saved.guild, saved.inGuild, saved.realm
 	C_ChatInfo = nil
 	if not ok then error(err, 0) end
 end)
@@ -7543,28 +7687,71 @@ test("verification migration: same-scope legacy stores preserve every decision a
 	if not ok then error(err, 0) end
 end)
 
-test("1.5.2 the relay: while no relay answers, a word's pieces are handed to the chat hall to go as the reporter's own text in the joined channel; once one answered, the relay alone carries them", function()
-	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild }
+-- 1.5.4 (the dev's error log of 2026-11-06, GitHub #79/#85): 1.5.2 handed a word's pieces to the chat
+-- hall while no relay answered, to go as the reporter's own text; Forever blocks that SendChatMessage
+-- from a timer (ADDON_ACTION_BLOCKED) and nothing was ever delivered. Fails before: the hall got it.
+test("1.5.4 the relay: while no relay answers, a word's pieces wait for the first relay that answers and never go to the channel as text; then that relay carries them", function()
+	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild, say = SendChatMessage }
 	local ok, err = pcall(function()
 		GetChannelName = function() return 0 end
 		ns.IsMember = function() return true end
 		IsInGuild = function() return true end
 		GetGuildInfo = function() return "Olympus II", "Member", 3 end
-		local O, odeliver, _, _, opump = RelayWorld("Orig Inal-Realm", "Olympus II")
+		local said = 0
+		SendChatMessage = function() said = said + 1 end
+		local O, odeliver, osent, _, opump = RelayWorld("Orig Inal-Realm", "Olympus II")
 		local carried = {}
 		O.ChatHall = { Carry = function(parts) for _, p in ipairs(parts) do carried[#carried + 1] = p end return #parts end }
 		O.Accord = { Quiet = function() end }
 		O.After = function(_, _, fn) end
 		eq(O.Comm.Send("CHANNEL", "C5:1:1:abc", "k1"), true)
 		opump()
-		eq(table.concat(carried, ","), "C5:1:1:abc", "no relay answered: the hall carries it")
+		eq(#carried, 0, "no relay answered: nothing handed to the chat hall")
+		eq(said, 0, "and no channel text from a send no click started")
 		odeliver("WHISPER", "Max Ran-Realm", "RY~")
 		eq(O.Relay.Stats().sure, true)
-		eq(O.Comm.Send("CHANNEL", "C6:1:1:def", "k2"), true)
 		opump()
-		eq(table.concat(carried, ","), "C5:1:1:abc", "a relay answered: the relay alone")
+		local toRelay = 0
+		for _, sent in ipairs(osent) do
+			if sent.target and ns.ShortName(sent.target) == "Max Ran" and tostring(sent.msg):find("C5:1:1:abc", 1, true) then toRelay = toRelay + 1 end
+		end
+		eq(toRelay, 1, "the first relay that answered carries the held word")
+		eq(#carried, 0); eq(said, 0)
 	end)
-	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild = saved.channel, saved.member, saved.guild, saved.inGuild
+	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild, SendChatMessage = saved.channel, saved.member, saved.guild, saved.inGuild, saved.say
+	C_ChatInfo = nil
+	if not ok then error(err, 0) end
+end)
+
+-- 1.5.4 (the dev's live report: "No player named <a reporter> is currently playing" filled his chat
+-- on his relay). The quiet window opened when a whisper was handed to the queue, and a relay's
+-- whisper can wait there far longer (a batch behind thirty reporters' turns), or go to a reporter
+-- whose registration lapsed meanwhile. The window opens again when the whisper actually goes, for
+-- every whisper the addon sends. Fails before (the line shows: no window, or a closed one).
+test("1.5.4 the server's no-player line for a whisper the addon sent is kept out of the chat from the moment it went, however long it waited in the queue; anyone else's shows, and later as ever", function()
+	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild, err = ERR_CHAT_PLAYER_NOT_FOUND_S, time = GetTime }
+	local ok, err = pcall(function()
+		GetChannelName = function() return 0 end
+		ns.IsMember = function() return true end
+		IsInGuild = function() return true end
+		GetGuildInfo = function() return "Olympus II", "Member", 3 end
+		ERR_CHAT_PLAYER_NOT_FOUND_S = "No player named '%s' is currently playing."
+		local mono = 5000
+		GetTime = function() return mono end
+		local O = RelayWorld("Hildryn Payne-Realm", "Olympus II")
+		O.Treasury = ns.Treasury
+		local A = O.Accord
+		local line = ERR_CHAT_PLAYER_NOT_FOUND_S:format("Gone Reporter")
+		-- A whisper handed to the queue now, sent half a minute later (a busy relay's queue).
+		eq(O.Comm.Whisper("Gone Reporter-Realm", "X1~a word for him", nil, false, false) ~= false, true)
+		mono = mono + 30
+		for _ = 1, 10 do O.Comm.Pump() end
+		eq(A.QuietLine(nil, "CHAT_MSG_SYSTEM", line), true, "the line his whisper caused stays out of the chat")
+		eq(A.QuietLine(nil, "CHAT_MSG_SYSTEM", ERR_CHAT_PLAYER_NOT_FOUND_S:format("Somebody Else")), false, "anyone else's shows")
+		mono = mono + A.QUIET + 1
+		eq(A.QuietLine(nil, "CHAT_MSG_SYSTEM", line), false, "and later, as ever")
+	end)
+	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild, ERR_CHAT_PLAYER_NOT_FOUND_S, GetTime = saved.channel, saved.member, saved.guild, saved.inGuild, saved.err, saved.time
 	C_ChatInfo = nil
 	if not ok then error(err, 0) end
 end)
@@ -7631,13 +7818,12 @@ test("1.5.0 the chat hall: on Forever a tier's chat line leaves as the player's 
 		eq(H.OnChannel("hello there", "Other-Realm", "", "", "", "", 0, 6, "OlympusNet1"), false, "plain text in it")
 		eq(H.OnChannel("EC~room~1~hey", "Other-Realm", "", "", "", "", 0, 6, "OlympusNet1"), false, "another kind")
 		eq(#received, 2)
-		-- (1.5.2) A census report's pieces are carried as text (Relay.Out, no relay answering) and taken.
-		eq(H.Carry({ "C12:1:2:abc", "C12:2:2:def", "H3~hello", "X1~one" }), 2, "the report's pieces alone")
-		eq(#said, 3); eq(said[2].text, "C12:1:2:abc"); eq(said[3].text, "C12:2:2:def"); eq(said[3].target, 6)
-		eq(H.OnChannel("C7:1:1:zzz", "Far Away-Realm", "", "", "", "", 0, 6, "OlympusNet1"), true)
-		eq(#received, 3); eq(received[3].text, "C7:1:1:zzz"); eq(received[3].dist, "CHANNEL")
+		-- (1.5.4) A census report's pieces are no longer carried as text: Forever blocks a timer's
+		-- SendChatMessage (ADDON_ACTION_BLOCKED, GitHub #79/#85), and anyone could type one in.
+		eq(H.Carry, nil, "no text fallback for the census")
+		eq(H.OnChannel("C7:1:1:zzz", "Far Away-Realm", "", "", "", "", 0, 6, "OlympusNet1"), false, "a report's piece typed in is not taken")
 		eq(H.OnChannel("H3~hello", "Far Away-Realm", "", "", "", "", 0, 6, "OlympusNet1"), false, "no other kind")
-		eq(H.Stats().carried, 2)
+		eq(#received, 2); eq(#said, 1, "nothing said but the chat line")
 		-- Off: the chat box gate (the gamepad UI), no channel, off Forever.
 		cns.Gate = { Allowed = function() return false end }
 		eq(H.On(), false); eq(H.Send("M1~A~Olympus II~1~~x"), false)
@@ -7761,7 +7947,10 @@ test("1.5.2 verification relay: approvals, revocations and snapshots reach guild
 		eq(#forwarded, 3, "the guild reporter receives each decision and recovery snapshot")
 		eq(#sentOf("RX~L~" .. origin .. "~GV~1~"), 3, "other signed relays receive them too")
 		eq(#sentOf("RM~P~" .. origin .. "~GV~1~Q~"), 0, "periodic asks stay off guild reporters")
-		eq(#sentOf("RX~P~" .. origin .. "~GV~1~Q~"), 1, "a bounded ask reaches the other signed relay")
+		-- (1.5.4) The ask crosses as RW, to every relay not left out: RX went only to relays that had
+		-- answered a ping of ours, and on Forever a relay never pings another (tests/verify-mesh.lua).
+		eq(#sentOf("RW~P~" .. origin .. "~GV~1~Q~"), 1, "a bounded ask reaches the other signed relay")
+		eq(#sentOf("RX~P~" .. origin .. "~GV~1~Q~"), 0, "never as RX")
 		local receiver, receive = RelayWorld("Zed Far-Realm", "Olympus Zeus")
 		local heard = {}
 		receiver.Comm.Handle("GV", function(dist, sender, text) heard[#heard + 1] = { dist = dist, sender = sender, text = text } end)
@@ -7778,6 +7967,7 @@ test("1.5.2 verification relay: approvals, revocations and snapshots reach guild
 end)
 
 assert(loadfile(ROOT .. "tests/verify-relay.lua"))(ns, test, eq, RelayWorld, ADDON_DIR)
+assert(loadfile(ROOT .. "tests/verify-mesh.lua"))(ns, test, eq, RelayWorld, ADDON_DIR)
 
 -- 1.5.0 (the dev's relay: 51 reporters, every guild's three-piece report to each, 2,700 pieces a
 -- minute against 200 sent). Fails before: every word to every reporter, no snapshot of the relay's.
@@ -7849,6 +8039,31 @@ test("1.4.3 the relay: the election counts only guildmates whose hello carries t
 		eq(ns.TellName("Hildryn Payne-Other"), "Hildryn Payne-Other", "elsewhere another realm keeps its suffix")
 	end)
 	GetChannelName, ns.IsMember, ns.splitNames = saved.channel, saved.member, saved.split
+	C_ChatInfo = nil
+	if not ok then error(err, 0) end
+end)
+
+-- 1.5.4 (the dev's relay log: 9 members of one guild registered as its reporter in turn): fails
+-- before, a guildmate on another sub-realm or lane was never electable, so each had its own.
+test("1.5.4 the relay: where it carries the census, a guildmate carrying it is electable on any sub-realm and any lane: one reporter for the guild", function()
+	local saved = { channel = GetChannelName, member = ns.IsMember }
+	local ok, err = pcall(function()
+		GetChannelName = function() return 5 end
+		ns.IsMember = function() return true end
+		local ours = { guild = MY_GUILD, total = 1000, online = 300, zones = {} }
+		local cns, Deliver = RelayWorld("Tester-Realm", MY_GUILD)
+		local C = cns.Comm
+		C.loginAt = cns.clock - 1000
+		C.JoinChannel()
+		assert("Aaa" < cns.me)
+		Deliver("GUILD", "Aaa", "H1~1.4.3~OtherRealm~p~~~L2~R")
+		C.MaybeBroadcast(ours)
+		eq(C.isReporter, false, "a guildmate carrying the relay on another sub-realm and lane comes first")
+		Deliver("GUILD", "Aaa", "H1~1.4.2~OtherRealm~p~~~L2")
+		C.MaybeBroadcast(ours)
+		eq(C.isReporter, true, "one not carrying it never keeps us quiet")
+	end)
+	GetChannelName, ns.IsMember = saved.channel, saved.member
 	C_ChatInfo = nil
 	if not ok then error(err, 0) end
 end)
@@ -8431,6 +8646,9 @@ local function WithHop(fn)
 	local ok, err = pcall(function()
 		H.Reset()
 		ns.db.layerHelp, ns.db.layerAutoInvite = true, nil -- (1.1: layer help is a yes of its own, #11)
+		-- (1.5.4: the first ask of a session shows the experimental hop's window first; these tests
+		-- are of what follows it. The window has its own tests, tests/hop-forever.lua.)
+		H.confirmed.same, H.confirmed.other = true, true
 		ns.Now = function() return w.clock end
 		ns.Comm.ChannelReady = function() return true end
 		ns.Comm.ChannelName = function() return "OlympusNet" end
@@ -10709,7 +10927,7 @@ test("The Treasury: the Treasurer's book (not his gold), the King's three switch
 			T.Share(true)
 			ns.Comm.SendChunked = savedChunked
 			-- 1.1: the channel carries the army's part alone, and the King shows the army nothing
-			-- yet: no name and no number there (Zeal's promise, its own test further down). The
+			-- yet: no name and no number there (the hidden-treasury promise, its own test further down). The
 			-- whole book is what goes by whisper to the King, a Steward and the keepers.
 			eq(LastSent(w), "TB~1.0~Olympus~0~0~0~0~0~0~~-~000@1~~~~0:0", "the army's part: nothing")
 			local msg = T.Message() -- (Fern's #36: the week's donors as a count, 3, never by name)
@@ -14574,16 +14792,20 @@ test("0.9.4 the Horde's King: Duskmonkey Boneback of <Mudhutters>, a guild of th
 		local ok, err = pcall(function()
 			ns.faction = "Horde"
 			eq(ns.IsKingGuild("Mudhutters"), true); eq(ns.IsFederation("Mudhutters"), true, "his guild is Olympus's")
-			local ourRealm = ns.realm
-			ns.realm = "ClassicBetaPvP" -- (a client of his realm group: a learned realm elsewhere is not ours)
+			-- (1.5.4) His realm within the beta's group (the harness pins it on "Realm") is not known: his
+			-- name counts on that group alone, no longer anywhere (on Forever a namesake was the King by
+			-- code), until his own first message teaches his realm; a namesake's teaches nothing.
 			ns.rdb.kingRealmHorde = nil
-			eq(ns.IsKingCharacter("Duskmonkey Boneback-ClassicBetaPvE"), true, "realm unknown yet: his name anywhere")
+			eq(ns.IsKingCharacter("Duskmonkey Boneback-Realm"), true, "realm unknown yet: his name on the beta's group")
+			eq(ns.IsKingCharacter("Duskmonkey Boneback-ClassicBetaPvE"), false, "a namesake on another realm group")
 			eq(ns.rdb.kingRealmHorde, nil, "a name in a report teaches nothing")
-			ns.LearnKingRealm("Duskmonkey Boneback-ClassicBetaPvP2") -- a message he sent
-			eq(ns.rdb.kingRealmHorde, "ClassicBetaPvP2", "his realm, learned")
-			eq(ns.IsKingCharacter("Duskmonkey Boneback-ClassicBetaPvP"), true, "the same realm group")
+			ns.LearnKingRealm("Duskmonkey Boneback-ClassicBetaPvE") -- a namesake's message
+			eq(ns.rdb.kingRealmHorde, nil, "nothing learned from a namesake")
+			ns.LearnKingRealm("Duskmonkey Boneback-Realm") -- a message he sent
+			eq(ns.rdb.kingRealmHorde, "Realm", "his realm, learned"); eq(ns.KingRealm(), "Realm")
+			eq(ns.IsKingCharacter("Duskmonkey Boneback-Realm"), true, "the same realm group")
 			eq(ns.IsKingCharacter("Duskmonkey Boneback-ClassicBetaPvE"), false, "then only there")
-			ns.rdb.kingRealmHorde, ns.realm = nil, ourRealm
+			ns.rdb.kingRealmHorde = nil
 			eq(ns.IsKingCharacter("Duskmonkey Boneback"), true)
 			eq(ns.IsKingCharacter("Asmongold Asmongler"), false, "the Alliance's King is not the Horde's")
 			-- His own client: guild master of <Mudhutters>, the addon on.
@@ -29073,7 +29295,7 @@ test("the public package ships Olympus, Olympus_Arena and OlympusSiteAggregate; 
 	assert(not rest:find("Olympus_Link", 1, true), "Olympus_Link only through OLY_LINK_REPO")
 end)
 
--- 1.1: what the King hides no longer goes on the channel (Zeal's promise): the reminder says the
+-- 1.1: what the King hides no longer goes on the channel (the hidden-treasury promise): the reminder says the
 -- hidden parts are whispered to the keepers, the King and his Steward alone, and the part the
 -- army sees goes on the channel, which every client on it receives.
 test("1.0.0 treasury: the reminder a sharing keeper gets says where what he shares goes, hidden or shown (both languages)", function()
@@ -35427,14 +35649,16 @@ test("1.1 join routing (Fern #20): one modified member's answer names nobody to 
 					{ name = "Rcap-Realm", guild = "Olympus R1" }, { name = "Stranger-Realm", guild = "Olympus II" }, { name = "Third-Realm", guild = "Olympus R1" } })
 				eq(out[1], "Mod J1~1")
 				-- Made-up gates and guild, a stranger named for a real guild he is not in.
-				eq(R.OnRoute("Mod-Realm", "J2~y~Olympus Scam~7200~Olympus Scam=999=Victim/Victim2;Olympus R1=900=Stranger/Rcap"), true)
+				-- (1.5.4) A neutral made-up name: "Olympus Scam" became a name against Olympus (Core.lua's
+				-- AGAINST_AFTER), whose gates are dropped at once with no second member to ask.
+				eq(R.OnRoute("Mod-Realm", "J2~y~Olympus Phantom~7200~Olympus Phantom=999=Victim/Victim2;Olympus R1=900=Stranger/Rcap"), true)
 				eq(R.Route().gates, nil, "one member's gates")
 				eq(out[2], "Honest J1~1", "a second member asked at once")
 				local lines = V.RecruitLines()
-				eq(Fern.Find(lines, "Olympus Scam"), nil, "no member of it found: not listed")
+				eq(Fern.Find(lines, "Olympus Phantom"), nil, "no member of it found: not listed")
 				local _, at = Fern.Find(lines, L.RECRUIT_ROUTE_TITLE)
 				eq(Fern.Bare(lines[at + 1].text), "<Olympus R1>")
-				eq(R.NextContact("Olympus Scam"), nil, "nobody there to ask")
+				eq(R.NextContact("Olympus Phantom"), nil, "nobody there to ask")
 				eq(R.NextContact(nil).name, "Rcap-Realm")
 				local c = R.NextContact("Olympus R1")
 				eq(c.name, "Rcap-Realm", "the officer /who found in it, never Stranger (/who shows him in another guild)"); eq(c.officer, true)
@@ -45373,7 +45597,7 @@ test("1.1 crafters (#24): told he is busy, the page says so and a click asks aga
 end)
 end
 ---------------------------------------------------------------------------
--- 1.1 (batch E): the treasury. What the King's switches hide off the public channel (Zeal's
+-- 1.1 (batch E): the treasury. What the King's switches hide off the public channel (the hidden-treasury
 -- promise), the bank's search, what left it and the sister guilds' banks, bank requests, the
 -- Treasurer's "taking donations", and a clipboard backup.
 ---------------------------------------------------------------------------
@@ -45404,7 +45628,7 @@ local function OldTreasury()
 	return tns.Treasury, tns, logs
 end
 
-test("1.1 Zeal's promise: what the King hides never goes on the channel; the King, his Stewards and the keepers get it whole by whisper", function()
+test("1.1 the hidden-treasury promise: what the King hides never goes on the channel; the King, his Stewards and the keepers get it whole by whisper", function()
 	WithThrone(function(w, K)
 		local T, B = ns.Treasury, ns.Bank
 		local saved = { split = ns.splitNames, after = ns.After, chunked = ns.Comm.SendChunked, notFound = ERR_CHAT_PLAYER_NOT_FOUND_S, chat = C_ChatInfo }
@@ -49921,7 +50145,7 @@ local function TreasurySim(opts)
 	return result
 end
 
-test("1.1 Zeal's promise, the keeper's message budget: a donation a minute with 2 or 3 of them online drops nothing from his queue, and each gets the latest book whole", function()
+test("1.1 the hidden-treasury promise, the keeper's message budget: a donation a minute with 2 or 3 of them online drops nothing from his queue, and each gets the latest book whole", function()
 	for _, case in ipairs({
 		{ what = "the ranking shown, the King and a keeper", flags = { ranking = true, at = 1 }, keepers = 1 },
 		{ what = "the ranking shown, the King and two keepers", flags = { ranking = true, at = 1 }, keepers = 2 },
@@ -49948,7 +50172,7 @@ test("1.1 Zeal's promise, the keeper's message budget: a donation a minute with 
 	end
 end)
 
-test("1.1 Zeal's promise and 1.0: a King, Steward or keeper still on 1.0 is named on a 1.1 insider's Treasury tab while the King hides a part", function()
+test("1.1 the hidden-treasury promise and 1.0: a King, Steward or keeper still on 1.0 is named on a 1.1 insider's Treasury tab while the King hides a part", function()
 	WithThrone(function(w, K)
 		local T = ns.Treasury
 		local saved = { split = ns.splitNames }
@@ -54647,6 +54871,10 @@ do
 		debug.setupvalue(send, at, was)
 		if not ok then error(err, 0) end
 	end
+
+	-- (1.5.4: a line's links on the wire and in the Chat tab, tests/chat-item-links.lua.)
+	assert(loadfile(ROOT .. "tests/chat-item-links.lua"))(ns, test, eq, { WithWindow = WithWindow, WithGamepadUI = WithGamepadUI,
+		RelayWorld = Harness.RelayWorld, Line = Line, BubbleWith = BubbleWith, T0 = T0, KeepSendGap = KeepSendGap })
 
 	-- (1.1.5, the author's call: the borders' three tiers. Lords and Captains were silver, Raiders and
 	-- Veterans of our guild bronze until then; now a guild master is bronze, and they the star.)
@@ -60988,6 +61216,12 @@ end)()
 	end)
 
 	test("1.1.2 versions: a guildmate's hello names it (by the short name too); up to date, out of date, newer, unreadable; the author's released version is the newest known", function()
+		-- (1.5.4: a version that is no release form, "beta" here, marks a modified build in the builds'
+		-- record, Builds.lua, and Status says "modified" where it said "olympus"; a record of this
+		-- test's own, so Dan's mark never reaches another test.)
+		local savedBuilds = ns.db.builds
+		ns.db.builds = {}
+		ns.Builds.Reset()
 		local cns, Deliver = FreshComm()
 		Deliver("GUILD", "Ann", "H1~" .. ns.VERSION .. "~Realm~p")
 		Deliver("GUILD", "Bob", "H1~1.1.0~Realm~p")
@@ -61002,7 +61236,9 @@ end)()
 			eq((V.Status("Ann-Realm")), "current")
 			local state, version, how = V.Status("Bob")
 			eq(state, "outdated"); eq(version, "1.1.0"); eq(how, "hello")
-			eq((V.Status("Dan")), "olympus"); eq((V.Status("Eve")), "unknown")
+			-- (Changed on purpose, 1.5.4: "beta" is no release, so a modified build, with the version it said.)
+			local danState, danVersion = V.Status("Dan")
+			eq(danState, "modified"); eq(danVersion, "beta"); eq((V.Status("Eve")), "unknown")
 			eq(V.Line("outdated", "1.1.0"), L.VERSION_LINE_OUTDATED:format("1.1.0"))
 			w.hellos = {}
 			ns.Comm.PeerVersion = function(name) if ns.ShortName(name) == "Cid" then return "9.9.9", w.clock end end
@@ -61015,6 +61251,8 @@ end)()
 			eq((V.Status("Ann")), "outdated")
 			W.ResetVersion()
 		end)
+		ns.db.builds = savedBuilds
+		ns.Builds.Reset()
 	end)
 
 	test("1.1.2 Check version: one addon whisper, answered with the version alone; 'no answer' after 10 s; once per player every 2 min, 6 a minute; the answering side's limits, blocks and ignores", function()
@@ -62618,9 +62856,9 @@ end)()
 	end)
 
 	test("1.4.0: the version, the TOC's files in order, the new message types in Comm.lua's list", function()
-		eq(ns.VERSION, "1.5.3") -- the release has one identity in both folders
+		eq(ns.VERSION, "1.5.4") -- the release has one identity in both folders
 		local toc = assert(ReadFile(ADDON_DIR .. "Olympus.toc"))
-		assert(toc:find("## Version: 1.5.3", 1, true))
+		assert(toc:find("## Version: 1.5.4", 1, true))
 		eq(ns.Workshop.Newer("1.4.0", "1.3.3"), true, "the launch release is newer")
 		eq(ns.Workshop.Newer("1.3.3", "1.4.0"), false)
 		eq(ns.Workshop.Newer("1.4.1", "1.4.0"), true, "the next patch remains newer")
@@ -62707,7 +62945,7 @@ assert(loadfile(ROOT .. "tests/hop-regressions.lua"))(ns, test, eq, WithHop)
 local focused = Harness.watchOnly and { "watch", "watch-chat", "chat-strikes", "watch-council-view" }
 		or { "hop", "hop-sightings", "player-sightings", "transport", "admission", "privacy", "census", "authority", "chat-rooms", "war", "watch", "watch-chat", "chat-strikes", "wanted", "wanted-guilds", "wanted-sightings", "map-wanted", "map-names", "king-arrow",
 		"church", "church-count", "church-fullness", "church-view", "church-head", "department-access", "nominees-durable", "watch-council-view", "innkeeper-arrow", "squads", "king-centurions", "court-calls", "weekly-brief", "main-key", "guild-charter", "officer-muster", "dues-history", "accord", "tag-follow",
-		"campaign", "guild-finance", "dues-grace", "dues-roster-checkpoints", "justice-tasks", "justice-shared", "chat-channel-links", "perf", "roster", "census-avg-level", "ranking-rules", "profile-menu", "history-carry", "carry-history", "carry-merger", "party-guard", "profile-effects", "quiet-presence", "record", "realm-pages", "census-clean", "census-stats", "cover", "bridge-people", "bridge-affairs", "site-aggregate", "selftest", "locales-full", "role-briefings", "church-top-relay", "bridge-membership", "verify", "groups" }
+		"campaign", "guild-finance", "dues-grace", "dues-roster-checkpoints", "justice-tasks", "justice-shared", "chat-channel-links", "perf", "roster", "census-avg-level", "ranking-rules", "profile-menu", "history-carry", "carry-history", "carry-merger", "party-guard", "profile-effects", "quiet-presence", "record", "realm-pages", "census-clean", "census-stats", "cover", "bridge-people", "bridge-affairs", "site-aggregate", "selftest", "locales-full", "role-briefings", "church-top-relay", "bridge-membership", "verify", "groups", "codec-chunk-ttl" }
 for _, name in ipairs(focused) do
 	print("tests/" .. name .. ".lua")
 	-- (1.1.6: the Church's files get the harness's UI helpers.)
@@ -63067,7 +63305,7 @@ end)()
 	end
 
 	test("1.4.0 version letters: release identity agrees across both TOCs and localized letters; reading the old release does not hide the new letter", function()
-		eq(ns.VERSION, "1.5.3")
+		eq(ns.VERSION, "1.5.4")
 		for _, path in ipairs({ "Olympus/Olympus.toc", "Olympus_Arena/Olympus_Arena.toc" }) do
 			local toc = assert(ReadFile(ROOT .. path))
 			eq(toc:match("## Version:%s*(%S+)"), ns.VERSION, path)
@@ -63566,7 +63804,7 @@ end)()
 			eq(f.title:IsShown(), false); eq(f.body:IsShown(), false); eq(f.all:IsShown(), false)
 			local versions = Lt.Versions()
 			eq(#versions, #Lt.LIST, "a letter for every version listed")
-			eq(table.concat(versions, " "), "1.5.3 1.5.2 1.5.1 1.5.0 1.4.6 1.4.5 1.4.4 1.4.3 1.4.2 1.4.1 1.4.0 1.3.3 1.3.2 1.3.0 1.2.5.1 1.2.5 1.2.4 1.2.3 1.2.2 1.2.1 1.2.0 1.1.5 1.1.4 1.1.3 1.1.2 1.1.1 1.1.0", "newest first")
+			eq(table.concat(versions, " "), "1.5.4 1.5.3 1.5.2 1.5.1 1.5.0 1.4.6 1.4.5 1.4.4 1.4.3 1.4.2 1.4.1 1.4.0 1.3.3 1.3.2 1.3.0 1.2.5.1 1.2.5 1.2.4 1.2.3 1.2.2 1.2.1 1.2.0 1.1.5 1.1.4 1.1.3 1.1.2 1.1.1 1.1.0", "newest first")
 			for i, v in ipairs(versions) do
 				local r = f.rows[i]
 				eq(r:IsShown(), true); eq(r.version, v)
@@ -63772,6 +64010,52 @@ end)()
 					heads[head] = true
 				end
 			end
+		end)
+		GetLocale = savedLocale
+		if not ok then error(err, 0) end
+	end)
+
+	-- (The 1.5.4 review) The 1.5.4 letter took the 1.5.2 letter's signature, the dev's own words as the
+	-- launch letter's, which Locales.lua copies in English before a language file loads; the five
+	-- language files translated the letter but not its signature, so German, Spanish, French, Italian
+	-- and Russian players read the letter in their language signed in English. The signature the
+	-- window shows, for every letter in every language: where the letter is the player's language,
+	-- so is its signature.
+	test("version letters: a letter in the player's language is signed in it, never in English", function()
+		local savedLocale = GetLocale
+		local ok, err = pcall(function()
+			WithLetters(function()
+				local english = {}
+				for _, run in ipairs({ { "enUS" }, { "ptBR" }, { "deDE", "deDE" }, { "esES", "esES" }, { "esMX", "esES" },
+					{ "frFR", "frFR" }, { "itIT", "itIT" }, { "ruRU", "ruRU" } }) do
+					local code, file = run[1], run[2]
+					GetLocale = function() return code end
+					local loc = setmetatable({ On = function() end }, { __index = ns })
+					assert(loadfile(ADDON_DIR .. "Locales.lua"))("Olympus", loc)
+					if file then assert(loadfile(ADDON_DIR .. "Locales/" .. file .. ".lua"))("Olympus", loc) end
+					GetLocale = savedLocale
+					local lns = setmetatable({ L = loc.L, On = function() end, After = function() end,
+						Every = function() return { Cancel = function() end } end }, { __index = ns })
+					assert(loadfile(ADDON_DIR .. "Letters.lua"))("Olympus", lns)
+					local Lt, translated = lns.Letters, 0
+					for _, version in ipairs(Lt.LIST) do
+						eq(Lt.Show(version), true, code .. ": letter " .. version)
+						local f = Lt.Frame()
+						-- (Its words as written: a mark this harness has no art for is drawn as the
+						-- language's word for it, in a letter left in English too.)
+						local title, text, sign = f.title:GetText(), rawget(loc.L, "LETTER_" .. version:gsub("%.", "_")), f.sign:GetText()
+						assert(type(sign) == "string" and sign ~= "", code .. ": letter " .. version .. " signed")
+						if code == "enUS" then
+							english[version] = { title = title, text = text, sign = sign }
+						elseif title ~= english[version].title or text ~= english[version].text then
+							translated = translated + 1
+							assert(sign ~= english[version].sign, ("%s: letter %s in the player's language, signed in English: %s"):format(code, version, sign))
+						end
+					end
+					if code ~= "enUS" then assert(translated > 0, code .. ": letters in the player's language") end
+					Lt.Hide()
+				end
+			end)
 		end)
 		GetLocale = savedLocale
 		if not ok then error(err, 0) end

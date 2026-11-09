@@ -209,6 +209,33 @@ Stored or relayed numbers are observations, not a promise that every guild is on
 Please close and reopen the game after updating. Thank you for the reports and for helping test.
 
 Long live the King. Long live Olympus.]==]
+-- 1.5.4 (on Forever the census reaches every guild: a relay's snapshot whole to each reporter, guild
+-- verification across relays, the signed King's crown, presence and layer to every relay's guilds).
+L.LETTER_1_5_4_TITLE, L.LETTER_1_5_4_HEAD, L.LETTER_1_5_4_SIGNED, L.LETTER_1_5_4_LINK = "Catching up with Forever", "Catching up with Forever", L.LETTER_1_5_2_SIGNED, L.LETTER_1_5_2_LINK
+L.LETTER_1_5_4 = [==[Your Majesty. Soldiers of Olympus.
+
+Before the list. Fixing things after launch is taking longer than I wanted. Forever gives the addon much narrower channels than the beta did, and many features only show their real problems with thousands of players on them at once. Some updates will go out with issues only the live army can reveal, and the next one fixes them. Thanks for the patience and the reports.
+
+What version 1.5.4 changes:
+
+- {guild} The census: the relays now hand each guild the whole census in turns, instead of losing pieces on the way. With many guilds on one relay, a full picture can take half an hour or more to reach you. It works once the relay characters (the High Council's, the King's, the Treasurer's and mine) run this version.
+- {crown} The King: his crown on the map, his online status and his layer reach every guild, whichever guild he plays in.
+- {watch} Guild verifications reach every relay and every guild, and a client that missed an approval gets it back when it asks.
+- {watch} Guild verification starts over: every guild's clock restarts with this version, and the grace is now 7 days instead of 48 hours.
+- {team} Guildmates on other Forever servers are recognised: their Olympus chat is no longer dropped, and their names show without the server name.
+- {star} PvP and PvE totals reported by the High Council now count for everyone, not only for those who played there.
+- {church} The Church: its public scores now travel between guilds through the relays, and the Twelve Apostles are named.
+- {team} Guild masters' nominations (Legates and correspondents) now travel between guilds through the relays; at first they can take several hours to reach everyone.
+- {team} The Horde and the Alliance are kept apart. Horde numbers no longer count in Alliance totals, and a Horde guild counts as Olympus when its name says Olympus or ends in a Horde word (like the Mudhutters).
+- {guild} Layer hop is experimental. You ask, and a guildmate on that layer invites you. If they are on another server, their portraits show dark blue once you join: log out and back in, or close and reopen the game, and you should land on their layer. It does not always work.
+- {news} Item links in the Olympus chat work again: highlighted, clickable, and the item shows when you hover.
+- {watch} More guild names that insult Olympus no longer count as Olympus guilds.
+- {team} The yellow "No player named ... is currently playing" lines no longer fill your chat.
+- {team} When no relay answers, the census waits for one instead of trying the channel the game blocks.
+
+Please close and reopen the game after updating. Thank you to everyone who measured and reported the problems on GitHub, CurseForge and Discord.
+
+Long live the King. Long live Olympus.]==]
 L.LETTER_1_3_3_TITLE = "Your guild on the website"
 L.LETTER_1_3_3 = [==[Version 1.3.3.
 
@@ -330,6 +357,31 @@ A versão 1.5.2 se concentra no censo, nos rankings e nos problemas que vocês r
 Números armazenados ou retransmitidos são observações, não uma promessa de que todas as guildas estão online ou já foram contadas. A página de detalhes mostra o que sabemos e quando foi observado.
 
 Feche e reabra o jogo depois de atualizar. Obrigado pelos relatos e pela ajuda nos testes.
+
+Vida longa ao Rei. Vida longa ao Olympus.]==]
+	L.LETTER_1_5_4_TITLE, L.LETTER_1_5_4_HEAD, L.LETTER_1_5_4_SIGNED, L.LETTER_1_5_4_LINK = "Acertando o passo com o Forever", "Acertando o passo com o Forever", L.LETTER_1_5_2_SIGNED, L.LETTER_1_5_2_LINK
+	L.LETTER_1_5_4 = [==[Vossa Majestade. Soldados do Olympus.
+
+Antes da lista. Arrumar as coisas depois do lançamento está levando mais tempo do que eu queria. O Forever dá ao addon canais muito mais estreitos do que a beta dava, e muitos recursos só mostram os problemas de verdade com milhares de jogadores usando ao mesmo tempo. Algumas atualizações vão sair com problemas que só o exército ao vivo consegue revelar, e a seguinte corrige. Obrigado pela paciência e pelos relatos.
+
+O que muda na versão 1.5.4:
+
+- {guild} O censo: os relays agora entregam a cada guilda o censo inteiro, em turnos, em vez de perder pedaços no caminho. Com muitas guildas no mesmo relay, o quadro completo pode levar meia hora ou mais para chegar. Funciona quando os personagens relay (os do High Council, o do Rei, os do Tesoureiro e os meus) estiverem nesta versão.
+- {crown} O Rei: a coroa no mapa, o status online e a camada dele chegam a todas as guildas, seja qual for a guilda em que ele joga.
+- {watch} As verificações de guilda chegam a todos os relays e a todas as guildas, e quem perdeu uma aprovação a recebe de volta quando pede.
+- {watch} A verificação de guilda recomeça: o prazo de cada guilda volta a contar com esta versão, e a carência agora é de 7 dias em vez de 48 horas.
+- {team} Colegas de guilda em outros servidores do Forever são reconhecidos: o chat do Olympus deles não é mais descartado, e os nomes aparecem sem o servidor.
+- {star} Os totais de PvP e PvE informados pelo High Council agora contam para todos, não só para quem jogou lá.
+- {church} A Igreja: as pontuações públicas agora circulam entre as guildas pelos relays, e os Doze Apóstolos foram nomeados.
+- {team} As nomeações dos mestres de guilda (Legates e correspondentes) agora circulam entre as guildas pelos relays; no começo podem levar várias horas para chegar a todos.
+- {team} A Horda e a Aliança ficam separadas. Os números da Horda não contam mais nos totais da Aliança, e uma guilda da Horda conta como Olympus quando o nome diz Olympus ou termina com uma palavra da Horda (como os Mudhutters).
+- {guild} O layer hop é experimental. Você pede, e um colega de guilda daquela camada te convida. Se ele estiver em outro servidor, os retratos do grupo ficam azul-escuros quando você entra: saia e entre de novo no personagem, ou feche e abra o jogo, e você deve chegar à camada dele. Nem sempre funciona.
+- {news} Os links de itens no chat do Olympus voltaram a funcionar: destacados, clicáveis, e o item aparece quando você passa o mouse.
+- {watch} Mais nomes de guilda que insultam o Olympus deixam de contar como guildas do Olympus.
+- {team} As linhas amarelas de "jogador não encontrado" não enchem mais o seu chat.
+- {team} Quando nenhum relay responde, o censo espera por um em vez de tentar o canal que o jogo bloqueia.
+
+Feche e abra o jogo de novo depois de atualizar. Obrigado a todos que mediram e relataram os problemas no GitHub, no CurseForge e no Discord.
 
 Vida longa ao Rei. Vida longa ao Olympus.]==]
 	L.LETTER_1_3_3_TITLE = "Sua guilda no site"
@@ -589,7 +641,7 @@ L.LAYER_UNKNOWN = "Unknown layer"
 L.LAYER_COUNT = "~%d with Olympus"
 L.LAYER_YOU = "You are here"
 L.LAYER_EXPERIMENTAL = "Experimental: a layer is named after the highest ranked Olympus member on it."
-L.HOP_KING_LINE = "Ask invite for %s Layer"
+L.HOP_KING_LINE = "Ask invite for %s Layer (experimental)"
 L.HOP_KING_BUSY = "Asking invite for %s Layer..."
 L.HOP_KING_HERE = "You are on %s Layer"
 L.HOP_KING_TIP = "%s is online. The addon asks the Olympus players on his layer for an invite, you join their group, the game moves you to his layer, and the addon takes you out of the group."
@@ -615,7 +667,7 @@ L.HOP_KING_NO = "No invites to the King's layer from you for now. /oly layerhelp
 L.HOP_KING_MANUAL = "Requests for the King's layer show a window: Invite or Not now."
 L.HOP_MOVED_LEFT = "Olympus: you are on the new layer, the addon took you out of the group."
 L.HOP_RELEASED = "Olympus: %s's helper time limit ended. Left the group; the requested layer was not confirmed."
-L.HOP_ROW_TIP = "Click to ask the Olympus players on this layer for an invite."
+L.HOP_ROW_TIP = "Click to ask the Olympus players on this layer for an invite (experimental)."
 L.HOP_ASKING = "Asking Olympus players on %s for an invite..."
 L.HOP_REQUESTED = "Asked %s for an invite."
 L.HOP_NOBODY = "Nobody on that layer can invite you right now. Try again in a minute."
@@ -663,11 +715,29 @@ L.HOP_LIST_HINT = "Use /oly hop <zone UID> to ask for a listed layer, or /oly ho
 L.HOP_NO_ALTERNATIVE = "No matching layer is known here. Target a nearby NPC and allow time for Olympus layer reports; /oly hop list shows what is known."
 L.HOP_CANCEL_BUTTON = "Cancel request"
 L.HOP_CANCEL_TIP = "Stop this hop. Your current group is kept; later invites are left for you to decide."
-L.HOP_ANY_BUTTON = "Ask for another layer"
+L.HOP_ANY_BUTTON = "Ask for another layer (experimental)"
 L.HOP_ANY_TIP = "Ask for the most recently reported alternative in this zone (within 10 minutes). This does not measure population or guarantee a transfer."
 L.HOP_REPORT_AGE = "Latest layer report: %s. Reports are not a count of available helpers."
 L.HOP_AUTO_PAUSED_GROUP = "Always invite is still on, but automatic invites pause in a normal party or raid so Olympus never adds strangers to your group. This request still needs your click."
-L.HELP_HOP = "  /oly hop - King's layer; /oly hop list | any | <zone UID> | status | cancel"
+-- 1.5.4: the hop is experimental (the first ask of a session shows the flow), and on WoW: Forever a
+-- layer on another sub-realm ends with a relog (Hop.lua's relog step, Layers.lua).
+L.HOP_CONFIRM_SAME = "Experimental. Olympus asks the players on that layer for an invite: you join their group, the game moves you to their layer, and Olympus takes you out of the group once it sees the move. It does not always work."
+L.HOP_CONFIRM_OTHER = "Experimental. You will be invited to a group on another server. Once you join, the others' portraits show dark blue: you are not with them yet. Log out and back in; if that does not do it, close the game and open it again. It does not always work."
+L.HOP_CONFIRM_ASK = "Ask"
+L.HOP_CONFIRM_CANCEL = "Cancel"
+L.HOP_RELOG = "You are grouped with %s on another server. The others' portraits show dark blue: you are not with them yet. Log out and back in. If you still do not see your group, close the game and open it again; Olympus finishes the hop when you return. It does not always work."
+L.HOP_RELOG_OK = "OK"
+L.HOP_JOINED_RELOG = "In %s's group, on another server: log out and back in (or close the game and open it again) to arrive. Olympus finishes the hop when you return."
+L.HOP_RELOG_STILL = "Still on your old server: close the game and open it again to arrive."
+L.HOP_RELOG_ARRIVED = "On %s's server now: target two different nearby NPCs to confirm the layer."
+L.HOP_RELOG_EXPIRED = "Hop ended: %d minutes passed without arriving. Your group is left as it is."
+L.HOP_RELOG_NO_GROUP = "Hop ended: you are no longer in %s's group."
+L.HOP_PROGRESS_RELOG = "In %s's group on another server: log out and back in, or restart the game, to arrive."
+L.HOP_REQUEST_RELOG = "Olympus: %s wants to join your layer. He is on another server: he arrives after logging out and back in."
+L.HOP_INVITING_RELOG = "Inviting %s to your layer. He is on another server: he arrives after logging out and back in, and may stay in your group up to %d minutes."
+L.HOP_ROW_OTHER_REALM = "On another server (%s): after joining the group, log out and back in to arrive."
+L.HOP_STATUS_RELOG = "Pending hop: %s on %s; you are on %s, %ds since you joined the group."
+L.HELP_HOP = "  /oly hop - King's layer (experimental); /oly hop list | any | <zone UID>[@server] | status | cancel"
 L.HELP_LAYERHELP = "  /oly layerhelp on | off - get (or not) requests to invite players to your layer"
 L.HELP_LAYERAUTO = "  /oly layerauto on | off - invite layer requests without the window"
 L.DECREES = "Royal decrees"
@@ -1683,6 +1753,26 @@ L.SEARCH_MORE_GUILDS = "... and %d more guilds found: click to show them"
 -- 0.9.10: Olympus Link (the Discord role). 1.4.0: its own addon, Olympus_Link (LinkLoader.lua), with its words.
 L.HELP_DISCORD = "  /oly discord [code] - link this character to your Discord account (Olympus Link); /oly discord show | status | forget"
 L.DISCORD_NOT_INSTALLED = "Olympus Link (/oly discord, your Discord role) is its own addon, Olympus_Link, and it is not installed or not enabled here. Everything else in Olympus works without it."
+-- 1.5.4: the relay's admission (Relay.lua: the presentation, the relay rules the author's client hands out).
+L.HELP_RELAY = "  /oly relay admitted - whom this relay serves and refused, and the relay rules in force (a copy window); /oly relay rules"
+L.RELAY_USAGE = "/oly relay admitted (the relay's report), /oly relay rules (the rules in force); the author alone: /oly relay rules on|off [YYYY-MM-DD|epoch|now] [versions, comma-separated]"
+L.RELAY_RULES_AUTHOR = "Only the author's client makes the relay rules."
+L.RELAY_RULES_SET = "Relay rules revision %d kept and handed to the relays."
+L.RELAY_RULES_LINE = "Relay rules: revision %d (%s); presentation %s; versions admitted: %s"
+L.RELAY_RULES_CODE = "the code's own"
+L.RELAY_RULES_FROM_AUTHOR = "from %s, %s UTC"
+L.RELAY_RULES_PAUSED = "not required (paused)"
+L.RELAY_RULES_SINCE = "required since %s UTC"
+L.RELAY_RULES_FROM = "required from %s UTC"
+L.RELAY_RULES_ANY = "any release"
+L.RELAY_REPORT_TITLE = "Olympus relay: whom it serves"
+L.RELAY_REPORT_HEAD = "%s (Olympus %s), %s"
+L.RELAY_REPORT_RELAY = "a relay"
+L.RELAY_REPORT_NOT_RELAY = "not a relay"
+L.RELAY_REPORT_PRESENTED = "Presented (%d): name, version, minutes since its last word"
+L.RELAY_REPORT_REFUSED = "Refused (%d): name, why, minutes ago"
+L.RELAY_REPORT_DENIED = "Denied (%d): %s"
+L.RELAY_AGO = "%d min"
 -- 1.0.0: the King's Steward (the character the author marks in the signed titles list).
 L.STEWARD_ACTING = "Acting for the King"
 L.THRONE_YOU_ARE_STEWARD = "You are the King's Steward: in %s's name you name Hands of your own beside his, the treasury's keepers and what the army sees of it, and use every tool of his Hands. On the treasury his own newer word always wins."
@@ -3006,7 +3096,7 @@ if GetLocale and GetLocale() == "ptBR" then
 	L.LAYER_COUNT = "~%d com Olympus"
 	L.LAYER_YOU = "Você está aqui"
 	L.LAYER_EXPERIMENTAL = "Experimental: cada layer leva o nome do membro Olympus de maior cargo nele."
-	L.HOP_KING_LINE = "Pedir convite para o layer do %s"
+	L.HOP_KING_LINE = "Pedir convite para o layer do %s (experimental)"
 	L.HOP_KING_BUSY = "Pedindo convite para o layer do %s..."
 	L.HOP_KING_HERE = "Você está no layer do %s"
 	L.HOP_KING_TIP = "%s está online. O addon pede um convite aos jogadores Olympus no layer dele, você entra no grupo, o jogo te leva para o layer dele e o addon te tira do grupo."
@@ -3032,7 +3122,7 @@ if GetLocale and GetLocale() == "ptBR" then
 	L.HOP_KING_MANUAL = "Pedidos para o layer do King mostram uma janela: Convidar ou Agora não."
 	L.HOP_MOVED_LEFT = "Olympus: você está no novo layer, o addon te tirou do grupo."
 	L.HOP_RELEASED = "Olympus: o tempo de ajuda do grupo de %s acabou. Você saiu do grupo; o layer pedido não foi confirmado."
-	L.HOP_ROW_TIP = "Clique para pedir convite aos jogadores Olympus deste layer."
+	L.HOP_ROW_TIP = "Clique para pedir convite aos jogadores Olympus deste layer (experimental)."
 	L.HOP_ASKING = "Pedindo convite aos jogadores Olympus no %s..."
 	L.HOP_REQUESTED = "Pedido de convite enviado para %s."
 	L.HOP_NOBODY = "Ninguém nesse layer pode te convidar agora. Tente de novo em um minuto."
@@ -3080,11 +3170,27 @@ if GetLocale and GetLocale() == "ptBR" then
 	L.HOP_NO_ALTERNATIVE = "Nenhum layer correspondente é conhecido aqui. Selecione um NPC próximo e aguarde os relatos de layer; /oly hop list mostra o que é conhecido."
 	L.HOP_CANCEL_BUTTON = "Cancelar pedido"
 	L.HOP_CANCEL_TIP = "Interrompe esta troca. Seu grupo atual é mantido; convites posteriores ficam para você decidir."
-	L.HOP_ANY_BUTTON = "Pedir outro layer"
+	L.HOP_ANY_BUTTON = "Pedir outro layer (experimental)"
 	L.HOP_ANY_TIP = "Pede a alternativa relatada mais recentemente nesta zona (nos últimos 10 minutos). Isso não mede população nem garante a troca."
 	L.HOP_REPORT_AGE = "Relato de layer mais recente: %s. Relatos não contam ajudantes disponíveis."
 	L.HOP_AUTO_PAUSED_GROUP = "Sempre convidar continua ligado, mas os convites automáticos pausam em grupos e raides normais para o Olympus nunca adicionar estranhos ao seu grupo. Este pedido ainda precisa do seu clique."
-	L.HELP_HOP = "  /oly hop - layer do King; /oly hop list | any | <UID da zona> | status | cancel"
+	L.HOP_CONFIRM_SAME = "Experimental. O Olympus pede convite aos jogadores desse layer: você entra no grupo deles, o jogo te leva para o layer deles e o Olympus te tira do grupo quando vê a mudança. Nem sempre funciona."
+	L.HOP_CONFIRM_OTHER = "Experimental. Você vai ser convidado para um grupo em outro servidor. Quando entrar, os retratos dos outros ficam azul-escuros: você ainda não está com eles. Deslogue e logue de novo; se não resolver, feche o jogo e abra de novo. Nem sempre funciona."
+	L.HOP_CONFIRM_ASK = "Pedir"
+	L.HOP_CONFIRM_CANCEL = "Cancelar"
+	L.HOP_RELOG = "Você está no grupo de %s em outro servidor. Os retratos dos outros ficam azul-escuros: você ainda não está com eles. Deslogue e logue de novo. Se ainda não vir seu grupo, feche o jogo e abra de novo; o Olympus termina o hop quando você voltar. Nem sempre funciona."
+	L.HOP_RELOG_OK = "OK"
+	L.HOP_JOINED_RELOG = "No grupo de %s, em outro servidor: deslogue e logue de novo (ou feche o jogo e abra de novo) para chegar. O Olympus termina o hop quando você voltar."
+	L.HOP_RELOG_STILL = "Ainda no seu servidor antigo: feche o jogo e abra de novo para chegar."
+	L.HOP_RELOG_ARRIVED = "Agora no servidor de %s: selecione dois NPCs próximos diferentes para confirmar o layer."
+	L.HOP_RELOG_EXPIRED = "Hop encerrado: %d minutos se passaram sem você chegar. Seu grupo fica como está."
+	L.HOP_RELOG_NO_GROUP = "Hop encerrado: você não está mais no grupo de %s."
+	L.HOP_PROGRESS_RELOG = "No grupo de %s em outro servidor: deslogue e logue de novo, ou reinicie o jogo, para chegar."
+	L.HOP_REQUEST_RELOG = "Olympus: %s quer entrar no seu layer. Ele está em outro servidor: chega depois de deslogar e logar de novo."
+	L.HOP_INVITING_RELOG = "Convidando %s para o seu layer. Ele está em outro servidor: chega depois de deslogar e logar de novo, e pode ficar no seu grupo por até %d minutos."
+	L.HOP_ROW_OTHER_REALM = "Em outro servidor (%s): depois de entrar no grupo, deslogue e logue de novo para chegar."
+	L.HOP_STATUS_RELOG = "Hop pendente: %s em %s; você está em %s, há %ds no grupo."
+	L.HELP_HOP = "  /oly hop - layer do King (experimental); /oly hop list | any | <UID da zona>[@servidor] | status | cancel"
 	L.HELP_LAYERHELP = "  /oly layerhelp on | off - receber (ou não) pedidos para convidar jogadores ao seu layer"
 	L.HELP_LAYERAUTO = "  /oly layerauto on | off - convidar pedidos de layer sem a janela"
 	L.DECREES = "Decretos reais"
@@ -4086,6 +4192,26 @@ if GetLocale and GetLocale() == "ptBR" then
 	-- 0.9.10: Olympus Link (o cargo no Discord). 1.4.0: um addon à parte, o Olympus_Link (LinkLoader.lua), com os textos dele.
 	L.HELP_DISCORD = "  /oly discord [código] - vincular este personagem à sua conta do Discord (Olympus Link); /oly discord show | status | forget"
 	L.DISCORD_NOT_INSTALLED = "O Olympus Link (/oly discord, o seu cargo no Discord) é um addon à parte, o Olympus_Link, e não está instalado ou não está ativado aqui. Todo o resto do Olympus funciona sem ele."
+	-- 1.5.4: a admissão do relay (Relay.lua: a apresentação, as regras do relay que o cliente do autor distribui).
+	L.HELP_RELAY = "  /oly relay admitted - quem este relay atende e recusou, e as regras do relay em vigor (uma janela de cópia); /oly relay rules"
+	L.RELAY_USAGE = "/oly relay admitted (o relatório do relay), /oly relay rules (as regras em vigor); só o autor: /oly relay rules on|off [AAAA-MM-DD|epoch|now] [versões, separadas por vírgula]"
+	L.RELAY_RULES_AUTHOR = "Só o cliente do autor faz as regras do relay."
+	L.RELAY_RULES_SET = "Regras do relay, revisão %d, guardadas e entregues aos relays."
+	L.RELAY_RULES_LINE = "Regras do relay: revisão %d (%s); apresentação %s; versões admitidas: %s"
+	L.RELAY_RULES_CODE = "as do próprio código"
+	L.RELAY_RULES_FROM_AUTHOR = "de %s, %s UTC"
+	L.RELAY_RULES_PAUSED = "não exigida (pausada)"
+	L.RELAY_RULES_SINCE = "exigida desde %s UTC"
+	L.RELAY_RULES_FROM = "exigida a partir de %s UTC"
+	L.RELAY_RULES_ANY = "qualquer release"
+	L.RELAY_REPORT_TITLE = "Relay do Olympus: quem ele atende"
+	L.RELAY_REPORT_HEAD = "%s (Olympus %s), %s"
+	L.RELAY_REPORT_RELAY = "um relay"
+	L.RELAY_REPORT_NOT_RELAY = "não é relay"
+	L.RELAY_REPORT_PRESENTED = "Apresentados (%d): nome, versão, minutos desde a última palavra"
+	L.RELAY_REPORT_REFUSED = "Recusados (%d): nome, motivo, minutos atrás"
+	L.RELAY_REPORT_DENIED = "Negados (%d): %s"
+	L.RELAY_AGO = "%d min"
 	-- 1.0.0: o Senescal do Rei (o personagem que o autor marca na lista assinada de títulos).
 	L.STEWARD_ACTING = "Agindo pelo Rei"
 	L.THRONE_YOU_ARE_STEWARD = "Você é o Senescal do Rei: em nome de %s você nomeia Mãos suas ao lado das dele, os guardiões do tesouro e o que o exército vê dele, e usa todas as ferramentas das Mãos. No tesouro, a palavra mais nova do próprio Rei sempre vence."
@@ -6313,6 +6439,28 @@ L.WHISPER_LOCKDOWN = "The game holds chat from addons right now (a dungeon, raid
 L.WORKSHOP_BUG_BUSY = "Your last bug report is still on its way to the author: try again in a moment."
 L.BUGASK_GONE = "That ask is over (10 minutes passed): nothing was sent. The author can ask again."
 L.PAGE_HELP_ENGLISH = "(This explanation is in English.)"
+-- 1.5.4: modified builds (Builds.lua): the menu's line, its detail, /oly builds.
+L.VERSION_LINE_MODIFIED = "Olympus %s (modified build)"
+L.VERSION_LINE_MODIFIED_ANY = "Olympus (modified build)"
+L.VERSION_SOURCE_SHARED = "From a guild master's, an officer's or a councillor's report, %s."
+L.VERSION_DETAIL_SHARED = "reported by %s, %s"
+L.VERSION_DETAIL_LOCKED = "locked out: its words are dropped until it announces a release"
+L.VERSION_DETAIL_SILENT = "silent to %d of your version checks (not a lock)"
+L.VERSION_ASK_MODIFIED_TIP = "A modified build: there is no release to update it from. Ask them to install Olympus from CurseForge."
+L.BUILDS_TITLE = "Modified builds"
+L.BUILDS_HEAD = "Modified Olympus builds seen: %d"
+L.BUILDS_LOCK_NOTE = "A client your addon saw announce a modified build is locked out: its words are dropped until it announces a release version. The right-click menu marks it too."
+L.BUILDS_ONLINE = "Online now (your guild):"
+L.BUILDS_SEEN = "Seen before:"
+L.BUILDS_NONE = "No modified build seen yet. Your addon reads a guildmate's check-in and the answers to Check version; guild masters, officers and the High Council share what theirs saw."
+L.BUILDS_HOW_HELLO = "from their guild check-in"
+L.BUILDS_HOW_ANSWER = "from their answer to Check version"
+L.BUILDS_HOW_SILENT = "silent to %d version checks (not a lock)"
+L.BUILDS_BY_YOU = "seen by your addon"
+L.BUILDS_BY = "reported by %s"
+L.BUILDS_CLEARED = "now on %s: unlocked"
+L.BUILDS_MEMBERS_NOTE = "What guild masters, officers and the High Council share among them is not shown to members: this is what your own addon saw."
+L.HELP_BUILDS = "  /oly builds - the modified Olympus builds your addon saw, and those guild masters, officers and the High Council reported (a copyable window)"
 if GetLocale and GetLocale() == "ptBR" then
 	L.PLAYERMENU_TITLE = "Olympus"
 	L.PLAYERMENU_COLLAPSE = "Recolher menu Olympus"
@@ -6420,6 +6568,27 @@ if GetLocale and GetLocale() == "ptBR" then
 	L.WORKSHOP_BUG_BUSY = "O seu último relatório de bug ainda está indo para o autor: tente de novo daqui a pouco."
 	L.BUGASK_GONE = "Esse pedido acabou (passaram 10 minutos): nada foi enviado. O autor pode pedir de novo."
 	L.PAGE_HELP_ENGLISH = "(Esta explicação está em inglês.)"
+	L.VERSION_LINE_MODIFIED = "Olympus %s (versão modificada)"
+	L.VERSION_LINE_MODIFIED_ANY = "Olympus (versão modificada)"
+	L.VERSION_SOURCE_SHARED = "Do relato de um mestre de guilda, oficial ou conselheiro, %s."
+	L.VERSION_DETAIL_SHARED = "relatado por %s, %s"
+	L.VERSION_DETAIL_LOCKED = "bloqueado: as mensagens dele são descartadas até anunciar uma versão oficial"
+	L.VERSION_DETAIL_SILENT = "sem resposta a %d das suas verificações de versão (não é bloqueio)"
+	L.VERSION_ASK_MODIFIED_TIP = "Uma versão modificada: não há versão oficial de onde atualizar. Peça que instale o Olympus pelo CurseForge."
+	L.BUILDS_TITLE = "Versões modificadas"
+	L.BUILDS_HEAD = "Versões modificadas do Olympus vistas: %d"
+	L.BUILDS_LOCK_NOTE = "Um cliente que o seu addon viu anunciar uma versão modificada fica bloqueado: as mensagens dele são descartadas até anunciar uma versão oficial. O menu do botão direito também marca."
+	L.BUILDS_ONLINE = "Online agora (sua guilda):"
+	L.BUILDS_SEEN = "Vistos antes:"
+	L.BUILDS_NONE = "Nenhuma versão modificada vista ainda. O seu addon lê o aviso dos colegas de guilda e as respostas ao Ver versão; mestres de guilda, oficiais e o Alto Conselho compartilham o que os deles viram."
+	L.BUILDS_HOW_HELLO = "do aviso para a guilda"
+	L.BUILDS_HOW_ANSWER = "da resposta ao Ver versão"
+	L.BUILDS_HOW_SILENT = "sem resposta a %d verificações de versão (não é bloqueio)"
+	L.BUILDS_BY_YOU = "visto pelo seu addon"
+	L.BUILDS_BY = "relatado por %s"
+	L.BUILDS_CLEARED = "agora em %s: desbloqueado"
+	L.BUILDS_MEMBERS_NOTE = "O que mestres de guilda, oficiais e o Alto Conselho compartilham entre si não aparece para membros: isto é o que o seu próprio addon viu."
+	L.HELP_BUILDS = "  /oly builds - as versões modificadas do Olympus que o seu addon viu, e as que mestres de guilda, oficiais e o Alto Conselho relataram (janela copiável)"
 end
 
 ---------------------------------------------------------------------------

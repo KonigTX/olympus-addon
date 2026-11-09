@@ -29,10 +29,9 @@ master and the officers of the Horde guild named exactly "Olympus", if there is 
 
 ## Recent versions
 
+- **1.5.4**: On Forever the census reaches every guild: a relay sends each reporter its snapshot whole, one reporter at a time and wrapped once (XOData, PRs #81 and #82), keeps census reports in pieces, sends an integration's presentation to its own guild alone and keeps one guild per reporter; a guild elects one reporter across sub-realms and lanes; the channel-text fallback the game blocked is gone. Guildmates on other Forever sub-realms are recognised by their roster row, and their names show plain in Olympus chat (XOData). Guild verifications cross relays (RW) and each ask is answered to the client that asked. A trusted client's other-family totals count again. The signed King's crown, presence and layer reach every relay's guilds, and he shows online from his guild's report. Layer-hop asks go to the asker's own guild over GUILD; a layer on another Forever sub-realm is listed apart with its server's label, a hop there finishes after the player logs out and back in (or restarts the game), the pending hop kept in the saved variables for 15 minutes, and the hop is marked experimental with a window that tells the flow at the first ask. Dues History skips a Treasurer known offline (ArithmeticLogic, PR #86). A message's pieces keep their assembly open while they keep arriving, up to five minutes (fiddlecat, PR #80). The Horde is kept apart: its relays and verifiers come from the signed list's Horde entries (no King by code off the beta's realms on either side), Horde totals no longer appear in the Alliance census nor the Alliance's in the Horde's, and on the Horde a guild named by one of the community's Horde-race banter words counts as an Olympus guild. The Church's public scores, the guild masters' nominations and the shared block terms reach every guild: each goes as one list (LS, Comm.SendList), which the relay collects whole and hands to each guild's reporter whole, where word by word a reporter got one to four of the Church's twenty-two rows and no master's list in more than one part; a relay sends a guild only a list it does not hold, the Church's rows once an hour, within shares of its whispers kept for the senders it can trust, so a member's flood never keeps them out and the census keeps most of its room. Every guild's verification clock starts again on the release night, with 7 days of grace where it was 48 hours. Modified builds: a client whose announced version is no release (its guild check-in or its Check version answer) is marked in the right-click menu ("modified build"), listed by `/oly builds` in a copyable window, shared among guild masters, officers and the High Council (one word per sighting an hour, kept with the reporter's name, 400 at most), and locked out: its words are dropped at the door, a relay takes no registration from it and forwards nothing to it, until it announces a release; a guildmate who answers none of three version checks over five minutes while checking in is marked silent to version checks, never locked. The relays keep the shared list too, pass it to one another and lock a listed character out until it announces a release to one of them, a clearing they share as well. The author's relay asks each locked client online to update every 30 minutes, with his usual ask by whisper (20 at most). Clients identify themselves to the relays with their version; after the date in the release notes relays serve only published versions, under rules the author's client hands them in game.
 - **1.5.3**: Temporarily pause overdue verification notices for guild members. Guild master reminders, verification deadlines, approvals and High Council follow-up continue. Existing clients need this update to stop their local notice.
 - **1.5.2**: While no relay of the High Council answers, a guild's census report goes as its reporter's own text in the joined channel (which Forever delivers to everyone in it) and everyone takes it from there, so the census keeps moving in a realm family whose relays are offline; a relay's copy later is the same report again. The dev's second PvP character is a launch pin of that family. A family's store also drops another family's counts-only rows at open, a plain Forever realm's group row counts as its family's server (never "another" beside it), and its ruleset is its family's.
-- **1.3.3**: Deliberate site export: an optional Site Aggregate folder writes a masked own-guild count for the
-  Olympus website on /oly site export and /reload, never uploads, and empties at the next logout or reload.
 
 Every version's notes are in the [GitHub releases](https://github.com/dnl-gentile/olympus-addon/releases). This page is the short one for CurseForge: the [README](https://github.com/dnl-gentile/olympus-addon#olympus) has every section in full.
 
@@ -346,38 +345,7 @@ bottom-to-top always gives the same tab order; changing role or debug view never
 The Realm tab links **the Board** (or `/oly lfg`): who in Olympus wants a group right now, from
 what each player chose to share, and the King's week.
 
-- **The King's week** (`/oly week`): the King's Agenda for the next 7 days, by day, with your own
-  guild's events from the game's calendar among them, so nobody books the army twice. Olympus
-  can't write into the game's calendar: an officer's click opens it on the right day's month and
-  says which day to right-click for the guild event. Your client keeps the week across a
-  `/reload` or a login, so it shows while the King is offline.
-  **Heraldry and guild agendas (1.2.4).** The signed High Council's Heraldry holders and the author
-  also schedule for Olympus, alongside the King's existing verified Steward and Hands. **Schedule
-  for your guild** belongs to its own master and verified Heraldry correspondent: a day and hour,
-  or `30 Guild gathering`. Entries and signup counts reach that guild alone. Saved entries keep
-  their audience, and a roster still loading keeps them hidden until it confirms the issuer.
-  Losing the duty stops new entries and repeats; setters may take back their own exact entries.
-  Older clients ignore guild Agenda messages; the army wire and old Heritage key stay compatible.
-- **The signup sheet**: Sign up on an Agenda entry with the role you claim; it goes to whoever set
-  it, alone, and its audience sees the counts (4 tanks, 9 healers...), kept by his client across a
-  `/reload`. Nothing checks the role and nothing invites you: whoever runs the event invites by
-  hand. Five minutes before an entry you signed, your client alone prints one line with the usual
-  alert sound (nothing sent), after a `/reload` too. A guild entry's saved nudge appears only in
-  that same guild while its setter still has that duty.
-- **Raise a flag** with one click: **Dungeon**, **Raid**, **PvP** or **Layer**, plus a short
-  note if you want one (40 bytes at most). A box says first what goes out: your name, level,
-  class and guild, the flag and the note, to every Olympus player of your realm and faction.
-  The note goes the way chat does (the game's servers keep it, so abuse can be reported); on the
-  King's screen no note shows.
-- **Your zone shows on your card only while you share it** (`/oly location on`); otherwise the
-  card says the zone is hidden. Never your position.
-- **A click on someone's card whispers them.** Nothing invites anyone, queues or forms a group.
-- One flag each, an hour at most; a click on yours, or `/oly lfg off`, lowers it at once.
-- **Camps**: drop one where you stand (`/oly camp [note]`) so the army reuses a fire already up.
-  Its zone only, never your spot; it needs `/oly location on` and ends by itself after 30
-  minutes. The Board lists them by zone, and the world map shows one badge per zone with how
-  many (mouse and keyboard only; `/oly camps off` hides them). **Bones can be played at a tavern
-  or at a camp** (1.1.6): grouped, within about 10 yards, at the same inn or by your camp.
+*Continued in the README: [The Board: who is looking for a group, and where (1.1)](https://github.com/dnl-gentile/olympus-addon#the-board-who-is-looking-for-a-group-and-where-11).*
 
 ### Net-off (1.1): the moderators hide a character or take a guild off the network
 The King, his Steward, a Hand (the King's list or a Steward's) or a High Councillor of the
@@ -782,6 +750,12 @@ retires the old private key so a delayed message cannot split them again.
 3. The reporter sends a compact summary of its guild about every 3 minutes on the hidden Olympus channel.
 4. Every client adds up all the summaries: that is the census.
 
+On WoW: Forever these words travel by whisper through the relays (the signed High Council's, the
+King's, the Treasurer's and the author's characters). Since 1.5.4 a client identifies itself to them
+with its version; after the date in the release notes they serve only published versions (an older
+client still gets the census from an updated guildmate), under rules the author's client hands them
+in game.
+
 The addon itself talks only in game, through the game's own addon messages: it has no server of
 its own, and nothing it sends leaves the game. One exception is the Olympus Companion app, only if
 you install it (Privacy, below). Olympus Link (above), the Discord role, is its own addon, not part
@@ -928,16 +902,21 @@ also saved in `WTF/Account/<ACCOUNT>/SavedVariables/Olympus.lua`.
   Issue Reporter), bjess9 (CI and the shared checks), hypertectonic (Chattynator's tabs),
   Bernardo Costa / Costafitness (exact layer-hop confirmation and stale-request regressions,
   adapted from PR #51), Rick-laboratory (bounded transport, cancellation and admission
-  regressions, adapted from PR #52), and HTX (the Board's group listings, applications and
-  invites, adapted from PR #62).
+  regressions, adapted from PR #52), HTX (the Board's group listings, applications and
+  invites, adapted from PR #62), XOData (a relay's snapshot sent whole to each reporter and
+  wrapped once, and guildmates on other Forever sub-realms recognised, from PRs #81 and #82),
+  ArithmeticLogic (Dues History asks that skip a Treasurer already reported offline, from PR #86),
+  and fiddlecat (chunk assemblies kept alive while their pieces keep arriving, from PR #80).
 - **Feature requests:** Fernmelder, whose 39 posts became 1.1 (the Fernmelder release);
-  shenanigans_ (the nameplate marks), Valdericht (`<OLYMPIAN>`), Pyralis Ashandar (taking
-  donations) and Zeal (what the King hides stays off the channel).
+  shenanigans_ (the nameplate marks), Valdericht (`<OLYMPIAN>`) and Pyralis Ashandar (taking
+  donations).
 - **Art:** Max (the bronze elite borders, drawn over the game's own; the winged one remains the guild masters').
 - **Reports from the field:** Riukensei and PartyRockAce (the gamepad UI; PartyRockAce's report
   of the world map blocked in controller mode, fixed in 1.0), Ignitheus (whispers to Forever
-  names), Pyralis Ashandar, the Treasurer (the treasury and the guild bank), and the player who
-  told us WoW had handed him the channel.
+  names), Pyralis Ashandar, the Treasurer (the treasury and the guild bank), the player who
+  told us WoW had handed him the channel, and, for the census on Forever, knomegnome (the relay
+  snapshot's queue loss, #85), fiddlecat (#79's measurements and the blocked channel text),
+  ForMooAz (#79's relay captures) and Legis (the 1.5.1 relay key collision, on CurseForge).
 - Everyone who reported a bug, tested in game or asked for a feature.
 
 ## License

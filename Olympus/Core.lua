@@ -2,7 +2,7 @@ local ADDON, ns = ...
 local L = ns.L
 
 ns.NAME = "Olympus"
-ns.VERSION = "1.5.3"
+ns.VERSION = "1.5.4"
 ns.PREFIX = "OLYMPUS"        -- addon message prefix (max 16 chars)
 ns.CHANNEL = "OlympusNet"    -- hidden chat channel shared by every Olympus guild (Alliance)
 ns.CHANNEL_HORDE = "OlympusNetH" -- the Horde's: the two factions never see each other's guilds
@@ -127,6 +127,10 @@ function ns.DisplayName(name)
 	if not name then return nil end
 	local realm = ns.RealmOf(name)
 	if not realm or realm == ns.realm then return ns.ShortName(name) end
+	-- (Forever) Names are unique across the region and the game's own chat shows them plain, so a
+	-- player stamped with another sub-realm ("Name-CAMWOWUS1Realm5PvE") shows plain too, as
+	-- ns.TellName already sends him.
+	if ns.splitNames then return ns.ShortName(name) end
 	return name
 end
 
@@ -1043,6 +1047,19 @@ function ns.AuthorCharacters()
 	end
 	return m.out, false
 end
+-- (1.5.4) The author's characters of one side alone, "Alliance" or "Horde", for what can only reach
+-- that side's characters (Relay.Names on the Horde: a whisper to an Alliance name never arrives
+-- there): the signed list's ^author^<side>^ entries where it names any author (either side's); else
+-- the code's, an Alliance character (ns.AUTHOR, the beta's), so the Horde gets none by code. The
+-- second result: true when signed. His privileges stay ns.AuthorCharacters's, both sides' (a name is
+-- one per realm group whatever its side).
+function ns.AuthorCharactersOf(side)
+	local p = ns.SignedPins and ns.SignedPins()
+	local a = p and p.author
+	if a and (a.Alliance or a.Horde) then return a[side] or NO_PINS, true end
+	if side ~= "Alliance" then return NO_PINS, false end
+	return ns.AuthorCharacters()
+end
 -- One of them (a sender's name: the server sets it), by its name on its realm group.
 function ns.IsAuthorName(name)
 	if type(name) ~= "string" or name == "" then return false end
@@ -1133,9 +1150,18 @@ function ns.IsTreasurerCharacter(name)
 	return false
 end
 -- The King's name on the lines and the crown: the army's name for him on the Alliance side,
--- his character's on the Horde (whose <Olympus> has a guild master of its own).
+-- his character's on the Horde (whose <Olympus> has a guild master of its own): the census
+-- leader given, else (1.5.4) the Horde King the author's signed list names, where it names one
+-- (a line about him with no census leader behind it: the Hop's, the sightings'), else "?".
 function ns.KingName(leader)
-	if ns.faction == "Horde" then return leader and ns.ShortName(leader) or "?" end
+	if ns.faction == "Horde" then
+		if leader then return ns.ShortName(leader) end
+		if Signed("king") then
+			local pin = ns.KingCharacter()
+			if pin then return pin end
+		end
+		return "?"
+	end
 	return ns.KING_NAME
 end
 ns.CROWN_ICON = "Interface\\GroupFrame\\UI-Group-LeaderIcon"
@@ -1159,37 +1185,37 @@ end
 -- realm group alone (ns.KING_REALM's): anywhere else (Forever's other realms, Classic Era,
 -- Anniversary) there is no King by name either, like the Horde's, and a namesake on another
 -- group is not him.
--- The Horde's (0.9.4): Duskmonkey Boneback, guild master of <Mudhutters>. His realm is not known
--- yet: until it is (ns.KING_REALM_HORDE), his name alone counts on the Horde, anywhere (Forever
--- names are one per region; a namesake can only exist on another client or region).
+-- The Horde's (0.9.4): Duskmonkey Boneback, guild master of <Mudhutters>, on the beta's realm
+-- group like the Alliance's (1.5.4); his realm within it is not known (ns.KING_REALM_HORDE, or the
+-- one learned below).
 ns.KING_CHARACTER = { Alliance = "Asmongold Asmongler", Horde = "Duskmonkey Boneback" }
 ns.KING_REALM = "ClassicBetaPvP"
 ns.KING_REALM_HORDE = nil
 -- (1.3.4) Where the author's signed titles list names our side's King (^king^, his name with his
 -- realm), he alone is the King, on his realm group, whatever the code says. Where it names none,
--- the code's pins above count on their own realm group alone (ns.KING_REALM's, the beta's). The
--- Horde's, his realm not known, still counts anywhere until the author's launch list reaches a
--- realm group (as before 1.3.4: ns.LaunchListHeld); where it does, on the code's group alone, so a
--- namesake on a launch realm is nobody's King there.
+-- the code's pins above count on their own realm group alone (ns.KING_REALM's, the beta's).
+-- (1.5.4) The Horde's too. His name counted anywhere until a launch list reached a realm group, so
+-- on Forever, where no list is held yet, a Horde player of that name was the King by code (a
+-- verifier, a trusted relay, a trusted census relay, beyond moderation). Now nobody is King by
+-- code off the beta's group on either side; the signed list's ^king^Horde^ names the Horde's.
 -- Until it is set here, the Horde King's realm is learned from the first message of his that
--- reaches us (his name is his alone), and from then on only that realm group counts: shown in
--- /oly status so it can be written here.
+-- reaches us (his name is his alone, on the beta's group), and from then on that realm stands for
+-- his: shown in /oly status so it can be written here. A realm a version before 1.5.4 learned on
+-- another group (a namesake's) is not his.
 local function KingRealm()
 	local signed = Signed("king")
 	if signed then return ns.RealmOf(signed[1]) end
-	if ns.faction == "Horde" then return ns.KING_REALM_HORDE or (ns.rdb and ns.rdb.kingRealmHorde) end
+	if ns.faction == "Horde" then
+		if ns.KING_REALM_HORDE then return ns.KING_REALM_HORDE end
+		local learned = ns.rdb and ns.rdb.kingRealmHorde
+		if learned and ns.GroupOf(learned) == ns.GroupOf(ns.KING_REALM) then return learned end
+	end
 	return ns.KING_REALM
 end
 ns.KingRealm = KingRealm
--- The realm group whose King counts (nil: any), as above.
-local function KingHome()
-	local realm = KingRealm()
-	if realm == nil and ns.LaunchListHeld() then return ns.KING_REALM end
-	return realm
-end
 function ns.KingCharacter()
 	local signed = Signed("king")
-	local home = KingHome()
+	local home = KingRealm()
 	if home and ns.GroupOf(ns.realm or ns.CurrentRealm()) ~= ns.GroupOf(home) then return nil end
 	if signed then return ns.ShortName(signed[1]) end
 	return ns.KING_CHARACTER[ns.faction or "Alliance"]
@@ -1197,7 +1223,7 @@ end
 function ns.IsKingCharacter(name)
 	local pin = ns.KingCharacter()
 	if pin == nil or type(name) ~= "string" or ns.ShortName(name) ~= pin then return false end
-	local realm = KingHome()
+	local realm = KingRealm()
 	return realm == nil or OfGroup(name, realm)
 end
 -- The King's "First Surname-Realm" where one is named here (ns.KingCharacter), or nil; the second
@@ -1247,7 +1273,8 @@ function ns.KingUnpinned() return ns.KingCharacter() == nil and not ns.LaunchLis
 -- Learned only from a message he sent (King.lua: the sender name is the server's), never from
 -- a name written inside a report, which anyone could forge to lock him out.
 function ns.LearnKingRealm(sender)
-	if ns.faction ~= "Horde" or KingRealm() ~= nil or not ns.rdb or not ns.IsKingCharacter(sender) then return end
+	if ns.faction ~= "Horde" or not ns.rdb or ns.rdb.kingRealmHorde ~= nil or ns.KING_REALM_HORDE ~= nil
+		or Signed("king") ~= nil or not ns.IsKingCharacter(sender) then return end
 	local realm = ns.RealmOf(ns.FullName(sender))
 	if not realm then return end
 	ns.rdb.kingRealmHorde = realm
@@ -1971,9 +1998,14 @@ local AGAINST = { anti = true, against = true, no = true, ["not"] = true, never 
 	ruin = true, ruins = true, ruined = true, ruining = true, raze = true, burn = true, crush = true,
 	doom = true, wreck = true } -- "Ruin Olympus", "Ruins of Olympus", "Burn Olympus" (1.0.1)
 local LINKS = { with = true, to = true, the = true, of = true }
-local AGAINST_AFTER = { haters = true, hater = true, sucks = true, ruined = true, burns = true, falls = true }
--- ...or after one or two linking words: "Olympus in Ruins", "Olympus in the Ruins" (1.1).
-local LINKS_AFTER = { ["in"] = true, of = true, on = true, to = true, the = true }
+-- (1.5.4, the verifiers' ask: "Olympus is for Cucks" reached their list.) The insults that follow the
+-- name, straight or after a linking verb or preposition ("is", "for"), are against it too.
+local AGAINST_AFTER = { haters = true, hater = true, sucks = true, sux = true, ruined = true, burns = true, falls = true,
+	cuck = true, cucks = true, cucked = true, loser = true, losers = true, trash = true, garbage = true, scam = true,
+	scammers = true, cringe = true, dead = true, fail = true, fails = true, failed = true }
+-- ...or after one or two linking words: "Olympus in Ruins", "Olympus in the Ruins" (1.1); "Olympus
+-- is for Cucks", "Olympus is Trash" (1.5.4).
+local LINKS_AFTER = { ["in"] = true, of = true, on = true, to = true, the = true, is = true, are = true, ["for"] = true, was = true, be = true }
 local RUIN_AFTER = { ruin = true, ruins = true, ruined = true, ashes = true }
 
 local function Against(words, i)
@@ -1991,26 +2023,60 @@ local function Against(words, i)
 	return false
 end
 
-local federation, federationSize = {}, 0 -- [name] = true|false, asked often: kept
-local function Federation(guild)
+-- (1.5.4) On the Horde, a guild is Olympus's by its name's last word too: the banter words the
+-- community calls the Horde's races by (the beta's King guild was <Mudhutters>, its master's
+-- character Duskmonkey Boneback), beside the Olympus-word rule and the signed ^guilds^Horde^ list.
+-- Each is WoW-lore banter about a Horde race (orc, troll, tauren, Forsaken, blood elf); the author
+-- owns this list and edits it before a release. Read on the Horde alone, from the name's last word
+-- (letters only, in lower case, a trailing s or es taken off), the whole name when it is one word;
+-- a name against Olympus (Against) or a guild the High Council removed is still none.
+ns.HORDE_NAME_WORDS = { "mudhutter", "greenskin", "peon", "grunt", "tusker", "cow", "bovine", "moo", "boneback",
+	"rotter", "corpse", "zombie", "deader", "pointyear", "twig", "savage", "roach" }
+-- [side][name] = true|false, asked often: kept (1.5.4: each side's own answers, the Horde's words
+-- counting there alone).
+local federation, federationSize = { Alliance = {}, Horde = {} }, { Alliance = 0, Horde = 0 }
+local hordeWords -- { list = ns.HORDE_NAME_WORDS as read, set = { [word] = true } }
+local function HordeWords()
+	local list = type(ns.HORDE_NAME_WORDS) == "table" and ns.HORDE_NAME_WORDS or NO_PINS
+	local m = hordeWords
+	if not m or m.list ~= list then
+		local set = {}
+		for _, w in ipairs(list) do if type(w) == "string" then set[w:lower()] = true end end
+		m = { list = list, set = set }
+		hordeWords = m
+		federation.Horde, federationSize.Horde = {}, 0 -- (the Horde's answers were the old list's)
+	end
+	return m.set
+end
+local function Federation(guild, horde)
 	local words = {}
 	for word in guild:lower():gsub("0", "o"):gsub("1", "l"):gmatch("%a+") do words[#words + 1] = word end
 	for i, word in ipairs(words) do
 		if (word:find("olympus", 1, true) or OlympusWord(Sounds(word))) and not Against(words, i) then return true end
 	end
+	if horde and #words > 0 and not Against(words, #words) then
+		local set, last = HordeWords(), words[#words]
+		return set[last] == true or set[last:match("^(.-)s$") or ""] == true or set[last:match("^(.-)es$") or ""] == true
+	end
 	return false
+end
+-- The name rule, cached, for our side.
+local function Named(guild)
+	local side = ns.faction == "Horde" and "Horde" or "Alliance"
+	if side == "Horde" then HordeWords() end -- (a changed word list empties the Horde's answers)
+	local known = federation[side][guild]
+	if known == nil then
+		known = Federation(guild, side == "Horde")
+		if federationSize[side] >= 2000 then federation[side], federationSize[side] = {}, 0 end
+		federation[side][guild], federationSize[side] = known, federationSize[side] + 1
+	end
+	return known
 end
 
 -- The name rule alone (cached): what IsFederation says without the King's guild or the signed list.
 function ns.NamedOlympus(guild)
 	if type(guild) ~= "string" or guild == "" then return false end
-	local known = federation[guild]
-	if known == nil then
-		known = Federation(guild)
-		if federationSize >= 2000 then federation, federationSize = {}, 0 end
-		federation[guild], federationSize = known, federationSize + 1
-	end
-	return known
+	return Named(guild)
 end
 
 function ns.IsFederation(guild)
@@ -2021,13 +2087,7 @@ function ns.IsFederation(guild)
 	if ns.IsApprovedGuild(guild) then return true end
 	-- A guild the High Council removed (1.1.5), whatever its name.
 	if ns.IsRemovedGuild(guild) then return false end
-	local known = federation[guild]
-	if known == nil then
-		known = Federation(guild)
-		if federationSize >= 2000 then federation, federationSize = {}, 0 end
-		federation[guild], federationSize = known, federationSize + 1
-	end
-	return known
+	return Named(guild)
 end
 
 -- 1.2.5.1: the Olympus Accord (Accord.lua), Olympus's terms of use, accepted once per game account
@@ -2428,6 +2488,7 @@ StandIn("Record", { "Slash" }) -- the Guinness attempt's record mode, the witnes
 -- answer bank's Answers and explanations (Answers.lua).
 StandIn("PlayerMenu", {})
 StandIn("Versions", { "Check", "AskUpdate", "Tell" })
+StandIn("Builds", { "Show", "Slash" }) -- 1.5.4: modified builds, their record and their lock (Builds.lua)
 StandIn("Answers", { "Open" })
 -- 1.1.5: the guild masters' centurions and correspondents (Nominees.lua).
 StandIn("Nominees", { "Slash", "Prompt" })
@@ -2735,6 +2796,7 @@ local function Help()
 	if rawget(L, "HELP_VERIFY") then print(L.HELP_VERIFY) end -- (guild verification, Verify.lua)
 	print(L.HELP_PRIVACY_PAGE)
 	print(L.HELP_PROFILE)
+	print(L.HELP_BUILDS) -- (1.5.4: modified builds, Builds.lua)
 	print(L.HELP_CHAT)
 	print(L.HELP_LOG)
 	print(L.HELP_FILTER)
@@ -2752,6 +2814,7 @@ local function Help()
 	print(L.HELP_ISSUE)
 	print(L.HELP_COUNCIL)
 	if ns.LinkLoader.Loaded() then print(L.HELP_DISCORD) end -- (1.4.0: the Olympus_Link module's command, when it is installed)
+	if ns.Relay and ns.Relay.IsRelay and ns.Relay.IsRelay(ns.me) then print(L.HELP_RELAY) end -- (1.5.4: on a relay's client)
 	print(L.HELP_CMD_DECREES)
 	print(L.HELP_CMD_ARMS)
 	print(L.HELP_CHAN_ALL)
@@ -3041,6 +3104,10 @@ local function Slash(input)
 			ns.Print(ns.L.DEMO_REMOVED)
 		elseif cmd == "bug" then
 			ns.UI.ShowBugReport()
+		elseif cmd == "builds" then
+			-- 1.5.4: the modified builds this client saw, and those the guild masters, officers and the
+			-- High Council reported (Builds.lua), in a copy window.
+			if ns.Builds.missing then ns.Print(L.RESTART_NEEDED) else ns.Builds.Show() end
 		elseif cmd == "record" then
 			-- The Guinness attempt's record mode (Record.lua): on, off, status, mark; alone, its status
 			-- in the copy window. It writes only to this client's own saved file and sends nothing.
@@ -3140,6 +3207,9 @@ local function Slash(input)
 			-- Olympus Link: this character's Discord role; confirmers' keys; watchers. Its own addon,
 			-- Olympus_Link, when it is installed (LinkLoader.lua); else one line says it is not.
 			ns.LinkLoader.Slash(rest)
+		elseif cmd == "relay" and ns.Relay and ns.Relay.Slash then
+			-- (1.5.4) The relay's report (whom it serves, refused, the rules in force) and the author's rules.
+			ns.Relay.Slash(rest)
 		elseif cmd == "army" then
 			-- An attended aggregate of our own guild for the separate browser receiver (ArmyExport.lua).
 			-- Its release gate remains closed until that receiver and the real clients pass acceptance.

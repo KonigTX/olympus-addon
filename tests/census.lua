@@ -70,6 +70,30 @@ local function CensusWorld()
 	return w
 end
 
+-- 1.5.4 (the review of #81 and #82): a full-size snapshot plus the relay's label was 35 pieces, one
+-- past MAX_CHUNKS, so a relay sent it in two batches that a newer snapshot could split.
+test("global census (1.5.4): a full snapshot leaves room for a relay's label, so wrapped once it fits one envelope", function()
+	local source = CensusWorld()
+	local relay = "Council-Realm"
+	source.ns.Church = { IsLedgerRelay = function(name) return name == relay end }
+	source.ns.Alts = nil
+	source.ns.me = relay
+	for i = 1, 200 do
+		source.ns.rdb.guilds[("Olympus Guild Number %03d"):format(i)] = {
+			total = 900 + i, online = 70, avgLevel = 46.2, t = source.clock, st = source.clock, zones = {},
+		}
+	end
+	local C, D = source.ns.Codec, source.D
+	local label = "RM~P~Developus Olympicus-CAMWOWUS2Realm1PvE~"
+	eq(type(D.GLOBAL_SEND_BYTES) == "number" and D.GLOBAL_SEND_BYTES + #label <= C.CHUNK * C.MAX_CHUNKS, true,
+		"the largest snapshot built, with a relay's label, is one envelope")
+	local bound = D.GLOBAL_SEND_BYTES
+	D.GLOBAL_SEND_BYTES = 1000 -- (a small bound shows the builder keeps to it)
+	local payload = assert(D.GlobalCensusPayload())
+	D.GLOBAL_SEND_BYTES = bound
+	eq(#payload <= 1000 and #payload > 900, true, "the builder keeps to the send bound: " .. #payload)
+end)
+
 test("global census: a trusted holder restores normalized guild counts to a late client without granting census authority", function()
 	local source, late = CensusWorld(), CensusWorld()
 	local relay = "Council-Realm"
@@ -492,6 +516,34 @@ test("census scope: a validated scoped snapshot restores an empty login immediat
 	eq(late.D.Summary().characters, 900); eq(late.D.Summary().snapshot, nil)
 end)
 
+-- 1.5.4 (the dev's account store of 2026-11-07, replayed through 1.5.3: in 45 minutes his PvE client
+-- said 21 carried looks, each another player's one-guild look, and never its own 19-guild look of
+-- PvP). Fails before: the carrier walked every observer's look of an origin, and a newer one stood
+-- for the origin until its window closed, so the account's own complete look was skipped each time.
+test("census carry: a carrier says one look per origin, its own account's first, never every observer's look of it", function()
+	local w = GroupWorld("Zed Own-CAMWOWUS1Realm8PvP")
+	w.ns.group, w.ns.realm = "ForeverPvP", "CAMWOWUS1Realm8PvP"
+	for i = 1, 19 do w.ns.rdb.guilds["Olympus Pvp " .. i] = { total = 190 + i, online = 20, t = w.clock - 60, from = w.ns.realm } end
+	assert(w.D.RecordGroupCensus())
+	local own = assert(w.D.PortablePayload())
+	-- An hour later, on PvE: two other players' newer one-guild looks of PvP heard (their names sort first).
+	w.ns.me, w.ns.group, w.ns.realm, w.ns.rdb.guilds = "Carrier-CAMWOWUS2Realm1PvE", "ForeverPvE", "CAMWOWUS2Realm1PvE", {}
+	w.clock = w.clock + 3600
+	for i, who in ipairs({ "Abe One-CAMWOWUS1Realm6PvP", "Bob Two-CAMWOWUS1Realm4PvP" }) do
+		assert(w.D.ReceiveGroupCensus("CHANNEL", "Some Carrier-CAMWOWUS2Realm1PvE",
+			("CX~3~S~%s~ForeverPvP~Alliance~%d,%d,1,%d~"):format(who, 100 * i, 100 * i, w.clock - 600 + 60 * i)))
+	end
+	w.sent = {}
+	for _ = 1, 27 do -- the turns of one half-hour window
+		w.D.SayGroupCensus()
+		w.clock = w.clock + w.D.GROUP_SEND_GAP
+	end
+	local carried = {}
+	for _, p in ipairs(w.sent) do if p:match("^CX~3~") then carried[#carried + 1] = p end end
+	eq(carried[1], own, "the account's own complete look is the one said")
+	eq(#carried, 1, "one look for the origin in its window, not one per observer")
+end)
+
 test("census groups (1.4.0): our own look at our realm group is kept and carried to another group, where it is said; ours is never said where everyone sees it live", function()
 	local w = GroupWorld("Traveller-Realm")
 	w.ns.rdb.guilds["Olympus Dawn"] = { total = 640, online = 40, avgLevel = 30, t = w.clock, st = w.clock }
@@ -503,7 +555,10 @@ test("census groups (1.4.0): our own look at our realm group is kept and carried
 	w.ns.group = "Launchpvp"
 	w.clock = w.clock + 600
 	local said = w.D.GroupCensusPayload()
-	eq(said, ("CX~1~S~%d~Launchpve|Alliance|640|640|1|%d"):format(w.clock, w.clock - 600))
+	-- (1.5.4) Commas, not the "|" of 1.4.0: Comm's OnAddonMessage drops every received "|" (0.9.2), so
+	-- no client ever parsed a 1.4.0 row (the dev's stores hold no "relay" or "witnessed" group row).
+	eq(said, ("CX~1~S~%d~Launchpve,Alliance,640,640,1,%d"):format(w.clock, w.clock - 600))
+	eq(Codec.Plain(said), said, "the row survives the receiver's escape-code filter")
 	eq(w.D.SayGroupCensus(), true)
 	-- One other traveller is insufficient for everyone else on this channel: our independent
 	-- observation must still leave, even though we can already corroborate it locally.
@@ -696,6 +751,62 @@ test("census groups (1.4.0): another group's numbers: a moderator's alone, two p
 	eq(beta.D.ReceiveGroupCensus("CHANNEL", "First-Realm", ("CX~1~S~%d~Launchpvp|Alliance|10|11|1|%d"):format(beta.clock, beta.clock)), true)
 	eq(#beta.D.Groups().rows, 0, "more people than characters is no row")
 	eq(beta.D.ReceiveGroupCensus("WHISPER", "First-Realm", Say(beta, { { "Launchpvp", "Alliance", 10 } })), false, "the channel only")
+end)
+
+-- 1.5.4 (the dev, 2026-11-08: "só para diferenciar, para não cruzar os dados"): each side's numbers
+-- apart. The account-wide store keeps both sides' rows (an account that plays both sees its Horde
+-- rows on the Horde), but a side's page sums and lists its own alone, says its own alone (CX1, CX2)
+-- and gives the Companion its own (tests/bridge-people.lua). Fails before: the Alliance page summed
+-- the Horde row and listed it "(Horde)", the payload carried it (a trusted account that plays both
+-- sides said its Horde look to the Alliance network), and both sides' details were said.
+test("census groups (1.5.4): the Horde apart: a side lists, sums and says its own rows alone; the other side's stay kept for its own characters", function()
+	local w = GroupWorld("Zed Own-CAMWOWUS1Realm8PvP")
+	w.ns.group, w.ns.realm = "ForeverPvP", "CAMWOWUS1Realm8PvP"
+	w.ns.Church = { IsLedgerRelay = function() return true end } -- (a Forever family's row travels from a trusted client alone)
+	w.ns.QuietPresence = function() return false end
+	local t = w.clock - 600
+	w.ns.db.groupCensus = {
+		["Alliance|ForeverPvE"] = { group = "ForeverPvE", faction = "Alliance", characters = 7000, people = 6500, guilds = 7, observed = t, src = "own" },
+		["Horde|ForeverPvE"] = { group = "ForeverPvE", faction = "Horde", characters = 3000, people = 2800, guilds = 3, observed = t, src = "own" },
+	}
+	local g = w.D.Groups()
+	eq(g.characters, 7000, "the Alliance sums its own row alone"); eq(g.people, 6500)
+	eq(#g.rows, 1); eq(g.rows[1].faction, "Alliance"); eq(g.factions.Horde, nil); eq(g.factions.Alliance.characters, 7000)
+	local said = assert(w.D.GroupCensusPayload(), "its own row is said")
+	assert(said:find("~ForeverPvE,Alliance,7000,6500,7,", 1, true), said)
+	assert(not said:find("Horde", 1, true), "the Horde row is not said on the Alliance: " .. said)
+	-- The same account on a Horde character: the reverse; the Alliance row stays kept.
+	w.ns.faction = "Horde"
+	g = w.D.Groups()
+	eq(g.characters, 3000, "the Horde sums its own row alone"); eq(g.people, 2800)
+	eq(#g.rows, 1); eq(g.rows[1].faction, "Horde"); eq(g.factions.Alliance, nil)
+	said = assert(w.D.GroupCensusPayload())
+	assert(said:find("~ForeverPvE,Horde,3000,2800,3,", 1, true), said)
+	assert(not said:find("Alliance", 1, true), "the Alliance row is not said on the Horde: " .. said)
+	eq(w.ns.db.groupCensus["Alliance|ForeverPvE"].characters, 7000, "the other side's row stays kept")
+	eq(w.ns.db.groupCensus["Horde|ForeverPvE"].characters, 3000)
+	-- The details (CX2; groups off Forever, as a Forever family's details never travel): a side's own
+	-- capsules alone, however many turns.
+	w.ns.group, w.ns.realm = "Launchpve", "Launchpve"
+	w.ns.db.groupDetails = {
+		["Alliance|Launchpvp"] = { group = "Launchpvp", faction = "Alliance", observed = w.clock, source = "own",
+			rows = { dawn = { name = "Olympus Dawn", total = 640, online = 20, avg10 = 300, observed = w.clock } } },
+		["Horde|Launchpvp"] = { group = "Launchpvp", faction = "Horde", observed = w.clock, source = "own",
+			rows = { dusk = { name = "Mudhutters Dusk", total = 400, online = 10, avg10 = 200, observed = w.clock } } },
+	}
+	local function Said(side)
+		w.sent = {}
+		for _ = 1, 3 do assert(w.D.SayGroupDetails(), side .. ": its own capsule is said") end
+		local own, other = 0, 0
+		for _, p in ipairs(w.sent) do
+			if p:find("~Launchpvp~" .. side .. "~", 1, true) then own = own + 1 else other = other + 1 end
+		end
+		eq(other, 0, side .. ": the other side's capsule is never said (" .. table.concat(w.sent, " | ") .. ")")
+		eq(own, 3)
+	end
+	Said("Horde")
+	w.ns.faction = "Alliance"
+	Said("Alliance")
 end)
 
 test("census groups (1.4.0): Data.BetaOnLaunch: what the account noted on the beta's realm group, or before 1.4.0 (no group), never applies on a launch group; everything applies on the beta's", function()

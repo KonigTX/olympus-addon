@@ -14,11 +14,17 @@ local L = ns.L
 -- guild) names someone else as its guild master, the approval lapses: a fresh check of the new
 -- guild master, on the guild's same clock. The old one leading it again, it stands again.
 --
--- The clock: GRACE (48 hours) from the guild's start, the same on every client. A verifier's client
--- records the first time it saw the guild (its census, or its own guild) and relays it with the
--- approvals; every client keeps the earliest start any verifier's client gave (ns.rdb.verify.start,
--- the earliest wins), so a reinstall, a rejoin or a new guild master never restarts it. Until a
--- verifier's start reaches it, a client counts from its own first sighting (ns.rdb.verify.seen).
+-- The clock: GRACE (7 days; 48 hours before 1.5.4) from the guild's start, the same on every client.
+-- A verifier's client records the first time it saw the guild (its census, or its own guild) and
+-- relays it with the approvals; every client keeps the earliest start any verifier's client gave
+-- (ns.rdb.verify.start, the earliest wins), so a reinstall, a rejoin or a new guild master never
+-- restarts it. Until a verifier's start reaches it, a client counts from its own first sighting
+-- (ns.rdb.verify.seen). (1.5.4, the dev's ask: every guild's verification period starts again,
+-- with 7 days of grace.) No deadline counts from before RESET_AT, the release night: a guild started
+-- before it has GRACE from RESET_AT, alike on every 1.5.4 client, and a client whose clock is before
+-- it finds nothing overdue. Only the deadline moves (Verify.Status): the starts are kept and relayed
+-- as they were, so the GV rows stay what a 1.5.3 client reads and the earliest still wins (a 1.5.3
+-- client counts its 48 hours from them until it updates).
 -- Within GRACE the guild is pending: only its guild master sees "GM verification pending" (once a
 -- session, reopened with /oly verify or the line on top of the Census). Past it the guild is
 -- overdue: member-facing notices are temporarily paused; the guild master still sees the
@@ -30,8 +36,8 @@ local L = ns.L
 --
 -- The verifiers (the King, the High Council, the author) see the pending and overdue guilds in The
 -- Watch (Guilds), are told once of each new pending guild (and of each new guild master to check),
--- and once more REMIND_LEFT before its deadline, to tell a guild master who has no addon to install
--- it and verify.
+-- and once more REMIND_LEFT before its deadline (and before a later deadline again, as the 1.5.4
+-- reset made every one), to tell a guild master who has no addon to install it and verify.
 --
 -- Exemptions live in one predicate, Verify.Exempt. Nothing of the whole guild is gated:
 -- ns.VERIFY_GATE (Core.lua) is off, and ns.GuildSanctioned(guild), the one predicate a feature
@@ -58,13 +64,16 @@ local Verify = {}
 ns.Verify = Verify
 
 Verify.PROTOCOL = 1
-Verify.GRACE = 48 * 3600         -- a guild's grace, from its start
+Verify.GRACE = 7 * 86400         -- a guild's grace, from its start (1.5.4: 7 days, where it was 48 hours)
+Verify.RESET_AT = 1794193200     -- (1.5.4) no deadline counts from before: 2026-11-09 00:00 BRT (03:00 UTC), the release night
 Verify.REMIND_LEFT = 12 * 3600   -- the verifiers are reminded of a pending guild this long before its deadline
 Verify.NOTICE_AFTER = 90         -- the session's notices wait this long after login (roster and census in)
 Verify.TICK = 60                 -- the guilds seen and the notices, every minute
 Verify.ASK_AFTER, Verify.ASK_SPREAD = 25, 35 -- the login's ask, 25 to 60 s after it
 Verify.ASK_EVERY = 30 * 60       -- and every half hour
 Verify.ANSWER_GAP = 180          -- a verifier's client answers asks this often at most
+Verify.RELAY_ANSWER_GAP = 900    -- (1.5.4) and each relay that asked (relays first agree among themselves) this often
+Verify.ANSWER_RETRIES, Verify.ANSWER_RETRY_EVERY = 6, 5 -- (1.5.4) a relay's answer its full queue refused, tried again
 Verify.REQUEST_GAP = 300         -- a guild master's queued request, kept across reloads
 Verify.REVOKE_KEEP = 30 * 86400  -- a revocation is kept (and relayed) this long
 Verify.START_KEEP = 90 * 86400   -- a guild's start, this long after it was last seen or heard
@@ -72,7 +81,8 @@ Verify.SEEN_KEEP = 30 * 86400    -- a guild's own first sighting, this long afte
 Verify.MAX = 400                 -- words kept (past it: the oldest revocations, then the oldest approvals)
 Verify.MAX_STARTS = 600          -- starts kept, and first sightings (past it: the longest unseen go)
 Verify.MAX_ROWS = 240            -- rows in one answer
-Verify.MAX_BYTES = ns.Codec.CHUNK * ns.Codec.MAX_CHUNKS
+-- (1.5.4: room left for the relay's envelope, "RM~P~<verifier>~", around a direct answer.)
+Verify.MAX_BYTES = ns.Codec.CHUNK * ns.Codec.MAX_CHUNKS - 96
 Verify.EPOCH = 1767225600        -- 2026-01-01: no word or start is older
 Verify.AHEAD = 300               -- a time further ahead of the server's clock is not taken
 Verify.SHOWN_MAX = 5             -- guilds named in one notice line to the verifiers
@@ -86,8 +96,8 @@ function Verify.Clock()
 	return math.floor(tonumber(t) or ns.Now())
 end
 
-local stats = { taken = 0, starts = 0, refused = 0, bad = 0, asked = 0, answered = 0 }
-function Verify.Stats() return stats end
+local stats = { taken = 0, starts = 0, refused = 0, bad = 0, asked = 0, answered = 0, unsent = 0 }
+function Verify.Stats() return stats end -- (unsent: answers refused a send, the review of the 1.5.4 candidate)
 
 local function Key(s) return ns.Fold(tostring(s or "")) end
 local function Grey(s) return "|cff9d9d9d" .. tostring(s or "") .. "|r" end
@@ -214,7 +224,8 @@ end
 
 -- "exempt", "verified", "pending" or "overdue" (nil: no Olympus guild), with
 -- { guild, gm (now, or nil), entry (its approval), lapsed (approved with another guild master),
---   revoked, since (its start), shared (a verifier's start), left (seconds before its deadline) }.
+--   revoked, since (its start), shared (a verifier's start), deadline (GRACE after its start, or
+--   after RESET_AT for one started before it), left (seconds before its deadline) }.
 function Verify.Status(guild, now)
 	if type(guild) ~= "string" or guild == "" or not ns.IsFederation(guild) then return nil end
 	now = now or Verify.Clock()
@@ -232,7 +243,10 @@ function Verify.Status(guild, now)
 	local since, shared = Verify.Start(guild, now)
 	if since > now then since = now end
 	info.since, info.shared = since, shared
-	info.left = since + Verify.GRACE - now
+	-- (1.5.4) The deadline alone counts from RESET_AT at the earliest (see the top): since stays the
+	-- guild's start, as it is kept and relayed.
+	info.deadline = math.max(since, Verify.RESET_AT) + Verify.GRACE
+	info.left = info.deadline - now
 	if info.left > 0 then return "pending", info end
 	return "overdue", info
 end
@@ -480,29 +494,59 @@ function Verify.Payload(now, coverage)
 end
 
 local lastSent, pending = -math.huge, false
-function Verify.SendSnapshot()
+local answeredRelay = {} -- (1.5.4) a relay that asked (folded name) -> when we answered it
+-- (1.5.4) Where the relay runs (Forever) an answer goes to the one client that asked
+-- (Relay.Direct), which hands it to its guild: the whole store to every reporter of the relay
+-- never got through its queue. Elsewhere, on the channel as before.
+local function Direct()
+	local R = ns.Relay
+	return type(R) == "table" and type(R.On) == "function" and R.On() == true and type(R.Direct) == "function"
+end
+function Verify.SendSnapshot(target, toRelay)
 	if Quiet() or not ns.IsMember() or not Verify.Trusted(ns.me) then return false end
 	local payload, n = Verify.Payload()
 	if n == 0 then return false end
-	local key = "verify-snapshot"
-	local ok = ns.Comm.SendChunked(payload, false, "CHANNEL", nil, { owner = Verify, key = key,
-		permit = function(_, guardKey, dist, target)
-			if guardKey ~= key or dist ~= "CHANNEL" or target ~= nil then return false, "lane" end
-			if not Verify.Trusted(ns.me) then return false, "trust" end
-			return true
-		end })
-	if ok then
-		lastSent = Verify.Clock()
-		stats.answered = stats.answered + 1
+	local ok
+	if Direct() then
+		ok = type(target) == "string" and ns.Relay.Direct(target, payload, "verify answer " .. Key(target)) == true
+	else
+		local key = "verify-snapshot"
+		ok = ns.Comm.SendChunked(payload, false, "CHANNEL", nil, { owner = Verify, key = key,
+			permit = function(_, guardKey, dist, target)
+				if guardKey ~= key or dist ~= "CHANNEL" or target ~= nil then return false, "lane" end
+				if not Verify.Trusted(ns.me) then return false, "trust" end
+				return true
+			end })
 	end
+	if ok then
+		if not toRelay then lastSent = Verify.Clock() end
+		stats.answered = stats.answered + 1
+	else
+		stats.unsent = stats.unsent + 1
+	end
+	-- (The review of the 1.5.4 candidate.) A line for /oly bug: the answer, to whom (direct, or the
+	-- channel), its size, and a refusal (a full queue: AnswerAsk tries again). Until now an answer
+	-- that went direct left no line anywhere, a crossed one none on the asker's relay (Relay.lua).
+	ns.Log("verify: answer (%d rows) to %s%s", n, Direct() and tostring(target) or "the channel", ok and "" or ": refused")
 	return ok
 end
 
 -- An ask heard: a verifier's client with different contents answers after 2-9 s, unless another
 -- verifier delivered every row we would send. A smaller answer must not silence missing decisions.
-local function AnswerAsk(body, now)
+-- (1.5.4) A relay that asked is answered on its own gap (RELAY_ANSWER_GAP each), whatever the
+-- clients' asks: the relays agree among themselves first, then each answers its own clients.
+-- (The review of the 1.5.4 candidate.) A relay's ask is one that came across from that relay itself,
+-- its name stamped by the server (Relay.AskedAcross). Any other ask naming a relay as its origin
+-- (a guildmate's RG, a relay's RM or RX carry the origin as a word) is a client's: the one
+-- pending/ANSWER_GAP bound, never a gap per relay it names.
+local function AnswerAsk(body, now, sender)
 	if Quiet() or not ns.IsMember() or not Verify.Trusted(ns.me) then return true end
-	if pending or now - lastSent < Verify.ANSWER_GAP then return true end
+	local R = ns.Relay
+	local toRelay = Direct() and type(sender) == "string" and R.IsRelay(sender) == true
+		and type(R.AskedAcross) == "function" and R.AskedAcross(sender) == true
+	if toRelay then
+		if now - (answeredRelay[Key(sender)] or -math.huge) < Verify.RELAY_ANSWER_GAP then return true end
+	elseif pending or now - lastSent < Verify.ANSWER_GAP then return true end
 	local mine, _, _, fingerprint = Verify.Digest()
 	if mine == 0 then return true end
 	local n, theirs, theirSum, theirFingerprint = tostring(body or ""):match("^(%d+)~(%d+)~(%d+)~(%x+)$")
@@ -511,19 +555,48 @@ local function AnswerAsk(body, now)
 	if not n or n > Verify.MAX + Verify.MAX_STARTS or theirs > now + Verify.AHEAD
 		or theirSum >= 2147483648 or (theirFingerprint and #theirFingerprint ~= 64) then return false end
 	if fingerprint and fingerprint == theirFingerprint then return true end
+	-- (The review of the 1.5.4 candidate.) A whole store is up to MAX_CHUNKS pieces, one urgent
+	-- transfer: a relay's queue (MAX_QUEUE parts) refuses a second one asked in the same seconds, and
+	-- that asker got nothing until its next ask (half an hour). Refused, an answer is tried again every
+	-- ANSWER_RETRY_EVERY seconds, ANSWER_RETRIES times, while the first one goes out.
+	local function MayRetry(tries)
+		local R = ns.Relay
+		return tries > 0 and Direct() and type(R.IsRelay) == "function" and R.IsRelay(ns.me) == true
+	end
+	if toRelay then
+		local key = Key(sender)
+		answeredRelay[key] = now
+		local function Answer(tries)
+			if Verify.SendSnapshot(sender, true) then return end
+			if MayRetry(tries) then
+				ns.After(Verify.ANSWER_RETRY_EVERY, "verify answer", function() Answer(tries - 1) end)
+			-- (The review of the 1.5.4 candidate.) An answer refused (a full queue, no relay to carry
+			-- it) leaves the relay's gap open: its next ask is answered, not ignored RELAY_ANSWER_GAP.
+			elseif answeredRelay[key] == now then
+				answeredRelay[key] = nil
+			end
+		end
+		ns.After(Verify.random(2, 9), "verify answer", function() Answer(Verify.ANSWER_RETRIES) end)
+		return true
+	end
 	-- A legacy ask cannot prove that it holds our words, even with equal counts.
 	-- ANSWER_GAP and the delayed/coalesced answer still bound recovery traffic.
+	-- (Pending until it is queued or given up: one answer at a time. Another verifier's answer heard
+	-- meanwhile covers it on the channel alone: where answers go Direct (Forever), what this client
+	-- hears went to someone else, its own ask's answer or a hand-over in its own guild.)
 	local request = {}
 	pending = request
-	ns.After(Verify.random(2, 9), "verify answer", function()
-		pending = false
-		if Verify.Clock() - lastSent < Verify.ANSWER_GAP then return end
-		if request.coverage then
+	local function Answer(tries)
+		if pending ~= request then return end
+		if Verify.Clock() - lastSent < Verify.ANSWER_GAP then pending = false return end
+		if request.coverage and not Direct() then
 			local _, _, covered = Verify.Payload(nil, request.coverage)
-			if covered then return end
+			if covered then pending = false return end
 		end
-		Verify.SendSnapshot()
-	end)
+		if Verify.SendSnapshot(sender) or not MayRetry(tries) then pending = false return end
+		ns.After(Verify.ANSWER_RETRY_EVERY, "verify answer", function() Answer(tries - 1) end)
+	end
+	ns.After(Verify.random(2, 9), "verify answer", function() Answer(Verify.ANSWER_RETRIES) end)
 	return true
 end
 
@@ -542,7 +615,7 @@ function Verify.Handle(dist, sender, text)
 	if tonumber(ver) ~= Verify.PROTOCOL then return false end
 	local now = Verify.Clock()
 	sender = ns.FullName(sender)
-	if kind == "Q" then return AnswerAsk(body, now) end
+	if kind == "Q" then return AnswerAsk(body, now, sender) end
 	-- A word or a relay: from a verifier's own client alone (the server stamps the sender).
 	if not Verify.Trusted(sender) then
 		stats.refused = stats.refused + 1
@@ -568,7 +641,8 @@ function Verify.Handle(dist, sender, text)
 		end
 		local realm = ns.RealmOf(sender)
 		local count, changed, bad = 0, false, false
-		local coverage = pending and {} -- only while answering; at most MAX_ROWS received entries
+		-- (only while answering on the channel; at most MAX_ROWS received entries)
+		local coverage = pending and not Direct() and {}
 		for row in rows:gmatch("[^;]+") do
 			if count >= Verify.MAX_ROWS then bad = true break end
 			count = count + 1
@@ -799,7 +873,7 @@ function Verify.WhisperVerifier(guild)
 end
 
 -- Request timing is separate from the guild's earliest observation/start. It limits queued
--- requests across reloads without renewing the 48-hour verification deadline.
+-- requests across reloads without renewing the guild's verification deadline.
 function Verify.RequestWait(guild, now)
 	now = now or Verify.Clock()
 	local s = Store()
@@ -937,7 +1011,10 @@ end
 
 -- The verifiers' notices, each once per guild and guild master (kept in the saved data): a guild
 -- pending (new, or with a new guild master to check), and REMIND_LEFT before its deadline. One
--- chat line for each kind, naming the guilds.
+-- chat line for each kind, naming the guilds. (1.5.4) A reminder is kept with the deadline it was
+-- for: a later deadline is reminded again (the reset moved every one later, and 1.5.3 kept no
+-- deadline, so each guild it reminded is reminded once more before its new one); a deadline that
+-- only came nearer (an earlier start heard) is not.
 function Verify.CouncilNotices(now)
 	if not Verify.CouncilShown() then return 0 end
 	now = now or Verify.Clock()
@@ -955,8 +1032,9 @@ function Verify.CouncilNotices(now)
 			t.gm = gm
 		end
 		t.last = now
-		if r.status == "pending" and r.info.left <= Verify.REMIND_LEFT and not t.remind then
-			t.remind = now
+		local reminded = tonumber(t.deadline)
+		if r.status == "pending" and r.info.left <= Verify.REMIND_LEFT and not (reminded and reminded >= r.info.deadline) then
+			t.remind, t.deadline = now, r.info.deadline
 			due[#due + 1] = r
 		end
 	end

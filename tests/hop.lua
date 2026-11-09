@@ -50,6 +50,9 @@ local function WithHop(fn)
 		c.Comm.JoinChannel()
 		c.Hop.random = function(a) if a then w.id = w.id + 1; return w.id end return 0 end
 		c.Hop.Trusted = function() return true end
+		-- (1.5.4: the first ask of a session shows the experimental hop's window first; these tests
+		-- are of what follows it. The window has its own tests, tests/hop-forever.lua.)
+		c.Hop.confirmed.same, c.Hop.confirmed.other = true, true
 		function w.advance(seconds)
 			w.clock, w.mono = w.clock + seconds, w.mono + seconds
 			c.Hop.Tick()

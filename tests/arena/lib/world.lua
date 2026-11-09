@@ -60,7 +60,7 @@ end
 World.FromArena = FromArena
 
 -- The existing modules a scenario asserts on (the design), in TOC order, loaded into each client.
-World.MODULES = { "Channels", "King", "Treasury", "Dues", "Moderation", "Alts", "Workshop", "Consent" }
+World.MODULES = { "Channels", "King", "Treasury", "Dues", "Moderation", "Alts", "Workshop", "Builds", "Consent" }
 -- Loaded into each client too, before them, never shared: Ed25519.lua's job queue (one client's
 -- signature checks never count against another's limit, nor run with its globals).
 World.OWN = { "Ed25519", "RankingRules" }
@@ -350,6 +350,16 @@ local function FakeComm(w, c)
 	end
 	-- (Comm.lua cuts a long payload in its own pieces and puts them together again: here it goes
 	-- whole, as its receivers' handlers get it.)
+	-- (1.5.4) Comm.SendList where the channel works, as the world's does: each word its own channel
+	-- message under key .. i, as Comm.lua sends them there (the list word the relay carries on Forever
+	-- is tests/relay-lists.lua's).
+	function C.SendList(kind, words, options, key)
+		local all = true
+		for i, word in ipairs(words or {}) do
+			if not C.Send("CHANNEL", word, key and (key .. i) or nil, false, false, nil, options) then all = false end
+		end
+		return all
+	end
 	function C.SendChunked(payload, urgent, dist)
 		Enqueue(dist == "GUILD" and "GUILD" or "CHANNEL", payload, nil, nil, urgent, nil, nil, true)
 	end

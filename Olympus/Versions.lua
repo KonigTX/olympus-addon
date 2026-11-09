@@ -151,8 +151,20 @@ function Versions.Status(name)
 	if c and c.version then Take(c.version, c.roll and "roll" or "check", c.at) end
 	local a = RollAnswer(name)
 	if a then Take(a.version, "roll", a.t) end
+	-- (1.5.4) A version that is no release, heard by this client or reported by a guild master, an
+	-- officer or a councillor: a modified build (Builds.lua), "modified", with the version it said.
+	local B = ns.Builds
+	local function Modified()
+		local e = B and not B.missing and B.Modified(name)
+		if not e then return nil end
+		return "modified", e.version, e.by and "shared" or (e.how == "answer" and "check" or "hello"), e.last
+	end
 	if version then
-		if not Version(version) then return "olympus", nil, how, at end
+		if not Version(version) then
+			local state, v, h, t = Modified()
+			if state then return state, v, h, t end
+			return "olympus", nil, how, at
+		end
 		local latest = Versions.Latest()
 		if Newer(latest, version) then return "outdated", version, how, at end
 		if Newer(version, latest) then return "newer", version, how, at end
@@ -160,6 +172,8 @@ function Versions.Status(name)
 	end
 	-- (A check whose sending never ended, a message the client held: nothing known after PING_GAP.)
 	if c and c.version == nil and now - c.t < Versions.PING_GAP then return "checking", nil, "check", c.t end
+	local state, v, h, t = Modified()
+	if state then return state, v, h, t end
 	if c and c.version == false and now - c.at < Versions.CACHE_FOR then return "none", nil, "check", c.at end
 	return "unknown"
 end
@@ -177,6 +191,12 @@ function Versions.Line(state, version)
 	if state == "current" then return L.VERSION_LINE_CURRENT:format(version) end
 	if state == "newer" then return L.VERSION_LINE_NEWER:format(version) end
 	if state == "outdated" then return L.VERSION_LINE_OUTDATED:format(version) end
+	if state == "modified" then
+		-- (1.5.4) The release it was made from alone, never the rest of its version (Builds.Shown).
+		local B = ns.Builds
+		local shown = B and not B.missing and B.Shown(version)
+		return shown and L.VERSION_LINE_MODIFIED:format(shown) or L.VERSION_LINE_MODIFIED_ANY
+	end
 	if state == "olympus" then return L.VERSION_LINE_OLYMPUS end
 	if state == "checking" then return L.VERSION_LINE_CHECKING end
 	if state == "none" then return L.VERSION_LINE_NONE end
@@ -186,7 +206,8 @@ end
 -- Where it came from and when, for a tooltip.
 local function Source(how, at)
 	if not at then return L.VERSION_SOURCE_NONE end
-	local key = how == "hello" and "VERSION_SOURCE_HELLO" or (how == "roll" and "VERSION_SOURCE_ROLL" or "VERSION_SOURCE_CHECK")
+	local key = how == "hello" and "VERSION_SOURCE_HELLO" or (how == "roll" and "VERSION_SOURCE_ROLL"
+		or (how == "shared" and "VERSION_SOURCE_SHARED" or "VERSION_SOURCE_CHECK"))
 	return L[key]:format(ns.Ago(at))
 end
 
@@ -224,6 +245,10 @@ local function NoAnswer(key, e)
 		end
 	end
 	e.version, e.at = false, ns.Now()
+	-- (1.5.4) A guildmate who keeps saying hello and answers none of our checks: the builds' weak
+	-- mark, after several (Builds.lua). Never from the author's roll call, answered only after a yes.
+	local B = ns.Builds
+	if B and not B.missing and not e.roll then B.Unanswered(e.name, e.sent or e.t) end
 	Report(e)
 end
 
@@ -296,10 +321,19 @@ end
 -- Their answer to our check (the id we sent; late, it still counts).
 function Versions.HandleAnswer(dist, sender, text)
 	if dist ~= "WHISPER" then return end
-	local id, v = tostring(text or ""):match("^V8~(%d+)~([^~]+)$")
-	if not id or not Version(v) or #v > 12 then return end
+	local id, v = tostring(text or ""):match("^V8~(%d+)~([^~]*)$")
+	if not id or #id > 6 or #v > 64 then return end
 	local c = checks[Key(sender)]
 	if not c or c.roll or tostring(c.id) ~= id or c.version then return end
+	-- (1.5.4) What they answered goes to the builds' record first (Builds.lua): a version that is no
+	-- release marks a modified build, which Status shows; a release clears the mark. Without the
+	-- record (an update not restarted yet) an unreadable version is nothing, as before.
+	local B = ns.Builds
+	if B and not B.missing then B.Answer(sender, v) end
+	if not Version(v) then
+		if not (B and not B.missing) then return end
+		v = B.Clean(v)
+	end
 	c.version, c.at = v, ns.Now()
 	Report(c)
 end
@@ -670,8 +704,14 @@ function Versions.MenuLines(target, menu)
 	local tip = Source(how, at)
 	if state == "outdated" then tip = tip .. "\n" .. L.VERSION_BEHIND_TIP:format(Versions.Latest()) end
 	menu.Line(Versions.Line(state, version), L.PLAYERMENU_VERSION, tip)
-	local detail = Versions.Detail(state, how, at)
+	-- (1.5.4) Under a modified build's line: where the sighting came from, that the client is locked
+	-- out, or who reported it (Builds.lua); and the weak mark, silent to our version checks.
+	local B = ns.Builds
+	local builds = B ~= nil and not B.missing
+	local detail = state == "modified" and builds and B.Detail(name) or Versions.Detail(state, how, at)
 	if detail then menu.Line("|cff9d9d9d" .. detail .. "|r") end
+	local silent = builds and B.Silent(name)
+	if silent then menu.Line("|cff9d9d9d" .. L.VERSION_DETAIL_SILENT:format(silent.n) .. "|r") end
 	-- In a dungeon, a raid or a match nothing can go: the lines show, greyed, and say why.
 	local locked = target.locked == true
 	local function Tip(text) return locked and L.PLAYERMENU_LOCKED or text end
@@ -683,8 +723,10 @@ function Versions.MenuLines(target, menu)
 		local tipText = IsAuthor() and L.VERSION_ASK_AUTHOR_TIP or L.VERSION_ASK_TIP
 		if not IsAuthor() and version and Newer(Versions.FIRST, version) then tipText = L.VERSION_ASK_OLD_TIP:format(version) end
 		local latest = state == "current" or state == "newer"
+		-- (1.5.4) A modified build is no version to update from: the line stays, greyed, and says so.
+		if state == "modified" then latest, tipText = true, L.VERSION_ASK_MODIFIED_TIP end
 		menu.Button(L.VERSION_ASK, function() Versions.AskUpdate(name) end, L.VERSION_ASK,
-			latest and L.VERSION_ASK_CURRENT_TIP or Tip(tipText), not locked and not latest)
+			latest and (state == "modified" and tipText or L.VERSION_ASK_CURRENT_TIP) or Tip(tipText), not locked and not latest)
 	end
 	local c = checks[Key(name)]
 	local recheck = not c or ns.Now() - c.t >= Versions.PING_GAP
@@ -700,7 +742,7 @@ end
 -- Does `name` run Olympus, as far as this client knows (the author's Ask for a bug report)?
 function Versions.HasOlympus(name)
 	local state = Versions.Status(name)
-	return state == "current" or state == "outdated" or state == "newer" or state == "olympus"
+	return state == "current" or state == "outdated" or state == "newer" or state == "olympus" or state == "modified"
 end
 
 function Versions.StatusLine()
