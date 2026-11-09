@@ -1212,7 +1212,12 @@ function Hop.King(strict)
 	-- exactly Olympus, which Forever's census does not have.
 	if pin ~= nil and ns.splitNames == true and ns.LaunchListHeld and ns.LaunchListHeld() and Hop.SignedKingPresence(strict) == true then
 		local at = kingFrom or (ns.IsKingCharacter(ns.me) and ns.me or nil)
-		local where = at and ns.Layers.Of(at, true)
+		-- (The review of the 1.5.4 candidate.) His words reach us stamped with the sub-realm of whichever
+		-- relay's client handed them on (a whisper arrives with the bare name, Relay.HandleIn stamps its
+		-- own), his layer word maybe under another (his guild's copy over GUILD, under the reader's): a
+		-- name is one across a Forever family, so his layer is his under any stamp of it. The exact
+		-- look-up alone said "layer not known" with his layer known.
+		local where = at and (ns.Layers.Of(at, true) or ns.Layers.Of(at, false))
 		return { name = ns.KingName(pin), mapID = where and where.mapID, zoneUID = where and where.zoneUID,
 			t = where and where.t, realm = at and ns.RealmOf(at) }
 	end
@@ -1248,8 +1253,16 @@ end
 -- is pinned by name, the census). A layer is a copy of a zone inside one realm: nobody here can
 -- join his, even when his crown and his layer reach us (a channel shared across realms,
 -- Comm.ElectsAcrossRealms). Checked before his layer.
+-- (The review of the 1.5.4 candidate.) On Forever his realm is the sub-realm of whichever relay's
+-- client handed his word on (a whisper arrives with the bare name, Relay.HandleIn stamps its own),
+-- not where he plays: a sub-realm of our own family is ours here as everywhere else (ns.InGroup,
+-- Relay.Deliver, the roster). Compared as a plain string, it refused the hop to his layer for every
+-- member whose sub-realm was not the relay's, "another realm" the relay's. A stamp of another
+-- family, and off Forever any other realm, is another realm as before.
 function Hop.KingOtherRealm(k)
-	return k ~= nil and k.realm ~= nil and ns.realm ~= nil and ns.realm ~= "?" and k.realm ~= ns.realm
+	if k == nil or k.realm == nil or ns.realm == nil or ns.realm == "?" or k.realm == ns.realm then return false end
+	if ns.splitNames == true and ns.InGroup(k.realm) then return false end
+	return true
 end
 
 -- Why nobody can ask for the King's layer now (1.0.0), instead of "try again in a minute"

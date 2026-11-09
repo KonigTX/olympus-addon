@@ -1041,6 +1041,21 @@ local function PersonKey(name)
 	local group = realm and ns.GroupOf and ns.GroupOf(realm)
 	return group and (ns.ShortName(full):lower() .. "-" .. group:lower()) or full:lower()
 end
+-- (The review of the 1.5.4 candidate.) This client's own word back from the relay's hops. On Forever
+-- a whisper arrives with the sender's bare name and the relay's client stamps its own sub-realm on
+-- the origin (Relay.lua's HandleIn), so "Name-Realm3" comes back for "Name-Realm1": one name across
+-- a family, as PersonKey takes it. Comm's echo check (OnAddonMessage: sender == ns.me) sees another
+-- name, so the census receivers ask here; a trusted client's own look of the other family (CX 1)
+-- came back as another councillor's word, was noted as heard (groupHeard) and never said again that
+-- session. Off Forever (no family) whole names alone, as before: "Bob-A" and "Bob-B" are two people.
+local function OwnWord(sender)
+	if type(ns.me) ~= "string" or type(sender) ~= "string" then return false end
+	local me, other = ns.FullName(ns.me), ns.FullName(sender)
+	if me == other then return true end
+	if ns.ShortName(me):lower() ~= ns.ShortName(other):lower() then return false end
+	local family = ns.ForeverFamily and ns.ForeverFamily(ns.RealmOf(me) or "")
+	return family ~= nil and family == ns.ForeverFamily(ns.RealmOf(other) or "")
+end
 -- Two rows agree: observed within the window of each other, sizes within max(5, 5%).
 function Data.WitnessesAgree(a, b)
 	if type(a) ~= "table" or type(b) ~= "table" then return false end
@@ -1312,7 +1327,7 @@ function Data.ReceiveGlobalCensus(dist, sender, text)
 	ver = tonumber(ver)
 	if ver ~= Data.GLOBAL_PROTOCOL and ver ~= 2 then return false end
 	local now = ns.Now()
-	local self = type(ns.me) == "string" and ns.FullName(sender) == ns.FullName(ns.me)
+	local self = OwnWord(sender) -- (the relay's stamped copy of our own snapshot too)
 	if kind == "C" then
 		if ver == 1 and ScopedGroup(ns.group) then return false end
 		-- A member's claim: its snapshot follows. It counts as an answer heard (AnswerAsk).
@@ -1847,11 +1862,13 @@ end
 function Data.ReceiveGroupCensus(dist, sender, text)
 	if dist ~= "CHANNEL" or type(text) ~= "string" or type(sender) ~= "string"
 		or #text > Data.GLOBAL_MAX_BYTES or sender == "" or #sender > 100 or sender:find("[%c~]") then return false end
+	-- Our own word back (the relay's copy, stamped with its sub-realm: OwnWord): never news, of any
+	-- kind. Taken as another councillor's, a trusted client's own look was noted as heard and never said again.
+	if OwnWord(sender) then return true end
 	if text:sub(1, 5) == "CX~3~" then return Data.ReceivePortable(sender, text) end
 	if text:sub(1, 5) == "CX~2~" then return Data.ReceiveGroupDetails(sender, text) end
 	local ver, made, body = text:match("^CX~(%d+)~S~(%d+)~(.*)$")
 	if tonumber(ver) ~= Data.GROUP_PROTOCOL then return false end
-	if type(ns.me) == "string" and ns.FullName(sender) == ns.FullName(ns.me) then return true end
 	local now = ns.Now()
 	local at = GlobalNumber(made, 1, 4102444800)
 	if not at or at > now + 5 * 60 or now - at > Data.GROUP_KEEP then return false end

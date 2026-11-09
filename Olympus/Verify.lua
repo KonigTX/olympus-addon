@@ -96,8 +96,8 @@ function Verify.Clock()
 	return math.floor(tonumber(t) or ns.Now())
 end
 
-local stats = { taken = 0, starts = 0, refused = 0, bad = 0, asked = 0, answered = 0 }
-function Verify.Stats() return stats end
+local stats = { taken = 0, starts = 0, refused = 0, bad = 0, asked = 0, answered = 0, unsent = 0 }
+function Verify.Stats() return stats end -- (unsent: answers refused a send, the review of the 1.5.4 candidate)
 
 local function Key(s) return ns.Fold(tostring(s or "")) end
 local function Grey(s) return "|cff9d9d9d" .. tostring(s or "") .. "|r" end
@@ -521,7 +521,13 @@ function Verify.SendSnapshot(target, toRelay)
 	if ok then
 		if not toRelay then lastSent = Verify.Clock() end
 		stats.answered = stats.answered + 1
+	else
+		stats.unsent = stats.unsent + 1
 	end
+	-- (The review of the 1.5.4 candidate.) A line for /oly bug: the answer, to whom (direct, or the
+	-- channel), its size, and a refusal (a full queue: AnswerAsk tries again). Until now an answer
+	-- that went direct left no line anywhere, a crossed one none on the asker's relay (Relay.lua).
+	ns.Log("verify: answer (%d rows) to %s%s", n, Direct() and tostring(target) or "the channel", ok and "" or ": refused")
 	return ok
 end
 

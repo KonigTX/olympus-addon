@@ -434,3 +434,36 @@ test("census family trust: a councillor that took a row of the family from someo
 		eq(D.Data.GroupCensusPayload(), nil, "nor in a later session")
 	end)
 end)
+
+-- Fails before: on Forever a whisper arrives with the sender's bare name and the relay's client stamps
+-- its own sub-realm on the origin (Relay.lua's HandleIn), so a councillor's own look came back to her
+-- from her guild's reporter as "Hildryn Payne-<the relay's sub-realm>": past the self check (whole
+-- names), trusted by her short name, noted as heard (groupHeard), and her own look was never said
+-- again that session (once per login instead of every half hour; a relay's own client is not
+-- affected, its origin being ns.me, which Comm drops as an echo). The same echo of her global census
+-- snapshot (CG) passed the self check there and its rows were taken as another councillor's.
+test("census family trust: a councillor's own look of the other family heard back stamped with the relay's sub-realm is still said again, and her own global snapshot so stamped is taken from nobody", function()
+	FamilyWorld(function(Client)
+		local D = Client("Pvp Alt-CAMWOWUS1Realm8PvP", "Olympus Relay")
+		D.group = "ForeverPvP"
+		for i = 1, 19 do D.rdb.guilds["Olympus Pvp " .. i] = { total = 190, online = 10, t = D.clock - 60, from = "CAMWOWUS1Realm8PvP" } end
+		assert(D.Data.RecordGroupCensus())
+		D.me, D.group, D.rdb.guilds = "Hildryn Payne-CAMWOWUS2Realm1PvE", "ForeverPvE", {}
+		D.clock = D.clock + 600
+		local said = assert(D.Data.GroupCensusPayload(), "her own look is said")
+		eq(D.Data.ReceiveGroupCensus("CHANNEL", "Hildryn Payne-CAMWOWUS2Realm3PvE", said), true, "her own word back, stamped by the relay")
+		eq(assert(PvP(D.Data.Groups())).src, "own", "her own look is still her own")
+		D.clock = D.clock + 31 * 60
+		local again = D.Data.GroupCensusPayload()
+		assert(tostring(again):find("~ForeverPvP,Alliance,3610,3610,19,", 1, true), "said again half an hour later: " .. tostring(again))
+		-- The same look from the other councillor is his word, and keeps her quiet as before.
+		eq(D.Data.ReceiveGroupCensus("CHANNEL", "Max Ran-CAMWOWUS2Realm3PvE", again), true)
+		D.clock = D.clock + 31 * 60
+		eq(D.Data.GroupCensusPayload(), nil, "another councillor's same look: heard, not said over")
+		-- Her own global snapshot back the same way: taken from nobody (before: a row by "Hildryn
+		-- Payne-CAMWOWUS2Realm3PvE", as another councillor's word).
+		eq(D.Data.ReceiveGlobalCensus("CHANNEL", "Hildryn Payne-CAMWOWUS2Realm3PvE",
+			("CG~2~S~%d~ForeverPvE~Alliance~Olympus Near,100,10,30,%d"):format(D.clock, D.clock - 60)), true)
+		eq((D.rdb.censusGlobal or {})["olympus near"], nil, "nothing taken from her own echo")
+	end)
+end)

@@ -28,7 +28,9 @@ local function World(fn, hubVerifies)
 	local function Node(name, guild)
 		local c, deliver, sent, _, pump, sentOf = RelayWorld(name, guild)
 		local n = { c = c, deliver = deliver, sent = sent, pump = pump, sentOf = sentOf,
-			guild = guild, chat = C_ChatInfo, cursor = 0 }
+			guild = guild, chat = C_ChatInfo, cursor = 0, logs = {} }
+		-- (The review of the 1.5.4 candidate.) The node's log lines, as /oly bug prints them (ns.Log).
+		c.Log = function(fmt, ...) local ok, msg = pcall(string.format, fmt, ...) n.logs[#n.logs + 1] = ok and msg or tostring(fmt) end
 		c.clock, c.realm, c.RealmPages = now, "Realm", {}
 		-- (1.5.4) T0 is a date past the code's presentation deadline: this world runs before it (its
 		-- registrations are handed to the relays by hand, bare, ahead of any member's presentation).
@@ -377,5 +379,51 @@ test("verify mesh: a hand-over in the verifier's own guild, heard while a client
 		for _ = 1, 8 do Advance(6) end
 		eq(verifier.c.rdb.verify.list[ns.Fold(OTHER)] ~= nil, true, "the verifier heard its guild's hand-over")
 		eq(member.c.Verify.Digest() >= verifier.c.Verify.Digest(), true, "the member holds the store")
+	end, true)
+end)
+
+local function Logged(n, line) -- how many lines of the node's log read exactly so
+	local k = 0
+	for _, l in ipairs(n.logs) do if l == line then k = k + 1 end end
+	return k
+end
+
+-- The review of the 1.5.4 candidate: the path above left no copyable trace. Relay.Stats() returned
+-- neither verifyAcross nor direct, no line of the log named an ask crossing (ToRelays), an RW heard
+-- (HandleVerify) or a direct answer (Verify.SendSnapshot, Relay.Direct), and no line of /oly status
+-- or /oly bug read Relay.Stats() or Verify.Stats(). A relay's log turns over the lines /oly bug
+-- prints in seconds, so the counters are in a status line too (Diagnostics.lua's relay line).
+test("verify mesh: an ask that crossed (RW), the RW heard and the direct answer leave a log line each, and /oly status and /oly bug count them", function()
+	World(function(Node, As, Flush, Advance)
+		local verifier = Node(HC, "Olympus Crown")
+		As(verifier, verifier.c.Verify.Observe)
+		eq(As(verifier, verifier.c.Verify.Approve, GUILD, MASTER), true)
+		Flush(); Advance(3600)
+		local hub = Node(HUB, "Olympus Hearth") -- the dev's relay client, an hour later
+		eq(As(hub, hub.c.Verify.Ask), true)
+		Flush(); Advance(10); Advance(10)
+		eq(As(hub, hub.c.Verify.Status, GUILD), "verified")
+		local hs, vs = hub.c.Relay.Stats(), verifier.c.Relay.Stats()
+		eq(hs.verifyAcross, 1, "the hub's ask crossed once"); eq(hs.direct, 0, "and it answered nobody")
+		eq(vs.direct, 1, "the verifier answered direct once"); eq(vs.verifyAcross, 1, "its approval crossed (to the hub, then offline)")
+		eq(Logged(hub, "relay: " .. HUB .. "'s word (GV~1~Q) across to 1 relays"), 1, "the asker logs its ask crossing")
+		eq(Logged(hub, "relay: RW GV~1~S from " .. HC .. ", origin " .. HC), 1, "and the answer heard")
+		eq(Logged(verifier, "relay: RW GV~1~Q from " .. HUB .. ", origin " .. HUB), 1, "the verifier logs the ask heard")
+		local _, rows = As(verifier, verifier.c.Verify.Payload)
+		eq(Logged(verifier, ("verify: answer (%d rows) to %s"):format(rows, HUB)), 1, "and its direct answer")
+		-- The counters in /oly status and /oly bug, read from the modules the client loaded.
+		local had = { relay = rawget(ns, "Relay"), verify = rawget(ns, "Verify") }
+		ns.Relay, ns.Verify = verifier.c.Relay, verifier.c.Verify
+		local ok, err = pcall(function()
+			local counted = "verify across 1  direct 1  asked 0  answered 1  unsent 0"
+			local status = As(verifier, ns.StatusText)
+			assert(status:find("\nrelay: ", 1, true) and status:find(counted, 1, true), status)
+			assert(As(verifier, ns.BuildBugReport):find(counted, 1, true), "in /oly bug too")
+			ns.Relay, ns.Verify = hub.c.Relay, hub.c.Verify
+			local line = As(hub, ns.StatusText):match("\n(relay: [^\n]*)")
+			assert(line and line:find("verify across 1  direct 0  asked 1  answered 0  unsent 0", 1, true), tostring(line))
+		end)
+		ns.Relay, ns.Verify = had.relay, had.verify
+		if not ok then error(err, 0) end
 	end, true)
 end)

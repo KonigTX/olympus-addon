@@ -220,7 +220,9 @@ function Relay.Stats()
 		lists = stats.lists or 0, listsReplaced = stats.listsReplaced or 0, listsRefused = stats.listsRefused or 0,
 		listsSame = stats.listsSame or 0,
 		presented = shown, refused = stats.refused, unpresented = stats.unpresented, denied = stats.denied, unserved = stats.unserved,
-		rules = Relay.Rules().rev, required = Relay.Required() }
+		rules = Relay.Rules().rev, required = Relay.Required(),
+		-- (The review of the 1.5.4 candidate: counted below, returned for /oly status, Diagnostics.lua.)
+		verifyAcross = stats.verifyAcross or 0, direct = stats.direct or 0 }
 end
 
 local function Now() return ns.Now() end
@@ -1621,17 +1623,20 @@ end
 local function ToRelays(flag, origin, body)
 	local now = Now()
 	local mine, from = ns.ShortName(ns.me or ""):lower(), ns.ShortName(origin):lower()
-	local pieces
+	local pieces, n = nil, 0
 	for _, name in ipairs(Relay.Names(false)) do
 		local key = name:lower()
 		if key ~= mine and key ~= from and (offline[key] or 0) <= now then
 			pieces = pieces or Envelope("RW", "RW~" .. flag .. "~" .. origin .. "~" .. body)
 			stats.verifyAcross = (stats.verifyAcross or 0) + 1
+			n = n + 1
 			Quiet(name)
 			if #pieces == 1 then ns.Comm.Whisper(name, pieces[1], nil, true, false)
 			else ns.Comm.SendBatch("WHISPER", pieces, nil, name, true) end
 		end
 	end
+	-- (The review of the 1.5.4 candidate.) A line for /oly bug: that it crossed, and to how many.
+	if pieces then ns.Log("relay: %s's word (%s) across to %d relays", tostring(origin), body:sub(1, 6), n) end
 end
 
 -- (1.5.4) A verifier's answer to the one client that asked, never to every reporter: a whole store
@@ -1772,6 +1777,8 @@ function Relay.HandleVerify(dist, sender, text)
 		return false
 	end
 	if Remembered(origin, body) then return true end
+	-- (The review of the 1.5.4 candidate.) A line for /oly bug: what came across, from which relay.
+	ns.Log("relay: RW %s from %s, origin %s", body:sub(1, 6), tostring(sender), tostring(origin))
 	-- (1.5.4) A modified-build sighting or its clear crossed from another relay (Builds.lua): to our
 	-- reporters, heard here (its origin checked where it is kept), never sent across again.
 	if body:match("^BD~1~") then
