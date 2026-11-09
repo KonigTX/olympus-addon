@@ -492,6 +492,8 @@ end
 --   nothing on it: origin to relay, relay to each guild's reporter, reporter to its guild over GUILD,
 --   the relay's answer to a ping, and 1.4.6 a relay's copy to the other relays); 1.5.4 RW (guild
 --   verification between relays alone: a verifier's decision, an ask, an answer to a relay's ask).
+--   1.5.4, Relay RI RU (Relay.lua: a client's presentation of its version to a relay, and the relay
+--   rules the author's client makes and the relays keep and hand on).
 --   1.5.4, lists: Comm LS (words of one kind packed as one word where the relay carries the channel,
 --   Comm.SendList: the Church's public rows, the guild masters' nominees, the shared block terms;
 --   each receiver hands the words inside to their own handler, one by one, as if each had come on
