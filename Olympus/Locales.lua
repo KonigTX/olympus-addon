@@ -218,17 +218,19 @@ Before the list. Fixing things after launch is taking longer than I wanted. Fore
 
 What version 1.5.4 changes:
 
-- {guild} The census: the relays now hand each guild the whole census in turns, instead of losing pieces on the way. With many guilds on one relay, a full picture can take about half an hour to reach you. It works once the relay characters (the High Council's, the King's and mine) run this version.
+- {guild} The census: the relays now hand each guild the whole census in turns, instead of losing pieces on the way. With many guilds on one relay, a full picture can take half an hour or more to reach you. It works once the relay characters (the High Council's, the King's, the Treasurer's and mine) run this version.
 - {crown} The King: his crown on the map, his online status and his layer reach every guild, whichever guild he plays in.
 - {watch} Guild verifications reach every relay and every guild, and a client that missed an approval gets it back when it asks.
 - {watch} Guild verification starts over: every guild's clock restarts with this version, and the grace is now 7 days instead of 48 hours.
 - {team} Guildmates on other Forever servers are recognised: their Olympus chat is no longer dropped, and their names show plain.
+- {team} Guildmates on other Forever servers are recognised: their Olympus chat is no longer dropped, and their names show without the server name.
 - {star} PvP and PvE totals reported by the High Council now count for everyone, not only for those who played there.
-- {church} The Church: scores and nominations now travel between guilds through the relays, and the Twelve Apostles are named.
+- {church} The Church: its public scores now travel between guilds through the relays, and the Twelve Apostles are named.
+- {team} Guild masters' nominations (Legates and correspondents) now travel between guilds through the relays; at first they can take several hours to reach everyone.
 - {team} The Horde and the Alliance are kept apart. Horde numbers no longer count in Alliance totals, and a Horde guild counts as Olympus when its name says Olympus or ends in a Horde word (like the Mudhutters).
-- {guild} Layer hop is experimental. You ask, and a player on that layer invites you. If they are on another server, their portraits show dark blue once you join: log out and back in, or close and reopen the game, and you should land on their layer. It does not always work.
+- {guild} Layer hop is experimental. You ask, and a guildmate on that layer invites you. If they are on another server, their portraits show dark blue once you join: log out and back in, or close and reopen the game, and you should land on their layer. It does not always work.
 - {news} Item links in the Olympus chat work again: highlighted, clickable, and the item shows when you hover.
-- {watch} Guild names that insult Olympus no longer count as Olympus guilds.
+- {watch} More guild names that insult Olympus no longer count as Olympus guilds.
 - {team} The yellow "No player named ... is currently playing" lines no longer fill your chat.
 - {team} Your addon now tells the relays which version it runs, so keep it up to date.
 - {team} When no relay answers, the census waits for one instead of trying the channel the game blocks.
@@ -360,23 +362,24 @@ Feche e reabra o jogo depois de atualizar. Obrigado pelos relatos e pela ajuda n
 
 Vida longa ao Rei. Vida longa ao Olympus.]==]
 	L.LETTER_1_5_4_TITLE, L.LETTER_1_5_4_HEAD, L.LETTER_1_5_4_SIGNED, L.LETTER_1_5_4_LINK = "Acertando o passo com o Forever", "Acertando o passo com o Forever", L.LETTER_1_5_2_SIGNED, L.LETTER_1_5_2_LINK
-	L.LETTER_1_5_4 = [==[Sua Majestade. Soldados do Olympus.
+	L.LETTER_1_5_4 = [==[Vossa Majestade. Soldados do Olympus.
 
 Antes da lista. Arrumar as coisas depois do lançamento está levando mais tempo do que eu queria. O Forever dá ao addon canais muito mais estreitos do que a beta dava, e muitos recursos só mostram os problemas de verdade com milhares de jogadores usando ao mesmo tempo. Algumas atualizações vão sair com problemas que só o exército ao vivo consegue revelar, e a seguinte corrige. Obrigado pela paciência e pelos relatos.
 
 O que muda na versão 1.5.4:
 
-- {guild} O censo: os relays agora entregam a cada guilda o censo inteiro, em turnos, em vez de perder pedaços no caminho. Com muitas guildas no mesmo relay, o quadro completo pode levar cerca de meia hora para chegar. Funciona quando os personagens relay (os do High Council, o do Rei e os meus) estiverem nesta versão.
+- {guild} O censo: os relays agora entregam a cada guilda o censo inteiro, em turnos, em vez de perder pedaços no caminho. Com muitas guildas no mesmo relay, o quadro completo pode levar meia hora ou mais para chegar. Funciona quando os personagens relay (os do High Council, o do Rei, os do Tesoureiro e os meus) estiverem nesta versão.
 - {crown} O Rei: a coroa no mapa, o status online e a camada dele chegam a todas as guildas, seja qual for a guilda em que ele joga.
 - {watch} As verificações de guilda chegam a todos os relays e a todas as guildas, e quem perdeu uma aprovação a recebe de volta quando pede.
 - {watch} A verificação de guilda recomeça: o prazo de cada guilda volta a contar com esta versão, e a carência agora é de 7 dias em vez de 48 horas.
 - {team} Colegas de guilda em outros servidores do Forever são reconhecidos: o chat do Olympus deles não é mais descartado, e os nomes aparecem sem o servidor.
 - {star} Os totais de PvP e PvE informados pelo High Council agora contam para todos, não só para quem jogou lá.
-- {church} A Igreja: as pontuações e as nomeações agora circulam entre as guildas pelos relays, e os Doze Apóstolos foram nomeados.
+- {church} A Igreja: as pontuações públicas agora circulam entre as guildas pelos relays, e os Doze Apóstolos foram nomeados.
+- {team} As nomeações dos mestres de guilda (Legates e correspondentes) agora circulam entre as guildas pelos relays; no começo podem levar várias horas para chegar a todos.
 - {team} A Horda e a Aliança ficam separadas. Os números da Horda não contam mais nos totais da Aliança, e uma guilda da Horda conta como Olympus quando o nome diz Olympus ou termina com uma palavra da Horda (como os Mudhutters).
-- {guild} O layer hop é experimental. Você pede, e um jogador daquela camada te convida. Se ele estiver em outro servidor, os retratos do grupo ficam azul-escuros quando você entra: saia e entre de novo no personagem, ou feche e abra o jogo, e você deve chegar à camada dele. Nem sempre funciona.
+- {guild} O layer hop é experimental. Você pede, e um colega de guilda daquela camada te convida. Se ele estiver em outro servidor, os retratos do grupo ficam azul-escuros quando você entra: saia e entre de novo no personagem, ou feche e abra o jogo, e você deve chegar à camada dele. Nem sempre funciona.
 - {news} Os links de itens no chat do Olympus voltaram a funcionar: destacados, clicáveis, e o item aparece quando você passa o mouse.
-- {watch} Nomes de guilda que insultam o Olympus não contam mais como guildas do Olympus.
+- {watch} Mais nomes de guilda que insultam o Olympus deixam de contar como guildas do Olympus.
 - {team} As linhas amarelas de "jogador não encontrado" não enchem mais o seu chat.
 - {team} O seu addon agora informa aos relays qual versão ele usa, então mantenha-o atualizado.
 - {team} Quando nenhum relay responde, o censo espera por um em vez de tentar o canal que o jogo bloqueia.
