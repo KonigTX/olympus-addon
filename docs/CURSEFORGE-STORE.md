@@ -345,38 +345,7 @@ bottom-to-top always gives the same tab order; changing role or debug view never
 The Realm tab links **the Board** (or `/oly lfg`): who in Olympus wants a group right now, from
 what each player chose to share, and the King's week.
 
-- **The King's week** (`/oly week`): the King's Agenda for the next 7 days, by day, with your own
-  guild's events from the game's calendar among them, so nobody books the army twice. Olympus
-  can't write into the game's calendar: an officer's click opens it on the right day's month and
-  says which day to right-click for the guild event. Your client keeps the week across a
-  `/reload` or a login, so it shows while the King is offline.
-  **Heraldry and guild agendas (1.2.4).** The signed High Council's Heraldry holders and the author
-  also schedule for Olympus, alongside the King's existing verified Steward and Hands. **Schedule
-  for your guild** belongs to its own master and verified Heraldry correspondent: a day and hour,
-  or `30 Guild gathering`. Entries and signup counts reach that guild alone. Saved entries keep
-  their audience, and a roster still loading keeps them hidden until it confirms the issuer.
-  Losing the duty stops new entries and repeats; setters may take back their own exact entries.
-  Older clients ignore guild Agenda messages; the army wire and old Heritage key stay compatible.
-- **The signup sheet**: Sign up on an Agenda entry with the role you claim; it goes to whoever set
-  it, alone, and its audience sees the counts (4 tanks, 9 healers...), kept by his client across a
-  `/reload`. Nothing checks the role and nothing invites you: whoever runs the event invites by
-  hand. Five minutes before an entry you signed, your client alone prints one line with the usual
-  alert sound (nothing sent), after a `/reload` too. A guild entry's saved nudge appears only in
-  that same guild while its setter still has that duty.
-- **Raise a flag** with one click: **Dungeon**, **Raid**, **PvP** or **Layer**, plus a short
-  note if you want one (40 bytes at most). A box says first what goes out: your name, level,
-  class and guild, the flag and the note, to every Olympus player of your realm and faction.
-  The note goes the way chat does (the game's servers keep it, so abuse can be reported); on the
-  King's screen no note shows.
-- **Your zone shows on your card only while you share it** (`/oly location on`); otherwise the
-  card says the zone is hidden. Never your position.
-- **A click on someone's card whispers them.** Nothing invites anyone, queues or forms a group.
-- One flag each, an hour at most; a click on yours, or `/oly lfg off`, lowers it at once.
-- **Camps**: drop one where you stand (`/oly camp [note]`) so the army reuses a fire already up.
-  Its zone only, never your spot; it needs `/oly location on` and ends by itself after 30
-  minutes. The Board lists them by zone, and the world map shows one badge per zone with how
-  many (mouse and keyboard only; `/oly camps off` hides them). **Bones can be played at a tavern
-  or at a camp** (1.1.6): grouped, within about 10 yards, at the same inn or by your camp.
+*Continued in the README: [The Board: who is looking for a group, and where (1.1)](https://github.com/dnl-gentile/olympus-addon#the-board-who-is-looking-for-a-group-and-where-11).*
 
 ### Net-off (1.1): the moderators hide a character or take a guild off the network
 The King, his Steward, a Hand (the King's list or a Steward's) or a High Councillor of the

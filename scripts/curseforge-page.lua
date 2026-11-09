@@ -43,6 +43,9 @@ M.CUTS = {
 	-- (1.2.4 integration: the lanes' sections together passed the budget again; two older sections'
 	-- details stay in the README.)
 	{ title = "Decrees", keep = 1 },
+	-- (1.5.4: the relays' presentation, the modified builds and the lists took the page past the budget
+	-- again; the Board keeps its opening, its details are the README's.)
+	{ title = "The Board: who is looking for a group, and where (1.1)", keep = 1 },
 	{ title = "Loot notes (1.1)", keep = 1 },
 	-- (1.2.4: the role rooms' list and its rules are the README's; its opening stays.)
 	{ title = "Role rooms (1.2.4)", keep = 1 },
