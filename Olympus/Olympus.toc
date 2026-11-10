@@ -75,6 +75,7 @@ Data.lua
 Roster.lua
 Comm.lua
 Relay.lua
+RelayFallback.lua
 Map.lua
 Layers.lua
 Hop.lua

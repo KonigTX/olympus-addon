@@ -1702,7 +1702,13 @@ function Relay.HandleIn(dist, sender, text)
 	if dist ~= "WHISPER" or not Relay.On() then return false end
 	local flag, body = tostring(text):match("^RL~([LP])~(.*)$")
 	if not flag then return false end
-	if not Relay.IsRelay(ns.me) then return false end -- (only a relay's client answers hop 1)
+	if not Relay.IsRelay(ns.me) then -- (only a relay's client answers hop 1; 1.5.5: or a provisional one)
+		local F = ns.RelayFallback
+		if type(F) == "table" and not F.missing and type(F.HandleIn) == "function" then
+			return F.HandleIn(dist, sender, text) == true
+		end
+		return false
+	end
 	local now = Now()
 	Heard(body == "RP~" and "RP" or (body:sub(1, 3) == "RR~" and "RR") or "RL", sender, body, now) -- (1.5.4)
 	if body == "RP~" then
@@ -2191,6 +2197,57 @@ ns.On("LOGIN", function()
 	end
 end)
 
+-- (1.5.5, step 0: the hooks the 1.5.5 relay lanes share. No behaviour changes here: a lane fills a
+-- stub, or asks how a word came.)
+local hop, hopSender -- the hop delivering a word now: "L" RL at a relay, "M" RM, "X" RX, "W" RW, "G" RG, "T" tree, "O" provisional
+function Relay.Hop() return hop, hopSender end
+local function WithHop(h, sender, fn, ...) local ph, ps = hop, hopSender; hop, hopSender = h, sender
+	local ok, res = pcall(fn, ...); hop, hopSender = ph, ps; if not ok then error(res, 0) end return res end
+function Relay.TakeVia(h, sender, origin, text, logged) return WithHop(h, sender, Deliver, origin, text, logged) end
+function Relay.Take(origin, text, logged) return Deliver(origin, text, logged) end
+function Relay.HandOn(flag, origin, text) return ToGuild(flag, origin, text) end
+Relay.Envelope = Envelope
+function Relay.SetBatches(flag, origin, set, kind) return SetBatches(flag, origin, set, kind) end
+function Relay.FirstHand() return hop == "L" end
+function Relay.ViaProvisional() return hop == "O" end
+function Relay.HopTrusted() return true end                       -- lane mesh fills it
+function Relay.IsSignedRelay(name) return Relay.IsRelay(name) end  -- lane mesh fills it
+function Relay.MeshPeer(name) return Now() - (verified[Lower(ns.ShortName(name or ""))] or -math.huge) < Relay.VERIFIED_FOR end -- lane mesh: + RJ
+function Relay.TreeCapable(name) local T = ns.RelayTree
+	return type(T) == "table" and not T.missing and type(T.Capable) == "function" and T.Capable(name) == true end
+function Relay.ServingProvisional() local F = ns.RelayFallback
+	return type(F) == "table" and not F.missing and type(F.Serving) == "function" and F.Serving() == true end
+function Relay.InFallback() local F = ns.RelayFallback
+	return type(F) == "table" and not F.missing and type(F.Active) == "function" and F.Active() == true end
+-- Numeric compare of "a.b.c[.d]" and "a.b.c-test.n" (as a.b.c); nil or malformed v -> false.
+function Relay.AtLeast(v, floor)
+	local function Parts(s)
+		s = Relay.VersionOf(s)
+		if not s then return nil end
+		local out = {}
+		for n in (s:match("^(%d+%.%d+%.%d+)%-test%.%d+$") or s):gmatch("%d+") do out[#out + 1] = tonumber(n) end
+		return out
+	end
+	local a, b = Parts(v), Parts(floor)
+	if not a or not b then return false end
+	for i = 1, math.max(#a, #b) do
+		local x, y = a[i] or 0, b[i] or 0
+		if x ~= y then return x > y end
+	end
+	return true
+end
+-- { guild, name, v, t } of each fresh registration (t: its last), by guild.
+function Relay.Reporters()
+	local now, out = Now(), {}
+	for g, r in pairs(reporters) do
+		if now - r.t <= Relay.REPORTER_FOR then out[#out + 1] = { guild = r.guild or g, name = r.name, v = r.v, t = r.t } end
+	end
+	table.sort(out, function(a, b) return a.guild < b.guild end)
+	return out
+end
+function Relay.PinnedRelay() return nil end                        -- lane mesh (RB) fills it
+Relay.ResetHooks = {} -- each lane appends its reset; Relay.Reset calls them last and clears hop, hopSender
+
 -- Tests: a clean slate.
 function Relay.Reset()
 	wipe(offline); wipe(verified); wipe(pinged); wipe(reporters); wipe(seen); wipe(pending); wipe(budget)
@@ -2205,4 +2262,6 @@ function Relay.Reset()
 	wipe(listOrigins); wipe(Origins()); wipe(listShares); wipe(listSets)
 	dripBusy, dripping = false, false
 	for k in pairs(stats) do stats[k] = 0 end
+	for _, reset in ipairs(Relay.ResetHooks) do reset() end
+	hop, hopSender = nil, nil
 end

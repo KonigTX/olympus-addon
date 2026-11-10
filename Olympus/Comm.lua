@@ -501,6 +501,7 @@ end
 --   1.5.4, modified builds: Builds BD (a guild master's, an officer's or a councillor's sighting of a
 --   client whose version is no release, over GUILD and on the channel; the record the right-click
 --   menu and /oly builds show, and the lock on such a client's words).
+--   1.5.5, RelayTree RN RF RQ RC | Relay RJ RB | RelayFallback RE RO | Data QA
 local handlers = {}
 local dispatchSender, injectedSender
 local function Dispatch(handler, dist, sender, text)
