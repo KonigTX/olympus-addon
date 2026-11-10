@@ -40,9 +40,10 @@ local function World(fn)
 		Ed.Reset()
 		Ed.after = function(f) frames[#frames + 1] = f end
 		-- opts.pk: this client's ns.AUTHOR_ATTEST_PK (none: empty); opts.file: another release's Data.lua.
+		-- Returns the client and its deliver(dist, sender, text): the real handlers (RM, RG...) hear it.
 		local function Node(me, opts)
 			opts = opts or {}
-			local N = extra.RelayWorld(me, "Olympus II")
+			local N, deliver = extra.RelayWorld(me, "Olympus II")
 			local realm = ns.RealmOf(me)
 			N.realm, N.group, N.faction = realm, ns.ForeverFamily(realm), "Alliance"
 			N.db, N.rdb.guilds, N.rdb.seen = { blocked = {} }, {}, {}
@@ -60,7 +61,7 @@ local function World(fn)
 			assert(loadfile(opts.file or (extra.addon .. "Data.lua")))("Olympus", N)
 			N.On = on
 			for _, f in ipairs(init) do f() end
-			return N
+			return N, deliver
 		end
 		local function Frames()
 			local n = 0
@@ -193,20 +194,21 @@ test("census author (1.5.5): the author's client says every family row it counts
 		end
 		-- A councillor's client hears the author's row on a stamped hop: it says it again for the clients
 		-- that trust only the Church's ledger relays (1.5.4), though it heard the author say it.
-		local H = Node("Sage Warden-" .. PVE)
+		local H, hdeliver = Node("Sage Warden-" .. PVE)
 		local word = ("CX~1~S~%d~ForeverPvP,Alliance,13614,12900,30,%d"):format(H.clock, H.clock - 600)
-		H.Relay.TakeVia("M", "Sage Ledger", AUTHOR, word)
+		hdeliver("WHISPER", "Sage Ledger", "RM~P~" .. AUTHOR .. "~" .. word) -- (a signed relay's RM: Relay.HandleRelayed)
 		eq(assert(PvP(H.Data.Groups())).src, "author")
 		local resaid = assert(H.Data.GroupCensusPayload(), "the councillor re-says the author's row")
 		assert(resaid:find("ForeverPvP,Alliance,13614,12900,30," .. (H.clock - 600), 1, true), resaid)
-		-- A row of the author's it took over RG (a guildmate's hand-over) counts on its page, never in its word.
-		H.Relay.TakeVia("G", "Guild Mate-" .. PVE, AUTHOR, ("CX~1~S~%d~ForeverRP,Alliance,2000,1900,8,%d"):format(H.clock, H.clock - 650))
+		-- A row of the author's it took over RG (a guildmate's hand-over: Relay.HandleGuild) counts on its
+		-- page, never in its word.
+		hdeliver("GUILD", "Guild Mate-" .. PVE, "RG~P~" .. AUTHOR .. "~" .. ("CX~1~S~%d~ForeverRP,Alliance,2000,1900,8,%d"):format(H.clock, H.clock - 650))
 		local rp = assert(Row(H.Data.Groups(), "ForeverRP"))
 		eq(rp.counted, true, "shown and counted here"); eq(rp.src, "author")
 		resaid = assert(H.Data.GroupCensusPayload())
 		assert(not resaid:find("ForeverRP", 1, true), "never re-said: " .. resaid)
 		-- The same row again on a stamped hop: said from then on.
-		H.Relay.TakeVia("M", "Sage Ledger", AUTHOR, ("CX~1~S~%d~ForeverRP,Alliance,2000,1900,8,%d"):format(H.clock - 1, H.clock - 650))
+		hdeliver("WHISPER", "Sage Ledger", "RM~P~" .. AUTHOR .. "~" .. ("CX~1~S~%d~ForeverRP,Alliance,2000,1900,8,%d"):format(H.clock - 1, H.clock - 650))
 		local stamped = assert(H.Data.GroupCensusPayload())
 		assert(stamped:find("ForeverRP,Alliance,2000,1900,8," .. (H.clock - 650), 1, true), "said once a stamped hop brought it: " .. stamped)
 		-- Another ledger relay saying the same row keeps it quiet: a 1.5.4 client counted that word.
@@ -281,14 +283,15 @@ test("census author (1.5.5): the author's CG 2 rows on a signed relay's hop stan
 		PinUntrusted(U)
 		U.Relay.TakeVia("M", PIN, AUTHOR, Snapshot(U, { { "Olympus Dawn", 640, 40, 300, U.clock - 60 } }))
 		eq(U.Data.Summary().characters, 0, "an unsigned pin's copy is one witness")
-		-- A councillor takes the author's row over RG: counted, never in its own snapshot.
-		local H = Node("Sage Warden-" .. PVE)
-		H.Relay.TakeVia("G", "Guild Mate-" .. PVE, AUTHOR, Snapshot(H, { { "Olympus Dusk", 510, 30, 280, H.clock - 120 } }))
+		-- A councillor takes the author's row over RG (a guildmate's hand-over, Relay.HandleGuild): counted,
+		-- never in its own snapshot.
+		local H, hdeliver = Node("Sage Warden-" .. PVE)
+		hdeliver("GUILD", "Guild Mate-" .. PVE, "RG~P~" .. AUTHOR .. "~" .. Snapshot(H, { { "Olympus Dusk", 510, 30, 280, H.clock - 120 } }))
 		eq(H.Data.Summary().characters, 510, "shown and counted")
 		local own = assert(H.Data.GlobalCensusPayload())
 		assert(not own:find("Olympus Dusk", 1, true), "a hand-over row is not in a trusted holder's snapshot: " .. own)
-		-- The same row on a stamped hop: now its own word.
-		H.Relay.TakeVia("M", "Sage Ledger", AUTHOR, Snapshot(H, { { "Olympus Dusk", 510, 30, 280, H.clock - 120 } }, H.clock - 1))
+		-- The same row on a stamped hop (a signed relay's RM, Relay.HandleRelayed): now its own word.
+		hdeliver("WHISPER", "Sage Ledger", "RM~P~" .. AUTHOR .. "~" .. Snapshot(H, { { "Olympus Dusk", 510, 30, 280, H.clock - 120 } }, H.clock - 1))
 		own = assert(H.Data.GlobalCensusPayload())
 		assert(own:find("Olympus Dusk,510,30,280," .. (H.clock - 120), 1, true), "said once a stamped hop brought it: " .. own)
 	end)
