@@ -11,16 +11,22 @@ local function BusyRelay(n)
 	for i = 1, n do
 		R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i))
 	end
-	local function Run(pumps)
+	-- (`each`, when given, after every pump.)
+	local function Run(pumps, each)
 		for _ = 1, pumps do
 			R.clock = R.clock + 1.2 -- (one pump each SEND_INTERVAL)
 			R.Comm.Pump()
 			local due = timers; timers = {}
 			for _, fn in ipairs(due) do fn() end
+			if each then each() end
 		end
 	end
 	return R, sent, Run
 end
+
+-- The test lines: line k, by the speaker k, as the relay takes it in.
+local function Line(k) return ("M1~A~Olympus Guild%d~%d~WA~hello army, line %d"):format(k, 100 + k, k) end
+local function Say(R, k) R.Relay.HandleIn("WHISPER", ("Speaker Number%d-CAMWOWUS2Realm3PvE"):format(k), "RL~L~" .. Line(k)) end
 
 -- The chat lines (M1 bodies) each reporter was whispered, by reporter number.
 local function LinesByReporter(R, sent, n)
@@ -48,29 +54,173 @@ local function WithMember(fn)
 	if not ok then error(err, 0) end
 end
 
-test("chat delivery (1.5.5): a burst of Olympus chat lines through a relay with 46 reporters reaches every reporter, each line once, while census words keep coming", function()
+-- (The check of the lane: this test's title said the census words keep coming, and nothing looked.
+-- They did not: the lane's burst of 60 took every whisper for its first minute and a half.)
+test("chat delivery (1.5.5): a burst of Olympus chat lines through a relay with 46 reporters reaches every reporter, each line once, while census words keep their share of the relay's whispers", function()
 	WithMember(function()
 		local n = 46
 		local R, sent, Run = BusyRelay(n)
-		local lines = {}
+		-- The census words sent to reporters while chat lines still waited in the lane, and how long.
+		local census, waited, seen = 0, 0, 0
+		local function Watch()
+			local busy = R.Relay.ChatWaiting() > 0
+			if busy then waited = waited + 1.2 end
+			for i = seen + 1, #sent do
+				if busy and sent[i].msg:find("^RM~P~[^~]+~X1~") then census = census + 1 end
+			end
+			seen = #sent
+		end
 		for k = 1, 4 do
-			lines[k] = ("M1~A~Olympus Guild%d~%d~WA~hello army, line %d"):format(k, 100 + k, k)
-			R.Relay.HandleIn("WHISPER", ("Speaker Number%d-CAMWOWUS2Realm3PvE"):format(k), "RL~L~" .. lines[k])
+			Say(R, k)
 			-- Other clients' census words between the lines (the trickle's, keyed: a newer one replaces).
 			R.Relay.HandleIn("WHISPER", ("Reporter Census%d-CAMWOWUS2Realm5PvE"):format(k), ("RL~P~X1~census %d"):format(k))
-			Run(2)
+			Run(2, Watch)
 		end
-		Run(3000)
+		Run(3000, Watch)
 		local got = LinesByReporter(R, sent, n)
 		local missing, twice = 0, 0
 		for i = 1, n do
 			for k = 1, 4 do
-				local c = got[i][lines[k]] or 0
+				local c = got[i][Line(k)] or 0
 				if c == 0 then missing = missing + 1 elseif c > 1 then twice = twice + 1 end
 			end
 		end
 		eq(missing, 0, "no chat line lost for any reporter's guild")
 		eq(twice, 0, "and none sent twice")
+		-- The relay sends PUMP_PARTS_RELAY whispers a pump (200 a minute); the lane takes CHAT_PER_MIN.
+		local share = R.Comm.PUMP_PARTS_RELAY * 60 / 1.2 - R.Relay.CHAT_PER_MIN
+		assert(waited >= 30, "the burst kept the lane busy a while: " .. waited)
+		assert(census >= math.floor(waited / 60 * share / 2),
+			("census words kept at least half their %d a minute while chat waited: %d in %ds"):format(share, census, waited))
+	end)
+end)
+
+-- (The check of the lane: a whisper waits in the lane up to CHAT_LANE_TTL, and was sent to whom it was
+-- queued for whatever happened meanwhile.)
+test("chat delivery (1.5.5): a waiting chat whisper goes to its guild's reporter as the relay holds him when it is sent: none to one quarantined, denied or expired meanwhile, the guildmate who took a reporter's place gets it, our own client hands it to the guild, none to a relay left out; skipped, never lost", function()
+	WithMember(function()
+		local n = 12
+		local R, sent, Run = BusyRelay(n)
+		-- Every registration renewed but Rep Number12's: his runs out (REPORTER_FOR) a second after the
+		-- lines come, before the second goes.
+		R.clock = R.clock + R.Relay.REPORTER_FOR - 1
+		for i = 1, n - 1 do
+			R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i))
+		end
+		-- Another relay answered us: every line crosses to it too (RX).
+		R.Relay.HandleAck("WHISPER", "Max Ran-CAMWOWUS2Realm1PvE", "RY~")
+		for k = 1, 6 do Say(R, k) end
+		local before = #sent
+		assert(R.Relay.ChatWaiting() >= 5 * (n + 1), "lines 2 to 6 wait in the lane: " .. R.Relay.ChatWaiting())
+		-- Meanwhile (the lines after the first still waiting): Rep Number1 marked a modified build, Rep
+		-- Number2 denied, Guild 3's reporter now a guildmate, Guild 4's our own client, the other
+		-- relay offline (the server's word).
+		R.Builds = { Quarantined = function(name) return ns.ShortName(name) == "Rep Number1" end }
+		R.Relay.SetDenied({ ["rep number2"] = true })
+		R.Relay.HandleIn("WHISPER", "Rep Guildmate-CAMWOWUS2Realm7PvE", "RL~P~RR~Guild 3")
+		R.Relay.HandleIn("WHISPER", "Hildryn Payne-CAMWOWUS2Realm1PvE", "RL~P~RR~Guild 4")
+		R.Relay.LeaveOut("Max Ran", "offline")
+		Run(400)
+		eq(R.Relay.ChatWaiting(), 0)
+		-- What lines 2 to 6 became, by addressee.
+		local to, guild = {}, 0
+		for i = before + 1, #sent do
+			local s = sent[i]
+			local k = tonumber(s.msg:match("^R[MXG]~L~[^~]+~M1~A~Olympus Guild(%d+)~"))
+			if k and k >= 2 then
+				if s.dist == "GUILD" then guild = guild + 1
+				else
+					local who = ns.ShortName(s.target)
+					to[who] = (to[who] or 0) + 1
+				end
+			end
+		end
+		eq(to["Rep Number1"], nil, "none to a reporter quarantined meanwhile")
+		eq(to["Rep Number2"], nil, "none to one denied meanwhile")
+		eq(to["Rep Number3"], nil); eq(to["Rep Guildmate"], 5, "his guild's new reporter: each line once")
+		eq(to["Rep Number4"], nil); eq(guild, 5, "our own client its guild's reporter now: each line handed to the guild once")
+		eq(to["Rep Number12"], nil, "none to one whose registration ran out")
+		eq(to["Max Ran"], nil, "none across to a relay left out")
+		for i = 5, n - 1 do eq(to["Rep Number" .. i], 5, "Rep Number" .. i .. ": each line once") end
+		eq(R.Relay.Stats().chatLost, 0, "nothing counted lost")
+		assert(R.Relay.Stats().chatSkipped >= 4 * 5, "skipped and counted: " .. R.Relay.Stats().chatSkipped)
+	end)
+end)
+
+-- (The check of the lane: an error in there left it feeding for good, every later word stopped.)
+test("chat delivery (1.5.5): a whisper whose send throws is lost alone and counted; the lane goes on and the next line reaches every reporter", function()
+	local savedCapture = ns.CaptureError
+	local errors = {}
+	local ok, err = pcall(function()
+		ns.CaptureError = function(where, e) errors[#errors + 1] = where .. ": " .. tostring(e) end
+		WithMember(function()
+			local n = 12
+			local R, sent, Run = BusyRelay(n)
+			local whisper, throws = R.Comm.Whisper, 0
+			R.Comm.Whisper = function(...)
+				if throws < R.Relay.CHAT_INFLIGHT + 2 then
+					throws = throws + 1
+					error("a send that throws")
+				end
+				return whisper(...)
+			end
+			for k = 1, 3 do pcall(Say, R, k) end
+			Run(300)
+			eq(throws, R.Relay.CHAT_INFLIGHT + 2)
+			local got, delivered = LinesByReporter(R, sent, n), 0
+			for i = 1, n do
+				for k = 1, 3 do
+					local c = got[i][Line(k)] or 0
+					delivered = delivered + c
+					assert(c <= 1, "none twice")
+				end
+			end
+			eq(delivered, 3 * n - throws, "every whisper but those that threw")
+			eq(R.Relay.Stats().chatLost, throws, "those counted lost")
+			eq(R.Relay.ChatWaiting(), 0, "nothing left waiting")
+			Say(R, 4)
+			Run(100)
+			got = LinesByReporter(R, sent, n)
+			for i = 1, n do eq(got[i][Line(4)], 1, "the next line reaches Rep Number" .. i) end
+			assert(#errors >= throws, "each error captured: " .. #errors)
+		end)
+	end)
+	ns.CaptureError = savedCapture
+	if not ok then error(err, 0) end
+end)
+
+-- (The check of the lane: the author's relay has 92 reporters, not the 46 its numbers were made for.)
+test("chat delivery (1.5.5): at 92 reporters, ten lines at once: the first eight reach every reporter, the ninth is the first to wait past CHAT_LANE_TTL; every whisper is sent once or counted lost, none late", function()
+	WithMember(function()
+		local n = 92
+		local R, sent, Run = BusyRelay(n)
+		local t0, most, late, seen = R.clock, 0, 0, 0
+		local function Watch()
+			most = math.max(most, R.Relay.ChatWaiting())
+			for i = seen + 1, #sent do
+				-- (Each pump hands Comm at most CHAT_INFLIGHT more: they leave within two pumps.)
+				if sent[i].msg:find("^RM~L~") and R.clock - t0 > R.Relay.CHAT_LANE_TTL + 2.4 then late = late + 1 end
+			end
+			seen = #sent
+		end
+		for k = 1, 10 do Say(R, k) end
+		Run(3000, Watch)
+		local got = LinesByReporter(R, sent, n)
+		local count, delivered = {}, 0
+		for k = 1, 10 do
+			count[k] = 0
+			for i = 1, n do
+				local c = got[i][Line(k)] or 0
+				assert(c <= 1, "none twice")
+				count[k] = count[k] + c
+			end
+			delivered = delivered + count[k]
+		end
+		for k = 1, 8 do eq(count[k], n, "line " .. k .. " reached every reporter") end
+		assert(count[9] < n, "the ninth line waited past CHAT_LANE_TTL: " .. count[9])
+		eq(delivered + R.Relay.Stats().chatLost, 10 * n, "each whisper sent once or counted lost")
+		eq(late, 0, "none sent after CHAT_LANE_TTL")
+		assert(most >= 8 * n, "the waiting count grows in a burst (/oly status): " .. most)
 	end)
 end)
 

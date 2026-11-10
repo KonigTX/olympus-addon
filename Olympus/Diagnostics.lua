@@ -399,11 +399,12 @@ local function RelayLine()
 	local s = R.Stats()
 	local v = type(V) == "table" and type(V.Stats) == "function" and V.Stats() or {}
 	local function N(x) return tonumber(x) or 0 end
-	-- (1.5.5) The relay's chat lane (Relay.lua): chat whispers waiting, and lost (past its bound or its time).
-	return ("%s  |  out %d  forwarded %d  delivered %d  dropped %d  dead %d  kept %d  trickled %d  reporters %d  pending %d  |  verify across %d  direct %d  asked %d  answered %d  unsent %d  untrusted %d  bad %d  |  chat lane %d waiting, %d lost"):format(
+	-- (1.5.5) The relay's chat lane (Relay.lua): chat whispers waiting, lost (past its bound or its time),
+	-- and skipped (their reporter quarantined, no longer served or registered, a relay left out, by then).
+	return ("%s  |  out %d  forwarded %d  delivered %d  dropped %d  dead %d  kept %d  trickled %d  reporters %d  pending %d  |  verify across %d  direct %d  asked %d  answered %d  unsent %d  untrusted %d  bad %d  |  chat lane %d waiting, %d lost, %d skipped"):format(
 		not s.on and "off" or (tostring(s.relay or "none") .. (s.sure and "" or " (unanswered)")),
 		N(s.out), N(s.forwarded), N(s.delivered), N(s.dropped), N(s.dead), N(s.kept), N(s.trickled), N(s.reporters), N(s.pending),
-		N(s.verifyAcross), N(s.direct), N(v.asked), N(v.answered), N(v.unsent), N(v.refused), N(v.bad), N(s.chatWaiting), N(s.chatLost))
+		N(s.verifyAcross), N(s.direct), N(v.asked), N(v.answered), N(v.unsent), N(v.refused), N(v.bad), N(s.chatWaiting), N(s.chatLost), N(s.chatSkipped))
 end
 
 ---------------------------------------------------------------------------
