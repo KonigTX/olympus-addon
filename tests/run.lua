@@ -48370,12 +48370,18 @@ test("1.1 taking donations (the Treasurer's idea): a keeper's switch, a line on 
 			R.Comm.Handle("TD", function(...) T.HandleDonations(...) end)
 			eq(R.Relay.HandleGuild("GUILD", "Guildmate-Realm", says[1][2]), true)
 			eq(Listed(), false, "his off over GUILD takes the line down")
-			-- Off Forever (no relay): the channel, as before.
+			-- Without the relay (Relay.lua missing) where names split: still never the channel.
 			C_ChatInfo = Said()
 			AsTreasurer()
 			T.SetDonations(true)
 			T.DonationsLogout()
-			eq(#says, 2); eq(said[2], "TD~Olympus~0~0~"); eq(said[3], "CHANNEL"); eq(said[4], 7)
+			eq(#says, 2); eq(said[3], "GUILD", "where names split, no relay loaded: still not the channel")
+			-- Off Forever (names whole, no relay): the channel, as before.
+			ns.splitNames = false
+			T.SetDonations(true)
+			T.DonationsLogout()
+			ns.splitNames = true
+			eq(#says, 3); eq(said[2], "TD~Olympus~0~0~"); eq(said[3], "CHANNEL"); eq(said[4], 7)
 			eq(T.TakingDonations(), false)
 			-- A 1.0 client's addon leaves it unread.
 			C_ChatInfo = saved.cci
