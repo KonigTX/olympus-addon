@@ -29185,9 +29185,11 @@ test("1.2.6 companion sections: guilds, rankings and wanted carry only public ro
 		eq(rankings.treasury, nil, "no treasury numbers while the King keeps the balance private")
 		eq(type(rankings.crafting), "table")
 		-- (1.2.6, the Companion's Rankings tab: `boards`, each public board's rows and the player's own
-		-- place, BridgeSections.lua; tests/bridge-people.lua checks what each holds.)
+		-- place, BridgeSections.lua; tests/bridge-people.lua checks what each holds. 1.5.5: and the realm
+		-- group they are of, realmGroup and pvp, which name nobody: tests/bridge-membership.lua's.)
 		for k in pairs(rankings) do
-			assert(({ slayers = true, donors = true, church = true, games = true, crafting = true, treasury = true, boards = true })[k], "ranking " .. k)
+			assert(({ slayers = true, donors = true, church = true, games = true, crafting = true, treasury = true, boards = true,
+				realmGroup = true, pvp = true })[k], "ranking " .. k)
 		end
 
 		eq(rankings.church.missionaries[1], "Pious"); eq(rankings.staff, nil, "only the public kinds")
@@ -38029,6 +38031,137 @@ test("1.1 the King's week: every client keeps the entries of the King and his Ha
 		eq(W.Cancel(506), true)
 		assert(LastWeek(w):find("^T1~D~506~Olympus II~0~0~~$"), LastWeek(w))
 	end)
+end)
+
+-- 1.5.5 (the audit of 11-10): the week's entries, their cancel, the setter's sheet and Open the Gates
+-- go logged, as a decree does (D1): the setter's own words, which a relay passes on to every guild's
+-- reporter whole, outside the trickle other clients' words share. A Steward or a Hand is no relay, and
+-- his, unlogged, reached about one guild in a hundred a send. A sheet too long for one message goes as
+-- several logged sheets of one piece each, never Codec's pieces (unlogged, and over GUILD no client put
+-- T1 pieces together). Before: every one unlogged, a long sheet in pieces.
+test("1.5.5 the King's week and the gates go logged: an entry, its repeat and its cancel, the sheet (a long one as several logged sheets, never pieces), the gates opened and closed", function()
+	WithWeek(function(w, W, K)
+		local sends, chunked = {}, 0
+		local savedChunked = ns.Comm.SendChunked
+		local ok, err = pcall(function()
+			ns.Comm.Send = function(dist, msg, key, urgent, logged)
+				local x = { dist = dist, msg = msg, key = key, urgent = urgent, logged = logged }
+				sends[#sends + 1], w.sent[#w.sent + 1] = x, x
+				return true
+			end
+			ns.Comm.SendChunked = function() chunked = chunked + 1 return true end
+			local function Last(prefix)
+				for i = #sends, 1, -1 do if sends[i].msg:sub(1, #prefix) == prefix then return sends[i] end end
+			end
+			AsKing()
+			eq(K.SetAgenda("Sat 20:00 Raid night"), true)
+			local entry = Last("T1~D~")
+			assert(entry and entry.msg:find("~1~~Raid night$"), "the new entry")
+			eq(entry.logged, true, "an entry goes logged")
+			local id = W.Entries()[1].id
+			-- Its repeats for late logins, and the sheet (the counts, an empty one at once).
+			sends = {}
+			w.clock = w.clock + W.RESEND_FAR
+			W.Tick()
+			local again = Last("T1~D~")
+			assert(again and again.msg:find("^T1~D~" .. id .. "~Olympus~%d+~0~"), "a repeat")
+			eq(again.logged, true, "a repeat goes logged")
+			local sheet = Last("T1~R~")
+			assert(sheet, "the sheet"); eq(sheet.logged, true, "the sheet goes logged"); eq(sheet.key, "sheet:army")
+			-- Taken off: the cancel too.
+			eq(W.Cancel(id), true)
+			local cancel = Last("T1~D~")
+			eq(cancel.msg, ("T1~D~%d~Olympus~0~0~~"):format(id)); eq(cancel.logged, true, "a cancel goes logged")
+			-- A long sheet (40 entries' counts, 20 the army's and 20 his guild's): several sheets of one
+			-- message each, every one logged, each entry once, never Codec's pieces.
+			local entries, mayEdit, counts = W.Entries, W.MayEdit, W.Counts
+			local list = {}
+			for i = 1, 40 do list[i] = { id = 90000 + i, mine = true, at = ns.Now() + 3600, guildOnly = i > 20 or nil } end
+			W.Entries = function() return list end
+			W.MayEdit = function() return true end
+			W.Counts = function() return { T = 123, H = 45, D = 67, A = 8 } end
+			sends = {}
+			local sent, why = pcall(W.SendSheet, true)
+			W.Entries, W.MayEdit, W.Counts = entries, mayEdit, counts
+			assert(sent, why)
+			eq(chunked, 0, "never in pieces")
+			local seen, keys, army, guild = {}, {}, 0, 0
+			for _, x in ipairs(sends) do
+				local body, minutes = x.msg:match("^T1~R~%d+~Olympus~([^~]+)~(%d+)$")
+				assert(body, x.msg)
+				assert(#x.msg <= W.SHEET_BYTES, #x.msg .. " bytes")
+				eq(x.logged, true, "each one logged"); eq(minutes, "5", "the next in 5 minutes: entries near")
+				assert(not keys[x.key], "each its own key: " .. x.key)
+				keys[x.key] = true
+				if x.dist == "GUILD" then guild = guild + 1 else eq(x.dist, "CHANNEL"); army = army + 1 end
+				for part in body:gmatch("[^,]+") do
+					local eid = tonumber(part:match("^(%d+):123:45:67:8$"))
+					assert(eid and not seen[eid], part)
+					seen[eid] = x.dist
+				end
+			end
+			assert(army >= 2 and guild >= 2, ("several sheets each: %d to the army, %d to the guild"):format(army, guild))
+			for i = 1, 40 do eq(seen[90000 + i], i > 20 and "GUILD" or "CHANNEL", "entry " .. i .. " once, to its audience") end
+			assert(keys["sheet:army"] and keys["sheet:army:2"] and keys["sheet:guild"] and keys["sheet:guild:2"], "the first keeps its key")
+			-- Open the Gates, and close them: logged too.
+			sends = {}
+			ns.Acts.OpenGates("Olympus Zeus")
+			local open = Last("T1~G~")
+			assert(open and open.msg:find("~Olympus Zeus$"), "the gates"); eq(open.logged, true, "the gates go logged")
+			ns.Acts.CloseGates()
+			local closed = Last("T1~G~")
+			assert(closed.msg:find("~0~$"), closed.msg); eq(closed.logged, true, "their closing too")
+		end)
+		ns.Comm.SendChunked = savedChunked
+		if not ok then error(err, 0) end
+	end)
+end)
+
+-- 1.5.5: why logged reaches every guild. A relay passes a logged word (RL~L~) from a client that is
+-- no relay (a Hand's week entry) on to every reporter it holds, outside the trickle (Relay.lua's
+-- ToReporters), which his unlogged words share with every other client's. (The relay is driven until
+-- it is idle: its queue pumped, its timers and tickers run, its clock moving.)
+test("1.5.5 a relay passes a Hand's logged week entry on to every reporter it holds, after a burst of his unlogged words", function()
+	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild }
+	local ok, err = pcall(function()
+		GetChannelName = function() return 0 end
+		ns.IsMember = function() return true end
+		IsInGuild = function() return true end
+		GetGuildInfo = function() return "Olympus II", "Member", 3 end
+		local R, _, sent = Harness.RelayWorld("Relay Keeper-CAMWOWUS2Realm1PvE", "Olympus II")
+		R.rdb.council.names = { ["relay keeper"] = "Relay Keeper" } -- (a signed councillor's client: a relay)
+		local timers, tickers = {}, {}
+		R.After = function(_, _, fn) timers[#timers + 1] = fn end
+		R.Every = function(_, _, fn) tickers[#tickers + 1] = fn return { Cancel = function() end } end
+		local REPORTERS = 40
+		for i = 1, REPORTERS do
+			R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i))
+		end
+		local HAND = "Helper Hand-CAMWOWUS2Realm3PvE"
+		for i = 1, 12 do R.Relay.HandleIn("WHISPER", HAND, ("RL~P~X1~an unlogged word %d"):format(i)) end
+		local entry = "T1~D~501~Olympus~3600~1~~Raid night"
+		R.Relay.HandleIn("WHISPER", HAND, "RL~L~" .. entry)
+		for _ = 1, 1500 do
+			R.Comm.Pump()
+			local due = timers; timers = {}
+			for _, fn in ipairs(due) do fn() end
+			for _, fn in ipairs(tickers) do fn() end
+			R.clock = R.clock + 1
+		end
+		local got = {}
+		for _, x in ipairs(sent) do
+			if x.target and x.msg == "RM~L~" .. HAND .. "~" .. entry then got[x.target] = (got[x.target] or 0) + 1 end
+		end
+		local n = 0
+		for target in pairs(got) do
+			n = n + 1
+			assert(target:find("^Rep Number%d+"), target)
+		end
+		eq(n, REPORTERS, "every reporter gets the logged entry")
+	end)
+	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild = saved.channel, saved.member, saved.guild, saved.inGuild
+	C_ChatInfo = nil
+	if not ok then error(err, 0) end
 end)
 
 test("1.1 the King's week: clients before 1.1 leave the kind D out, no error, their Agenda untouched", function()
@@ -48252,14 +48385,50 @@ test("1.1 taking donations (the Treasurer's idea): a keeper's switch, a line on 
 			T.HandleDonations("CHANNEL", "Asmongold Asmongler-Realm", ("TD~Olympus~1~%d~"):format(w.clock))
 			assert(Texts(T.DonationLines()):find(ns.L.DONATIONS_LINE:format("Asmon"), 1, true), Texts(T.DonationLines()))
 			-- He logs out while on: his addon says off as it leaves; next session it starts off.
+			-- (1.5.5, changed on purpose: on Forever, where the relay carries the channel's words, Relay.On,
+			-- the off went raw on the channel, which delivers nothing there. Now it goes to his own guild over
+			-- GUILD, as the relay's hand-over from himself, RG, and nothing goes on the channel. The harness
+			-- loads no Relay.lua into its namespace: Relay.On's answer stands in for Forever's. Off Forever,
+			-- the channel as before: below.)
 			AsTreasurer()
 			T.SetDonations(true)
-			local said
-			C_ChatInfo = { SendAddonMessage = function(prefix, msg, dist, target) said = { prefix, msg, dist, target } end }
+			local said, says = nil, {}
+			local function Said() return { SendAddonMessage = function(prefix, msg, dist, target)
+				said = { prefix, msg, dist, target }
+				says[#says + 1] = said
+			end } end
+			C_ChatInfo = Said()
 			GetChannelName = function() return 7 end
 			ns.Comm.ChannelName = function() return "OlympusNet" end
+			local relay = ns.Relay
+			ns.Relay = { On = function() return true end }
+			local done, why = pcall(T.DonationsLogout)
+			ns.Relay = relay
+			assert(done, why)
+			eq(#says, 1, "one word")
+			eq(said[1], ns.PREFIX); eq(said[2], "RG~P~" .. ns.ShortName(TREASURER) .. "~TD~Olympus~0~0~"); eq(said[3], "GUILD"); eq(said[4], nil)
+			eq(T.TakingDonations(), false)
+			-- A guildmate's client takes it as his word: hop 3 (the real Relay.lua) hands it to the TD handler.
+			AsSoldier()
+			local function Listed() return Texts(T.DonationLines()):find(ns.ShortName(TREASURER), 1, true) ~= nil end
+			T.HandleDonations("CHANNEL", TREASURER, ("TD~Olympus~1~%d~"):format(w.clock))
+			eq(Listed(), true, "his line")
+			local R = Harness.RelayWorld("Soldier-Realm", "Olympus II")
+			R.Comm.Handle("TD", function(...) T.HandleDonations(...) end)
+			eq(R.Relay.HandleGuild("GUILD", "Guildmate-Realm", says[1][2]), true)
+			eq(Listed(), false, "his off over GUILD takes the line down")
+			-- Without the relay (Relay.lua missing) where names split: still never the channel.
+			C_ChatInfo = Said()
+			AsTreasurer()
+			T.SetDonations(true)
 			T.DonationsLogout()
-			eq(said and said[2], "TD~Olympus~0~0~"); eq(said[3], "CHANNEL"); eq(said[4], 7)
+			eq(#says, 2); eq(said[3], "GUILD", "where names split, no relay loaded: still not the channel")
+			-- Off Forever (names whole, no relay): the channel, as before.
+			ns.splitNames = false
+			T.SetDonations(true)
+			T.DonationsLogout()
+			ns.splitNames = true
+			eq(#says, 3); eq(said[2], "TD~Olympus~0~0~"); eq(said[3], "CHANNEL"); eq(said[4], 7)
 			eq(T.TakingDonations(), false)
 			-- A 1.0 client's addon leaves it unread.
 			C_ChatInfo = saved.cci
@@ -48274,6 +48443,33 @@ test("1.1 taking donations (the Treasurer's idea): a keeper's switch, a line on 
 		DEFAULT_CHAT_FRAME, C_Map.GetBestMapForUnit, ns.db.shareLocation, ns.db.chatMute = saved.chat, saved.best, saved.share, saved.mute
 		C_ChatInfo, GetChannelName, ns.Comm.ChannelName, ns.splitNames = saved.cci, saved.chan, saved.name, saved.split
 		ns.rdb.treasuryFlags = nil
+		if not ok then error(err, 0) end
+	end)
+end)
+
+-- 1.5.5 (the audit of 11-10). On Forever a keeper's "on" reaches the other guilds through a relay,
+-- stamped with his own sub-realm ("Name-CAMWOWUS2Realm7PvE"), while his "off" at logout reaches his
+-- guild over GUILD naming him plain (Treasury.DonationsLogout, RG), which each guildmate's client
+-- files under its own sub-realm. Forever's names are one across a family: the off takes his line
+-- down whichever stamp the on had; a namesake in another family is nobody's keeper. Before: the line
+-- stayed until DONATIONS_FRESH.
+test("1.5.5 taking donations on Forever: a keeper's off takes his line down whichever sub-realm of his family his on was stamped with; another family's namesake never", function()
+	WithThrone(function()
+		local T = ns.Treasury
+		local saved = { split = ns.splitNames, realm = ns.realm, group = ns.group, keepers = ns.rdb.treasuryKeepers }
+		local ok, err = pcall(function()
+			ns.splitNames, ns.realm, ns.group = true, "CAMWOWUS2Realm5PvE", "ForeverPvE"
+			ns.rdb.treasuryKeepers = { at = 1, names = { "Keeper Person-CAMWOWUS2Realm7PvE" } }
+			AsSoldier()
+			local function Listed() return Texts(T.DonationLines()):find("Keeper Person", 1, true) ~= nil end
+			T.HandleDonations("CHANNEL", "Keeper Person-CAMWOWUS2Realm7PvE", ("TD~Olympus Zeus~1~%d~"):format(ns.Now()))
+			eq(Listed(), true, "his on, through a relay")
+			T.HandleDonations("CHANNEL", "Keeper Person-CAMWOWUS2Realm5PvP", "TD~Olympus Zeus~0~0~")
+			eq(Listed(), true, "another family's namesake takes nothing down")
+			T.HandleDonations("CHANNEL", "Keeper Person", "TD~Olympus Zeus~0~0~")
+			eq(Listed(), false, "his off over GUILD, named plain: the same character")
+		end)
+		ns.splitNames, ns.realm, ns.group, ns.rdb.treasuryKeepers = saved.split, saved.realm, saved.group, saved.keepers
 		if not ok then error(err, 0) end
 	end)
 end)

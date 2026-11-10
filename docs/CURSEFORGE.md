@@ -1118,8 +1118,8 @@ alone until then).
   (`/oly location`; the King: his crown on the map), and one line in the [Olympus] chat when he
   turns it on (not with that chat muted or the Olympus chats off, nor for a late login; in the
   Olympus tab without "[Olympus]"). His addon repeats it every 2 minutes and when his zone
-  changes; it is never saved, so it is off when he logs out (his addon says so as it leaves;
-  otherwise it drops off every screen 5 minutes after his last word), and `/oly donations off`
+  changes; it is never saved, so it is off when he logs out (his addon says so as it leaves, on
+  Forever to his own guild alone; otherwise it drops off every screen 5 minutes after his last word), and `/oly donations off`
   turns it off before.
 - **Requests to the treasury** (1.1): a Lord or a Captain of any Olympus guild asks the treasury
   for an item and a count ("need 10 Ironwood"): a click on the item in the bank's grid (when he

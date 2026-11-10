@@ -383,11 +383,15 @@ function Acts.Gates()
 	return gates
 end
 
+-- (1.5.5) Logged, as a decree is (D1, Decree.lua): the opener's own words, kept on the server's log,
+-- which the relays pass on to every guild's reporter whole, outside the trickle other clients' words
+-- share (Relay.lua). A Steward or a Hand is no relay: his gates, unlogged, reached about one guild in
+-- a hundred a send (the audit of 11-10). Logged, his own guild also has them at once (Relay.Out).
 local function SendGates()
 	if not gates or not gates.mine or gates.preview then return end
 	gates.sentAt = ns.Now()
 	ns.Comm.Send("CHANNEL", ("T1~G~%d~%s~%d~%s"):format(gates.id, GetGuildInfo("player") or "",
-		math.max(0, math.floor(gates.at - ns.Now())), gates.guild), "gates")
+		math.max(0, math.floor(gates.at - ns.Now())), gates.guild), "gates", nil, true)
 end
 
 function Acts.OpenGates(guild)
@@ -418,7 +422,7 @@ function Acts.CloseGates()
 	if not gates then return end
 	if not Acts.CanClose() then return ns.Print(L.GATES_ONLY_OPENER) end
 	if not gates.preview then
-		ns.Comm.Send("CHANNEL", ("T1~G~%d~%s~0~"):format(gates.id, GetGuildInfo("player") or ""), "gates")
+		ns.Comm.Send("CHANNEL", ("T1~G~%d~%s~0~"):format(gates.id, GetGuildInfo("player") or ""), "gates", nil, true)
 		ns.Chronicle.Add("gates", ns.me, L.ACTS_GATES_CLOSED, { key = "gates", value = "closed" })
 	end
 	gates = nil

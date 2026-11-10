@@ -108,7 +108,10 @@ local GAMES_OWN = { duelsWon = "number", duelsLost = "number", bonesWon = "numbe
 local PROFILE = { name = "string", guild = "string", rank = "string", rankIndex = "number", role = "string", frame = "string",
 	title = "string", level = "number", class = "string", race = "string", nickname = "string", honors = "table", titles = "table" }
 local HONOUR = { key = "string", title = "string", frame = "boolean", place = "number" }
-local BOARD = { board = "string", period = "string", fields = "string", rows = "table", list = "string", own = "table" }
+-- (1.5.5: a Slayers board names the realm group it is of, realmGroup, and whether that is a PvP
+-- group, pvp: tests/bridge-membership.lua.)
+local BOARD = { board = "string", period = "string", fields = "string", rows = "table", list = "string", own = "table",
+	realmGroup = "string", pvp = "boolean" }
 local NUMERIC = { place = true, rating = true, wins = true, losses = true, won = true, games = true, points = true, deliveries = true,
 	customers = true, copper = true, claims = true, points10 = true, allTime10 = true }
 

@@ -140,3 +140,52 @@ test("bridge membership: the Wanted list carries its realm group and pvp beside 
 		eq(B.GetSection("wanted"), nil)
 	end)
 end)
+
+-- 1.5.5 (the audit of 11-10): ns.REALM_KIND ships empty, so ns.RealmPvP was nil on every Forever realm
+-- and no section said PvP: the Companion could not keep the PvP group's Wanted list and Slayers apart
+-- from the PvE group's. A Forever realm names its ruleset (Core.lua's ForeverFamily): PvP and RP-PvP
+-- realms are PvP realms, PvE and RP realms are not; the code's table still comes first. The wanted and
+-- membership sections carry it, and so do the rankings and each of its Slayers boards, with the realm
+-- group (the family). Before: pvp absent everywhere, the rankings and boards with no group at all.
+test("bridge membership (1.5.5): a Forever realm's ruleset gives pvp (PvP and RP-PvP true, PvE and RP false, Hardcore unknown); wanted, membership, the rankings and each Slayers board carry the family and pvp", function()
+	for realm, want in pairs({ CAMWOWUS2Realm7PvP = true, CAMWOWUS1Realm9RPPvP = true, CAMWOWUS2Realm7PvE = false, CAMWOWEU1Realm3RP = false }) do
+		eq(ns.RealmPvP(realm), want, realm)
+	end
+	eq(ns.RealmPvP("CAMWOWUS1Realm4Hardcore"), nil, "a Hardcore realm: unknown")
+	eq(ns.RealmPvP("CAMWOWUS2Realm7"), nil, "no ruleset in its name")
+	With({ kinds = { CAMWOWUS2Realm7PvP = "pve" } }, function()
+		eq(ns.RealmPvP("CAMWOWUS2Realm7PvP"), false, "the code's table first")
+	end)
+	-- Each section on a PvP and a PvE character. (The harness's Wanted is Core's stand-in: here a board
+	-- of one Slayer each period, as Wanted.Rankings gives it.)
+	local function Sections(case)
+		With({ realm = case.realm }, function()
+			local label = case.realm .. ": "
+			local d = Data("wanted")
+			eq(d.realmGroup, case.group, label .. "wanted"); eq(d.pvp, case.pvp, label .. "wanted")
+			local m = Data("membership")
+			eq(m.realmGroup, case.group, label .. "membership"); eq(m.pvp, case.pvp, label .. "membership")
+			local r = Data("rankings")
+			eq(r.realmGroup, case.group, label .. "rankings"); eq(r.pvp, case.pvp, label .. "rankings")
+			local boards = 0
+			for _, b in ipairs(r.boards) do
+				if b.board == "wanted" then
+					boards = boards + 1
+					eq(b.realmGroup, case.group, label .. b.period); eq(b.pvp, case.pvp, label .. b.period)
+				end
+			end
+			eq(boards, 2, label .. "this month's and all time's Slayers")
+		end)
+	end
+	local savedWanted = ns.Wanted
+	ns.Wanted = { Rankings = function()
+		local row = { place = 1, name = "Slayer One-Realm", points = 12, claims = 1 }
+		return { month = { row }, all = { row } }
+	end }
+	local ok, err = pcall(function()
+		Sections({ realm = "CAMWOWUS2Realm7PvP", group = "ForeverPvP", pvp = true })
+		Sections({ realm = "CAMWOWUS2Realm5PvE", group = "ForeverPvE", pvp = false })
+	end)
+	ns.Wanted = savedWanted
+	if not ok then error(err, 0) end
+end)

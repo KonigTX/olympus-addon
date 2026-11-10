@@ -1153,6 +1153,57 @@ test("verify: The Watch shows the verifiers its Guilds, and nobody else", functi
 	if not ok then error(err, 0) end
 end)
 
+-- 1.5.5 (the audit of 11-10). A verifier's census holds only the guilds on his own relay (the relays
+-- are islands for the census), while the guilds' starts cross the relays with the approvals (GV~S). The
+-- verifiers' page read the census, its own guild and the approvals alone, so it missed every other
+-- relay's guild before the hold (Verify.RESET_AT + GRACE, 2026-11-16 03:00 UTC). Every guild with a
+-- valid start is on it now, with no guild master or member count until its census arrives, and the
+-- verifiers are told of it once. Before: not listed, never told.
+test("verify: 1.5.5 the verifiers' page lists every guild with a start, those the census never brought to this client too, and tells of each once", function()
+	World(function(w)
+		local hc = w.Client(HC, HEARTH, 3)
+		local hc2 = w.Client(HC2, HEARTH, 3)
+		w.Census(GUILD, "Bram Hollow", 120)
+		-- ROGUES reports on the other verifier's relay alone: its census is on his client only.
+		hc2.rdb.guilds[ROGUES] = { leader = "Corin Ash", realm = "Realm", total = 40, online = 4, t = w.now }
+		w.As(hc, hc.Verify.Observe)
+		w.As(hc2, hc2.Verify.Observe)
+		eq(hc.rdb.guilds[ROGUES], nil, "no census of it here")
+		-- His client's answer carries the starts, ROGUES's among them.
+		w.now = T0 + H
+		w.As(hc2, hc2.Verify.SendSnapshot)
+		eq(hc.rdb.verify.start[ns.Fold(ROGUES)].at, T0, "its start crossed")
+		local function Row(c, guild)
+			for _, r in ipairs((w.As(c, c.Verify.Pending))) do if r.guild == guild then return r end end
+			return nil
+		end
+		local rogues = Row(hc, ROGUES)
+		assert(rogues, "on the verifiers' page")
+		eq(rogues.status, "pending"); eq(rogues.info.since, T0); eq(rogues.info.shared, true, "the start a verifier gave")
+		eq(rogues.info.gm, nil, "no census: no guild master yet"); eq(rogues.total, nil, "nor a member count")
+		assert(Row(hc, GUILD), "the census's guild as before")
+		local lines = w.As(hc, hc.Verify.CouncilLines)
+		local shown
+		for _, l in ipairs(lines) do if l.text and l.text:find("<" .. ROGUES .. ">  ?", 1, true) then shown = l end end
+		assert(shown, "a line on The Watch's Guilds")
+		assert(w.As(hc, hc.Verify.ListText):find("<" .. ROGUES .. ">", 1, true), "and in its copy")
+		-- Told once, with the census's guild and his own.
+		eq(w.As(hc, hc.Verify.CouncilNotices), 3)
+		assert(Find(hc.printed, "<" .. ROGUES .. ">"), table.concat(hc.printed, " / "))
+		eq(w.As(hc, hc.Verify.CouncilNotices), 0, "once")
+		-- Its census arriving later fills the row in.
+		hc.rdb.guilds[ROGUES] = { leader = "Corin Ash", realm = "Realm", total = 40, online = 4, t = w.now }
+		rogues = Row(hc, ROGUES)
+		eq(rogues.info.gm, GM2); eq(rogues.total, 40)
+		-- Once approved it moves to the verified ones, as any.
+		w.As(hc, hc.Verify.Approve, ROGUES)
+		local _, verified = w.As(hc, hc.Verify.Pending)
+		local found = false
+		for _, r in ipairs(verified) do if r.guild == ROGUES then found = true end end
+		assert(found, "verified"); eq(Row(hc, ROGUES), nil, "no longer pending")
+	end)
+end)
+
 ---------------------------------------------------------------------------
 -- Structure and words
 ---------------------------------------------------------------------------
