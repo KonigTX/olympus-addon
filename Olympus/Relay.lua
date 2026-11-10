@@ -1848,7 +1848,7 @@ function Relay.HandleRelayed(dist, sender, text)
 	-- (1.5.4) A word of a client marked as a modified build (Builds.lua): not heard, not handed on.
 	if Quarantined(origin) then stats.dropped = stats.dropped + 1 return true end
 	if not Remembered(origin, body) then ns.Log("relay: %s's word (%s) by %s", tostring(origin), body:sub(1, 2), tostring(sender)) end
-	if Deliver(origin, body, flag == "L") then ToGuild(flag, origin, body) end
+	if Relay.TakeVia("M", sender, origin, body, flag == "L") then ToGuild(flag, origin, body) end
 	return true
 end
 
@@ -1857,7 +1857,7 @@ function Relay.HandleGuild(dist, sender, text)
 	if dist ~= "GUILD" or not Relay.On() then return false end
 	local flag, origin, body = tostring(text):match("^RG~([LP])~([^~]+)~(.*)$")
 	if not flag then return false end
-	Deliver(origin, body, flag == "L")
+	Relay.TakeVia("G", sender, origin, body, flag == "L")
 	return true
 end
 
@@ -2190,6 +2190,34 @@ ns.On("LOGIN", function()
 		end
 	end
 end)
+
+-- (1.5.5, step 0: the hooks the 1.5.5 relay lanes share; the part the census trust builds on. No
+-- behaviour changes here: a lane fills a stub, or asks how a word came.)
+local hop, hopSender -- the hop delivering a word now: "L" RL at a relay, "M" RM, "X" RX, "W" RW, "G" RG, "T" tree, "O" provisional
+function Relay.Hop() return hop, hopSender end
+local function WithHop(h, sender, fn, ...) local ph, ps = hop, hopSender; hop, hopSender = h, sender
+	local ok, res = pcall(fn, ...); hop, hopSender = ph, ps; if not ok then error(res, 0) end return res end
+function Relay.TakeVia(h, sender, origin, text, logged) return WithHop(h, sender, Deliver, origin, text, logged) end
+function Relay.FirstHand() return hop == "L" end
+function Relay.ViaProvisional() return hop == "O" end
+function Relay.HopTrusted() return true end                       -- lane mesh fills it
+function Relay.IsSignedRelay(name) return Relay.IsRelay(name) end  -- lane mesh fills it
+function Relay.ServingProvisional() local F = ns.RelayFallback
+	return type(F) == "table" and not F.missing and type(F.Serving) == "function" and F.Serving() == true end
+Relay.LAUNCH_AUTHOR = { ForeverPvE = { Relay.LAUNCH_PINS.ForeverPvE[1] }, ForeverPvP = Relay.LAUNCH_PINS.ForeverPvP }
+-- The author's launch characters (LAUNCH_AUTHOR), by the short name on the name's own Forever family.
+function Relay.IsLaunchAuthor(name)
+	if type(name) ~= "string" or name == "" then return false end
+	local full = ns.FullName(name)
+	local family = ns.ForeverFamily and ns.ForeverFamily(ns.RealmOf(full) or "")
+	local list = family and type(Relay.LAUNCH_AUTHOR) == "table" and Relay.LAUNCH_AUTHOR[family]
+	if type(list) ~= "table" then return false end
+	local short = Lower(ns.ShortName(full))
+	for _, n in ipairs(list) do
+		if type(n) == "string" and Lower(ns.ShortName(n)) == short then return true end
+	end
+	return false
+end
 
 -- Tests: a clean slate.
 function Relay.Reset()
