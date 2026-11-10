@@ -3268,6 +3268,17 @@ the exact text first, in a window of its own, and sends nothing without your **S
 Type `/oly bug` (or press **Report a bug**), copy the text and open an issue. Errors are
 also saved in `WTF/Account/<ACCOUNT>/SavedVariables/Olympus.lua`.
 
+Since 1.5.5 the report has a short debug section before the status lines. It shows which game
+and which Olympus files the addon runs on, and, for each kind of message that comes in pieces,
+how many arrived, were put together, were dropped incomplete or were refused, and why. It also
+shows the relay and the reporter, the census's sources per realm group with their ages, the
+signed lists held, and the chat values the game kept secret. It holds counts, not other players'
+names or BattleTags. If your copy of Olympus does not fit the game, the report's first line says
+so, and the chat tells you at login. That happens with a copy made for another game version,
+with files of two versions, or with a version older than the one two guildmates run. In the
+CurseForge app, pick the installation of the game you play (WoW: Forever, not Classic), then
+update.
+
 ## Integrating with Olympus
 
 Other addons, and Olympus's own tools and services outside this addon, reach Olympus through its

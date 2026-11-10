@@ -2180,6 +2180,40 @@ function ns.SafeCall(where, fn, ...)
 	return ok
 end
 
+-- (1.5.5) A value Forever's client keeps secret from addons: a chat line, its sender or a channel's
+-- name while chat is locked down (an instance, an encounter, a battleground). Its Lua type is still
+-- "string", but indexing it (text:match), measuring it (#text) or comparing it raises while our code
+-- runs ("attempt to index local 'text' (a secret string value, while execution tainted by
+-- 'Olympus')": Relay.lua and ChatHall.lua in the players' /oly bug of 11-08 and 11-09). True when any
+-- of the values is one, or when the check itself fails: nothing of it is read. Counted by `where`
+-- (a fixed name of ours) for /oly bug (ns.SecretSkips); a client without issecretvalue keeps none.
+local secretSkips, secretWheres = {}, 0
+ns.SECRET_WHERE_MAX = 16
+function ns.Secret(where, ...)
+	local check = issecretvalue
+	if type(check) ~= "function" then return false end
+	for i = 1, select("#", ...) do
+		local ok, secret = pcall(check, (select(i, ...)))
+		if not ok or secret == true then
+			if type(where) == "string" then
+				if secretSkips[where] == nil then
+					if secretWheres >= ns.SECRET_WHERE_MAX then where = "other" else secretWheres = secretWheres + 1 end
+				end
+				secretSkips[where] = (secretSkips[where] or 0) + 1
+			end
+			return true
+		end
+	end
+	return false
+end
+-- { [where] = lines left unread } this session (a copy).
+function ns.SecretSkips()
+	local out = {}
+	for k, v in pairs(secretSkips) do out[k] = v end
+	return out
+end
+function ns.ResetSecretSkips() wipe(secretSkips); secretWheres = 0 end -- (tests)
+
 local listeners = {}
 function ns.On(name, fn)
 	listeners[name] = listeners[name] or {}

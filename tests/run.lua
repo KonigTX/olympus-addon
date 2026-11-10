@@ -7008,6 +7008,10 @@ assert(loadfile(ROOT .. "tests/king-online.lua"))(ns, test, eq, { RelayWorld = R
 assert(loadfile(ROOT .. "tests/hop-forever-king.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
 -- 1.5.4: modified builds (tests/builds.lua): detection, the record, the shared word, the views and the lock.
 assert(loadfile(ROOT .. "tests/builds.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
+-- 1.5.5: chat lines, senders and channel names the client keeps secret are never read (tests/secret-chat.lua).
+assert(loadfile(ROOT .. "tests/secret-chat.lua"))(ns, test, eq, { ROOT = ROOT })
+-- 1.5.5: an install that does not fit the game, and /oly bug's bounded debug section (tests/install-debug.lua).
+assert(loadfile(ROOT .. "tests/install-debug.lua"))(ns, test, eq, { ROOT = ROOT })
 
 test("1.4.3 the relay: where names split, a channel message goes to the picked signed relay by whisper (RL), pinged once; a chat line goes logged; the relay registers reporters (RR), forwards to each guild's reporter (RM) and hears it itself; a reporter takes it once and hands it to its guild (RG); a guildmate takes it once; a stranger's RM is dropped", function()
 	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild }

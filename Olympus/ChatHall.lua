@@ -55,6 +55,9 @@ end
 -- the channel are not taken either: anyone in it could write one, without the addon.
 
 function Hall.OnChannel(text, sender, _, _, _, _, _, _, baseName)
+	-- (1.5.5) In a chat lockdown the line, its sender and the channel's name may be secret: none is
+	-- read (ChatHall.lua:72 on 1.5.3 and :60 on 1.5.4 in the players' /oly bug).
+	if ns.Secret("chat hall", text, sender, baseName) then return false end
 	local joined = ns.Comm and ns.Comm.ChannelName and ns.Comm.ChannelName()
 	if type(joined) ~= "string" or type(baseName) ~= "string" or baseName:lower() ~= joined:lower() then return false end
 	if type(text) ~= "string" or #text > 255 or text:sub(1, 3) ~= "M1~" then return false end

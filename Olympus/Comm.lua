@@ -1446,7 +1446,8 @@ end
 -- second who did it. Only our channel's notices count.
 function Comm.OnChannelNotice(notice, player, _, channelName, player2, _, _, _, baseName)
 	-- Forever may hand these over as secret values while chat is locked down: nothing to read.
-	if type(issecretvalue) == "function" and (issecretvalue(notice) or issecretvalue(player) or issecretvalue(player2)) then return end
+	-- (1.5.5: the channel's names too, which OurChannel reads.)
+	if ns.Secret("channel notice", notice, player, player2, channelName, baseName) then return end
 	if type(notice) ~= "string" then return end
 	local name = OurChannel(baseName, channelName)
 	if not name then return end
@@ -2126,7 +2127,10 @@ end
 function Comm.ResetOutsider() outsiderAsm = Codec.NewAssembler() end -- (tests)
 
 local function OnAddonMessage(prefix, text, dist, sender, target, zoneChannelID, localID, channelName)
-	if prefix ~= ns.PREFIX then return end
+	-- (1.5.5) A value the client keeps secret (a chat lockdown) is never compared or read: the prefix
+	-- first (every addon's messages come here), then what ours carries.
+	if ns.Secret("addon message", prefix) or prefix ~= ns.PREFIX then return end
+	if ns.Secret("addon message", text, dist, sender, target, localID, channelName) then return end
 	if type(sender) ~= "string" or sender == "" or type(text) ~= "string" then return end
 	SyncGuild()
 	-- Nothing another player sends reaches a screen, a tooltip, the map, a popup or a copy box

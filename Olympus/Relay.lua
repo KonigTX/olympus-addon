@@ -2063,6 +2063,9 @@ end
 
 -- The server's "No player named X is currently playing": a relay named is offline now.
 function Relay.NotFound(text)
+	-- (1.5.5) A secret line (a chat lockdown) is never read: 96 errors at Relay.lua:455 in a player's
+	-- /oly bug of 11-09, 33 at Relay.lua:619 in another's.
+	if ns.Secret("relay not found", text) then return false end
 	local T = ns.Treasury
 	local pattern = type(T) == "table" and type(T.NotFoundPattern) == "function" and T.NotFoundPattern()
 	local who = type(pattern) == "string" and type(text) == "string" and text:match(pattern)
@@ -2087,6 +2090,8 @@ ns.Comm.RelayPieces({ RL = true, RM = true, RG = true, RX = true, RW = true, RU 
 -- reporter the relay whispered: out of the chat for good, not for a window (Accord.Quiet's ten
 -- seconds left the login's first sweep in sight). Read all the same (NotFound, the event).
 local function NotFoundName(text)
+	-- (1.5.5) The chat filter runs in the game's chat code: a secret line goes on unread.
+	if ns.Secret("relay quiet line", text) then return nil end
 	local T = ns.Treasury
 	local pattern = type(T) == "table" and type(T.NotFoundPattern) == "function" and T.NotFoundPattern()
 	local who = type(pattern) == "string" and type(text) == "string" and text:match(pattern)
