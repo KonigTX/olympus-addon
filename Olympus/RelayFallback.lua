@@ -228,11 +228,15 @@ local function WantsElection(now)
 end
 
 -- An answer still good: a wait until PING_WAIT, a yes while it (or its ping's answer) is within
--- VERIFIED_FOR, a no or a silence DEAD_FOR (then the candidate is asked again).
+-- VERIFIED_FOR, a no or a silence DEAD_FOR (then the candidate is asked again). Our own yes holds
+-- while we serve, and no longer: a client that stopped serving is no relay of its own words.
 local function Fresh(a, now)
 	local R = ns.Relay
 	if a.kind == "wait" then return now - a.at <= R.PING_WAIT end
-	if a.kind == "Y" then return now - math.max(a.at, R.AnsweredAt(a.name) or -math.huge) < R.VERIFIED_FOR end
+	if a.kind == "Y" then
+		if Key(a.name) == Key(ns.me) then return serving ~= nil end
+		return now - math.max(a.at, R.AnsweredAt(a.name) or -math.huge) < R.VERIFIED_FOR
+	end
 	return now - a.at < R.DEAD_FOR
 end
 
@@ -268,13 +272,19 @@ local function Prune(now)
 		if now - r.t > ns.Relay.REPORTER_FOR then registrants[g] = nil end
 	end
 end
-local function Eligible(now)
+local function Serves(name)
+	local key = Key(name)
+	for _, r in pairs(registrants) do if Key(r.name) == key then return true end end
+	return false
+end
+-- (asker: who asks; a guild we serve already is never refused for being one too many.)
+local function Eligible(now, asker)
 	local R = ns.Relay
 	if R.IsRelay(ns.me) then return false, Short(ns.me) end
 	local signed = R.SignedAnswered(now)
 	if signed then return false, signed end
 	Prune(now)
-	if Count(registrants) >= F.PROVISIONAL_MAX then return false end
+	if Count(registrants) >= F.PROVISIONAL_MAX and not Serves(asker) then return false end
 	if ns.QuietPresence and ns.QuietPresence() then return false end
 	local M = ns.Moderation
 	if type(M) == "table" and not M.missing and type(M.SelfOff) == "function" and M.SelfOff() then return false end
@@ -300,7 +310,7 @@ local function Ask(name, now)
 	answers[key] = a
 	stats.pinged = stats.pinged + 1
 	if key == Key(ns.me) then -- (ourselves: answered here)
-		if Eligible(now) then Serve(now); a.kind = "Y"; stats.yes = stats.yes + 1
+		if Eligible(now, ns.me) then Serve(now); a.kind = "Y"; stats.yes = stats.yes + 1
 		else a.kind = "N"; stats.no = stats.no + 1 end
 		return
 	end
@@ -343,7 +353,7 @@ local function Reply(to, text)
 	ns.Comm.Whisper(Short(to), text, "relay elect answer " .. Key(to), true)
 end
 local function OnAsk(sender, now)
-	local ok, signed = Eligible(now)
+	local ok, signed = Eligible(now, sender)
 	if ok then
 		Serve(now)
 		stats.said = stats.said + 1
@@ -413,9 +423,7 @@ end
 -- Its own sender: one whole transfer at a time, as the queue has room (Relay's drip serves its
 -- registered reporters alone). A newer copy of a word takes a waiting one's place.
 local function Wanted(name, now)
-	local key = Key(name)
-	for _, r in pairs(registrants) do if Key(r.name) == key then return true end end
-	return F.IsElected(name, now)
+	return Serves(name) or F.IsElected(name, now)
 end
 local Pump
 Pump = function()
@@ -720,6 +728,7 @@ function F.Tick(now)
 			serving = nil
 			wipe(drip); wipe(sets)
 			dripBusy = false
+			answers[Key(ns.me)] = nil
 			ns.Log("relay: nobody uses this provisional relay: it stops serving")
 		else
 			if now - serving.sweep >= R.DEAD_FOR then serving.sweep = now; R.Sweep() end
