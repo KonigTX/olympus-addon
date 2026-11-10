@@ -479,7 +479,15 @@ function ns.StatusText()
 			add("chat: sent=%d shown=%d hidden=%d lane=%d moved=%d muted=%s drops bad=%d dup=%d rate=%d flood=%d forged=%d unverified=%d rank=%d secret=%d",
 				ch.sent, ch.shown, ch.hidden, c.chatQueue or 0, ch.moved or 0, #ch.muted > 0 and table.concat(ch.muted, ",") or "none",
 				ch.bad, ch.dup, ch.rate, ch.flood, ch.forged, ch.unverified, ch.rank, tonumber(ns.secretChatSkipped) or 0)
-			if ns.Channels.WindowStatus then add("chat windows: %s", ns.Channels.WindowStatus()) end
+			if ns.Channels.WindowStatus then
+				-- (1.5.5: a player's /oly bug said "gone: main window for now" for all three channels, and
+				-- nothing said which chat windows his game had open: they are listed now, by name.)
+				local open = {}
+				if ns.Channels.OpenWindows then
+					for _, w in ipairs(ns.Channels.OpenWindows()) do open[#open + 1] = '"' .. tostring(w.name):gsub("|", "||") .. '"' end
+				end
+				add("chat windows: %s  |  open: %s", ns.Channels.WindowStatus(), #open > 0 and table.concat(open, ", ") or "the main one alone")
+			end
 			-- (1.1) The pinned line this client holds: whose, of what rank, and how long it has left.
 			if ns.Channels.PinStatus then add("pinned line: %s", ns.Channels.PinStatus()) end
 		end

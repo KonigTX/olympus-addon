@@ -220,3 +220,20 @@ test("chat delivery (1.5.5, Forever): guildmates on other sub-realms and under t
 		eq(C.IsMe("Wazizo Thelongone-CAMWOWUS1Realm8PvP"), false, "a namesake of another family is not us")
 	end)
 end)
+
+test("chat delivery (1.5.5): /oly status names the chat windows open beside the ones chosen, so a window \"gone\" can be told apart from one never made", function()
+	local saved = { frame = rawget(_G, "ChatFrame3"), info = rawget(_G, "GetChatWindowInfo"), windows = ns.db.chatWindows }
+	local ok, err = pcall(function()
+		ChatFrame3 = { AddMessage = function() end }
+		GetChatWindowInfo = function(i) if i == 3 then return "Trade", 14, 1, 1, 1, 1, true end end
+		ns.db.chatWindows = { [ns.me] = { A = "Olympus", C = "Olympus", L = "Olympus" } }
+		local line = ns.StatusText():match("chat windows:[^\n]*") or ""
+		assert(line:find('[Olympus] "Olympus" ' .. ns.L.CHATWIN_GONE_TAG, 1, true), line)
+		assert(line:find('open: "Trade"', 1, true), line)
+		ChatFrame3 = nil
+		line = ns.StatusText():match("chat windows:[^\n]*") or ""
+		assert(line:find("open: the main one alone", 1, true), line)
+	end)
+	ChatFrame3, GetChatWindowInfo, ns.db.chatWindows = saved.frame, saved.info, saved.windows
+	if not ok then error(err, 0) end
+end)
