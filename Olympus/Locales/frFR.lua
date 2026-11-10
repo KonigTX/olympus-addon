@@ -1046,6 +1046,7 @@ ns.Locale("frFR", {
 	CENSUS_STATS_SEEN = "Au %s",
 	CENSUS_STATS_SERVERS = "Tous les serveurs",
 	CENSUS_STATS_SERVERS_TIP = "Ton propre serveur est compté en direct. Le jeu ne montre à chaque joueur que son propre serveur, donc les chiffres des autres arrivent par des joueurs qui y jouent aussi : ce que tu as vu toi-même quand tu y étais, et ce sur quoi deux joueurs sont d'accord (ou ce qu'un modérateur dit). La parole d'un seul joueur est listée en gris et non comptée.",
+	CENSUS_STATS_SRC_AUTHOR = "Rapporté par l'auteur de l'addon.",
 	CENSUS_STATS_SRC_HEARD = "Rapport reçu ; l'observation initiale n'est pas confirmée indépendamment.",
 	CENSUS_STATS_SRC_LIVE = "Compté en direct : le serveur où tu es.",
 	CENSUS_STATS_SRC_OWN = "Ce que tu as vu toi-même quand tu y étais.",

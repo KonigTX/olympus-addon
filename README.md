@@ -196,12 +196,13 @@ channels; the same charter and Join controls work for each side.
   report right now), the army's average level (each guild's, weighted by its size), every server
   (1.4.0: the characters and people of all of them, by ruleset, by region and by faction, then each
   server, yours first; another server's numbers arrive through players who also play there, counted
-  when it is what you saw yourself, when two players agree or when a moderator says it, and listed
-  grey otherwise; the beta's realms never count) and the levels online. Forwarded observations
-  preserve the original observer and date across normal members and reloads. Repeating the same
-  original through several holders never creates independent witnesses. Without authenticated
-  original evidence, these foreign counts are visible as reports, outside the accepted total;
-  this transport does not provide portable identity certificates. A family shared across regions
+  when it is what you saw yourself, when two players agree, when a moderator says it or (1.5.5) when
+  the addon's author does, and listed grey otherwise; the beta's realms never count) and the levels
+  online. Forwarded observations preserve the original observer and date across normal members and
+  reloads. Repeating the same original through several holders never creates independent
+  witnesses. Without authenticated original evidence, these foreign counts are visible as reports,
+  outside the accepted total; the one portable proof is the author's own look signed with his
+  account key (1.5.5), which counts whoever carries it. A family shared across regions
   has an unknown aggregate region; the relay's location is not assigned to all its members.
   An ordinary carrier sends the complete aggregate in one logical chunk, with only the whole
   guild-detail rows that fit beside it. The local scoped snapshot sends at most 180 guild rows
@@ -2577,7 +2578,7 @@ goes where:
 | The census names people: your guild's leader and officers (above) and its five highest-level members (name, level and class), online or not, with the addon or not; the Realm's level race shows them | everyone on the Olympus channel | in every census report of your guild, from the member it elects: nobody named is asked |
 | Zones in that census: members per zone (numbers only), a leader's or officer's zone | everyone on the Olympus channel | only if the member sending it shares their zone and layer; a leader's or officer's zone only if they share theirs too |
 | The army's guild counts, repeated (1.4.0): each Olympus guild's name, size, online count, average level and when it was seen, as your client holds them | everyone on the Olympus channel | only when a client that holds less asks and no moderator or two other players answered first, at most every 3 minutes; never in quiet presence. Kept: another player's row a day (as one witness), a row two players agree on a week |
-| Other servers' totals (1.4.0): for each realm group you played (or that two players or a moderator told you of), its characters, people, number of guilds and when they were seen; never your current server's, never the beta's on a launch realm | everyone on the Olympus channel | after login and about every half hour, only what is newer than what was said lately. Kept a week in your saved variables (account-wide) |
+| Other servers' totals (1.4.0): for each realm group you played (or that two players, a moderator or the addon's author told you of), its characters, people, number of guilds and when they were seen; never your current server's, never the beta's on a launch realm. 1.5.5: also the author's own signed look of a realm group (his character's name, its totals and the guilds that fit, his signature), as he signed it | everyone on the Olympus channel | after login and about every half hour, only what is newer than what was said lately. Kept a week in your saved variables (account-wide) |
 | A guild verification (launch): a verifier's approval or revocation of a guild and its guild master (the guild's and his name, the time; your name, as on every message) | everyone on the Olympus channel (logged) | only from the King's, a High Councillor's or the author's client, when they approve or revoke. Kept in your saved variables: an approval until revoked or replaced (400 at most), a revocation 30 days |
 | A verification ask: how many verifications and guild starts your client holds, the newest one's time and a sum of the starts (no names) | everyone on the Olympus channel | after login, then every half hour; never in quiet presence |
 | A verifier's answer: every verification it holds (guild, guild master, time, who approved) and each guild's start (the first time a verifier's client saw it) | everyone on the Olympus channel | only from a verifier's client, when a client that holds less asks, at most every 3 minutes; never in quiet presence. Kept: a guild's start 90 days after it was last seen, your own client's first sighting of each guild 30 days |

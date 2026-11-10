@@ -1015,6 +1015,10 @@ ns.KING_NAME = "Asmon"
 -- author's signed titles list names them: ns.SignedPins, ns.AuthorCharacters.)
 ns.AUTHOR = "Faladoriel Skylance"
 ns.AUTHOR_REALM = "ClassicBetaPvP" -- his realm group, where only he carries that name
+-- (1.5.5) The public half (base64url) of the author's account key (Debts.lua's ns.db.arenaKey on his
+-- WoW account: one key, the same on every character of it). His client signs its own looks at a realm
+-- group's census with it, and every client checks them (Data.lua's QA). Empty: nothing signed or taken.
+ns.AUTHOR_ATTEST_PK = "qkuKwc3r9As9NZIoRP19pCMdpaGC6J0EtdhwE1_dcg0"
 -- A name of the realm group of `realm` (a name without a realm is ours). Forever's names are
 -- one across a realm group only: the same name on another group is someone else.
 local function OfGroup(name, realm)

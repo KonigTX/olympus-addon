@@ -1046,6 +1046,7 @@ ns.Locale("itIT", {
 	CENSUS_STATS_SEEN = "Aggiornato al %s",
 	CENSUS_STATS_SERVERS = "Tutti i server",
 	CENSUS_STATS_SERVERS_TIP = "Il tuo server viene contato in tempo reale. Il gioco mostra a ogni giocatore solo il proprio server, quindi i numeri degli altri arrivano tramite giocatori che giocano anche lì: ciò che hai visto tu stesso quando eri lì, e ciò su cui concordano due giocatori (o che dice un moderatore). La parola di un solo giocatore è elencata in grigio e non contata.",
+	CENSUS_STATS_SRC_AUTHOR = "Riferito dall'autore dell'addon.",
 	CENSUS_STATS_SRC_HEARD = "Rapporto ricevuto; l'osservazione originale non è confermata indipendentemente.",
 	CENSUS_STATS_SRC_LIVE = "Contato in tempo reale: il server su cui sei.",
 	CENSUS_STATS_SRC_OWN = "Ciò che hai visto tu stesso quando eri lì.",

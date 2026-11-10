@@ -1046,6 +1046,7 @@ ns.Locale({ "esES", "esMX" }, {
 	CENSUS_STATS_SEEN = "A fecha de %s",
 	CENSUS_STATS_SERVERS = "Todos los servidores",
 	CENSUS_STATS_SERVERS_TIP = "Tu propio servidor se cuenta en directo. El juego muestra a cada jugador solo su propio servidor, así que las cifras de los demás llegan a través de jugadores que también juegan allí: lo que viste tú mismo cuando estuviste allí y aquello en lo que coinciden dos jugadores (o lo que dice un moderador). La palabra de un solo jugador aparece en gris y no se cuenta.",
+	CENSUS_STATS_SRC_AUTHOR = "Lo comunicó el autor del addon.",
 	CENSUS_STATS_SRC_HEARD = "Informe recibido; la observación original no se ha confirmado independientemente.",
 	CENSUS_STATS_SRC_LIVE = "Contado en directo: el servidor en el que estás.",
 	CENSUS_STATS_SRC_OWN = "Lo que viste tú mismo cuando estuviste allí.",

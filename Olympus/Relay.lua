@@ -2515,12 +2515,12 @@ Relay.LAUNCH_AUTHOR = { ForeverPvE = { Relay.LAUNCH_PINS.ForeverPvE[1] }, Foreve
 function Relay.IsLaunchAuthor(name)
 	if type(name) ~= "string" or name == "" or type(ns.ForeverFamily) ~= "function" then return false end
 	local full = ns.FullName(name)
-	local family = ns.ForeverFamily(ns.RealmOf(full))
+	local family = ns.ForeverFamily(ns.RealmOf(full) or "")
 	local list = family and Relay.LAUNCH_AUTHOR[family]
 	if type(list) ~= "table" then return false end
 	local key = Lower(ns.ShortName(full))
 	for _, n in ipairs(list) do
-		if Lower(n) == key then return true end
+		if type(n) == "string" and Lower(ns.ShortName(n)) == key then return true end
 	end
 	return false
 end
