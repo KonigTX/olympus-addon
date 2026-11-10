@@ -2916,6 +2916,7 @@ local function Help()
 	print(L.HELP_BORDERS)
 	print(L.HELP_NAMEPLATES)
 	print(L.HELP_CHATMARKS)
+	print(L.HELP_MENUS)
 	print(L.HELP_LETTERS)
 	if ns.RoleBriefings and ns.RoleBriefings.LIVE == true then print(L.RB_HELP) end
 	print(L.HELP_ISSUE)
@@ -3102,6 +3103,9 @@ local function Slash(input)
 			-- 1.1.5: Olympus's marks before names in the game's own chat (Borders.lua): on or off;
 			-- test [mark|off], the author's own lines for this session.
 			ns.Borders.ChatSlash(rest)
+		elseif cmd == "menus" then
+			-- 1.5.5: Olympus's lines in the game's right-click menus for a player (PlayerMenu.lua): on or off.
+			ns.PlayerMenu.Slash(rest)
 		elseif cmd == "nameplates" then
 			-- The marks left of the names on friendly players' nameplates (Nameplates.lua), alone: on or off.
 			local on = rest:lower()

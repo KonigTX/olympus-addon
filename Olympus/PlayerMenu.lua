@@ -53,6 +53,15 @@ PlayerMenu.NEVER = { COMMUNITIES_GUILD_MEMBER = true, GUILD = true }
 local entries = {}   -- { key, order, build }, in order
 local hooked = false -- Menu.ModifyMenu called for every menu above
 
+-- 1.5.5 (a contributor's ask): a switch for Olympus's section in the game's menus, on unless turned
+-- off (ns.db.playerMenus false), in the Player tooltips panel and as /oly menus on|off. Off, no menu
+-- of the game's gets a line of Olympus's from then on (Build returns at once, at the next menu
+-- opened), and from the next login or /reload Olympus does not join those menus at all (Hook asks
+-- first: Menu.ModifyMenu's callbacks cannot be taken back once given). Back on, the lines come at
+-- once, joining the menus then if this session had not. The Olympus window's own row menus
+-- (PlayerMenu.OpenFor) are Olympus's own and stay.
+function PlayerMenu.Enabled() return not (ns.db and ns.db.playerMenus == false) end
+
 -- A feature's lines: build(target, menu) adds them to `menu` (below) for `target` = { name (the
 -- whole "Name-Realm" as the server writes it), which (the menu), unit (when it came from a unit
 -- frame), locked (the game holds addon messages now: a line that sends is shown greyed) }.
@@ -239,6 +248,7 @@ function PlayerMenu.Build(which, root, ctx) -- gp:player-menu
 	if ns.GamepadUI() then return 0 end
 	if type(root) ~= "table" and type(root) ~= "userdata" then return 0 end
 	if not ns.IsMember() then return 0 end
+	if which ~= PlayerMenu.ROW and not PlayerMenu.Enabled() then return 0 end -- (1.5.5: /oly menus off)
 	local target = PlayerMenu.Target(which, ctx, true)
 	if not target or (which == "SELF" and not target.self) then return 0 end
 	-- (1.2.5.1) The Olympus window's own rows list Olympus players: every line there.
@@ -282,6 +292,10 @@ function PlayerMenu.Hook() -- gp:player-menu
 		ns.Log("player menus: disabled with the gamepad UI")
 		return false
 	end
+	if not PlayerMenu.Enabled() then
+		ns.Log("player menus: turned off (/oly menus), Olympus does not join them")
+		return false
+	end
 	if not (Menu and type(Menu.ModifyMenu) == "function") then
 		ns.Log("player menus: this client has no Menu.ModifyMenu, no Olympus lines in them")
 		return false
@@ -307,7 +321,32 @@ function PlayerMenu.StatusLine()
 	for _, e in ipairs(entries) do keys[#keys + 1] = e.key end
 	local state = ns.GamepadUI() and "disabled with the gamepad UI"
 		or (hooked and ("hooked (" .. #PlayerMenu.WHICH .. " menus)") or "not hooked")
+	if not PlayerMenu.Enabled() then state = "off (/oly menus on), " .. state end
 	return ("%s, lines: %s"):format(state, #keys > 0 and table.concat(keys, ", ") or "none")
+end
+
+-- The switch (1.5.5): on or off, said in the chat with when it takes effect. On joins the menus now
+-- where this session had not (mouse and keyboard: with the gamepad UI, the switch back to mouse and
+-- keyboard does, as at a gamepad login).
+function PlayerMenu.SetEnabled(on, quiet)
+	if type(ns.db) ~= "table" then return false end
+	ns.db.playerMenus = on and true or false
+	if on then PlayerMenu.Hook() end
+	if not quiet then PlayerMenu.Report() end
+	return true
+end
+function PlayerMenu.Report()
+	ns.Print(PlayerMenu.Enabled() and L.PLAYERMENU_ON or L.PLAYERMENU_OFF)
+end
+-- `/oly menus on|off`; alone: whether they show, and the panel with the switch (the Player tooltips
+-- panel, PlayerTooltip.OpenSettings, which the own portrait's menu opens while the lines show).
+function PlayerMenu.Slash(rest)
+	local word = type(rest) == "string" and rest:lower():match("^%s*(%S*)") or ""
+	if word == "on" or word == "off" then return PlayerMenu.SetEnabled(word == "on") end
+	PlayerMenu.Report()
+	local T = ns.PlayerTooltip
+	if type(T) == "table" and type(T.OpenSettings) == "function" then ns.SafeCall("menus panel", T.OpenSettings) end
+	return true
 end
 
 function PlayerMenu.Reset() hooked = false end -- (tests: the entries stay, each file's own)

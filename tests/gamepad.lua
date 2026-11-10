@@ -1346,6 +1346,26 @@ local function World(C, opts)
 		map.ScrollContainer.Child = canvas
 		Method(map, "GetCanvas", function() return canvas end)
 		Method(map, "GetMapID", function(self) return self.mapID end)
+		-- (1.5.5, Map.lua's name labels read them.) The pins' frame levels: MapCanvasMixin:GetPinFrameLevelsManager
+		-- (Blizzard_MapCanvas.lua:1029), whose table starts at 2000 (MapCanvas_PinFrameLevelsManager.lua:3) and
+		-- puts each type over the last (AddFrameLevel, :62-71) in Blizzard_WorldMap.lua:259-270's order; a type
+		-- it lacks reads as the default's (GetFrameLevelStart, GetFrameLevelRange, :130-144). The map's widest
+		-- view: HasZoomLevels and GetScaleForMinZoom (Blizzard_MapCanvas.lua:834, 944; its scroll container's
+		-- first zoom level, MapCanvas_ScrollContainerMixin.lua:742).
+		local levels = { start = {}, range = {} }
+		local top = 2000
+		for _, kind in ipairs({ "PIN_FRAME_LEVEL_WOW_LABS_AREA", "PIN_FRAME_LEVEL_MAP_EXPLORATION", "PIN_FRAME_LEVEL_PLUNDERSTORM_CIRCLE",
+			"PIN_FRAME_LEVEL_EVENT_OVERLAY", "PIN_FRAME_LEVEL_GARRISON_PLOT", "PIN_FRAME_LEVEL_FOG_OF_WAR", "PIN_FRAME_LEVEL_QUEST_BLOB",
+			"PIN_FRAME_LEVEL_SCENARIO_BLOB", "PIN_FRAME_LEVEL_MAP_HIGHLIGHT", "PIN_FRAME_LEVEL_DEBUG", "PIN_FRAME_LEVEL_DIG_SITE" }) do
+			local range = kind == "PIN_FRAME_LEVEL_DEBUG" and 4 or 1
+			levels.start[kind], levels.range[kind], top = top + 1, range, top + range
+		end
+		function levels:GetFrameLevelStart(kind) return self.start[kind] or 2000 end
+		function levels:GetFrameLevelRange(kind) return self.range[kind] or 1 end
+		map.pinLevels = levels
+		Method(map, "GetPinFrameLevelsManager", function() return levels end)
+		Method(map, "HasZoomLevels", function() return true end)
+		Method(map, "GetScaleForMinZoom", function() return 1 end)
 		Method(map, "AddDataProvider", function(self, p) self.dataProviders[p] = true; p:OnAdded(self) end)
 		Method(map, "RemoveDataProvider", function(self, p) self.dataProviders[p] = nil end)
 		-- MapCanvasMixin:MarkCanvasDirty, from RemoveAllPinsByTemplate and AcquirePin: from Olympus's copy
@@ -2139,6 +2159,9 @@ for _, initialPad in ipairs({ false, true }) do
 		local place
 		for _, label in ipairs(M.nameLabels) do if label.key == 1429 then place = label end end
 		assert(place and place:IsShown(), "a geographic label can be clicked")
+		-- (1.5.5) Over the map's explored art, the pin of PIN_FRAME_LEVEL_MAP_EXPLORATION (Map.ArtLevel).
+		local art = rawget(E.WorldMapFrame, "pinLevels").start.PIN_FRAME_LEVEL_MAP_EXPLORATION
+		assert(place:GetFrameLevel() > art, ("label level %d over the explored art's %d"):format(place:GetFrameLevel(), art))
 		C.Click(place)
 		local editor = assert(M.nameEditor)
 		assert(editor:IsShown()); eq(editor.key, 1429)
@@ -3763,6 +3786,58 @@ for _, initialPad in ipairs({ false, true }) do
 		InClick(C, settings.click); eq(opened, 2); eq(panel:IsShown(), true)
 		panel:Hide()
 		Check(C.ledger, "own portrait settings"); NoErrors(C, "own portrait settings")
+	end)
+end
+
+-- 1.5.5 (a contributor's ask): the switch for Olympus's lines in the game's menus (PlayerMenu.Enabled).
+-- Off at a login, Olympus gives the game's menus no callback; turned on in Olympus's own panel it joins
+-- them then (with mouse and keyboard; a gamepad login, at its switch back); turned off again, the
+-- callback the game keeps adds nothing from the next menu on, in both modes.
+for _, initialPad in ipairs({ false, true }) do
+	test("gamepad player menus switch: " .. (initialPad and "gamepad" or "mouse") .. " login with it off, on and off again in Olympus's panel, both switches", function()
+		local saved = Answered()
+		saved.playerMenus = false
+		local C, ns = Session(initialPad, { saved = saved })
+		GP.Covers("player-menu")
+		local function Root()
+			local root = { items = {} }
+			local function Add(text, click)
+				local item = Root()
+				item.text, item.click = text, click
+				root.items[#root.items + 1] = item
+				return item
+			end
+			function root:CreateButton(text, click) return Add(text, click) end
+			function root:CreateTitle(text) return Add(text) end
+			function root:CreateDivider() return Add() end
+			function root:SetTooltip() end
+			return root
+		end
+		eq(C.menus.MENU_UNIT_SELF, nil, "off at login: no callback given to the game's menus")
+		if initialPad then C.Switch(false); C.Advance(0.1) end
+		eq(C.menus.MENU_UNIT_SELF, nil, "nor with mouse and keyboard")
+		local panel = assert(ns.PlayerTooltip.OpenSettings())
+		eq(panel.menus:GetChecked(), false, "the panel says off")
+		panel.menus:SetChecked(true); C.Click(panel.menus)
+		eq(ns.db.playerMenus, true)
+		local callbacks = assert(C.menus.MENU_UNIT_SELF, "turned on: joined at once")
+		eq(#callbacks, 1)
+		local root = Root()
+		C.Isolated(callbacks[1], {}, root, { unit = "player", fromPlayerFrame = true })
+		assert(#root.items > 0, "Olympus's lines at once")
+		panel.menus:SetChecked(false); C.Click(panel.menus)
+		eq(ns.db.playerMenus, false)
+		local empty = Root()
+		C.Isolated(callbacks[1], {}, empty, { unit = "player", fromPlayerFrame = true })
+		eq(#empty.items, 0, "off: nothing from the next menu on")
+		C.Switch(true); C.Advance(0.1)
+		C.Switch(false); C.Advance(0.1)
+		eq(#C.menus.MENU_UNIT_SELF, 1, "no second callback at the switches")
+		empty = Root()
+		C.Isolated(callbacks[1], {}, empty, { unit = "player", fromPlayerFrame = true })
+		eq(#empty.items, 0, "still off after both switches")
+		panel:Hide()
+		Check(C.ledger, "player menus switch"); NoErrors(C, "player menus switch")
 	end)
 end
 

@@ -1539,6 +1539,8 @@ test("a city's count also shows on the map of the zone around it (Stormwind on E
 	if not ok then error(err, 0) end
 end)
 
+-- (1.5.5) The shared map-name labels against a model of Forever's map canvas (Map.LayoutNames).
+assert(loadfile(ROOT .. "tests/map-labels.lua"))(ns, test, eq, { ADDON_DIR = ADDON_DIR })
 test("map refresh runs end to end with a map library (continent totals included)", function()
 	-- A stub where every method returns another stub, so frame building code can run.
 	local function deep()
@@ -25791,22 +25793,25 @@ do
 				BorderUnit("Mate", nil, nil, nil, { guid = "Player-late-2" }), PARTY_PLAIN)
 			w.fire("GROUP_ROSTER_UPDATE")
 			eq(PartyLine(w), "- - - -", "nothing known of them yet")
-			-- The guild master's name arrives; the roster alone says nothing new (the same member there).
+			-- The guild master's name arrives. (Changed on purpose in 1.5.5, the dev's notes: the party's
+			-- dragon came and went. Until then the roster's next update said nothing new for the same member
+			-- and his border waited for UNIT_NAME_UPDATE, which need not come; worked out without his name,
+			-- he is worked out again now, him alone, Borders.lua's Late.)
 			w.units.party1 = BorderUnit("Zeusy", "Olympus Zeus", "Zeus", 0, { guid = "Player-late-1" })
-			w.fire("GROUP_ROSTER_UPDATE")
-			eq(w.shown("party1"), nil)
 			local n = w.computed()
+			w.fire("GROUP_ROSTER_UPDATE")
+			eq(w.shown("party1"), "bronze-elite", "his name: his border at the roster's update"); eq(w.computed(), n + 1, "him alone")
 			w.fire("UNIT_NAME_UPDATE", "party1")
-			eq(w.shown("party1"), "bronze-elite", "his name: his border"); eq(w.computed(), n + 1, "him alone")
+			eq(w.shown("party1"), "bronze-elite", "his name's own update: the same"); eq(w.computed(), n + 2, "him alone")
 			-- Our own guild's master, her guild arriving.
 			w.units.party2 = BorderUnit("Mate", "Olympus II", "Zeus", 0, { guid = "Player-late-2" })
 			w.fire("PLAYER_GUILD_UPDATE", "party2")
-			eq(w.shown("party2"), "bronze-elite", "her guild: our guild master's bronze"); eq(w.computed(), n + 2, "her alone")
+			eq(w.shown("party2"), "bronze-elite", "her guild: our guild master's bronze"); eq(w.computed(), n + 3, "her alone")
 			-- A plain member's name: worked out, still none; another unit's: nothing for the party.
 			w.fire("UNIT_NAME_UPDATE", "party3")
-			eq(w.shown("party3"), nil); eq(w.computed(), n + 3)
+			eq(w.shown("party3"), nil); eq(w.computed(), n + 4)
 			w.fire("UNIT_NAME_UPDATE", "raid7"); w.fire("PLAYER_GUILD_UPDATE", "nameplate2")
-			eq(w.computed(), n + 3)
+			eq(w.computed(), n + 4)
 			eq(PartyLine(w), "bronze-elite bronze-elite - -")
 		end)
 	end)
@@ -26161,9 +26166,11 @@ do
 			w.asKing = function() ns.me = "Asmongold Asmongler-Realm"; GetGuildInfo = function() return "Olympus", "King", 0 end end
 			w.asIn = function(me, guild, rank) ns.me = me; GetGuildInfo = function() return guild, rank == 0 and "Zeus" or "Member", rank end end
 			w.flush = function() local due = w.timers; w.timers = {}; for _, f in ipairs(due) do f() end end
+			-- (1.5.5: the channel's list; the copy to the master's own guild over GUILD, Nominees.SendGuild,
+			-- is tests/borders-155.lua's.)
 			w.parts = function()
 				local out = {}
-				for _, s in ipairs(w.sent) do if s.msg:find("^NM~") then out[#out + 1] = s.msg end end
+				for _, s in ipairs(w.sent) do if s.msg:find("^NM~") and s.dist ~= "GUILD" then out[#out + 1] = s.msg end end
 				return out
 			end
 			fn(w)
@@ -26399,7 +26406,9 @@ do
 			N.Handle("CHANNEL", MASTER, Msg(OURS, rev + 9, "c=Nemo", 1, 17))
 			N.Handle("CHANNEL", MASTER, Msg(OURS, rev + 9, "c=Nemo", 2, 1))
 			N.Handle("CHANNEL", MASTER, Msg(OURS, rev + 9, "c=Nemo;" .. ("c=Ned;"):rep(50)))
-			N.Handle("GUILD", MASTER, Msg(OURS, rev + 9, "c=Nemo"))
+			-- (Changed on purpose in 1.5.5: our own master's list over GUILD is his word too, as he now sends
+			-- it to his guild, Nominees.SendGuild; tests/borders-155.lua. A whisper's still is nobody's.)
+			N.Handle("WHISPER", MASTER, Msg(OURS, rev + 9, "c=Nemo"))
 			eq(N.RoleOf("Nemo-Realm", OURS), nil, "none of those taken")
 			eq(N.RoleOf("Bea-Realm", OURS), "centurion")
 			-- What a proven list may name: 10 centurions and 6 departments at most (the first ones), each
@@ -27103,6 +27112,10 @@ do
 			end
 		end
 	end)
+
+	-- (1.5.5) The office shields where their holders are, the King's crown first, the party's borders kept up.
+	assert(loadfile(ROOT .. "tests/borders-155.lua"))(ns, test, eq, { WithNominees = WithNominees, WithBorders = WithBorders,
+		BorderUnit = BorderUnit, Msg = Msg, MASTER = MASTER, OURS = OURS, THEIRS = THEIRS, BORDER_KING = BORDER_KING })
 end
 
 test("1.0.1 borders: the custom frames ship as 256 x 256 32-bit TGAs with alpha, the art within each tier's texture coordinates; source PNGs kept and credited", function()

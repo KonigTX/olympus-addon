@@ -52,6 +52,7 @@ Backup.SETTINGS = {
 	-- (the other parts of 1.1: alerts held or not, camps on the map, the shared block terms, do not contact)
 	alertsAlways = "boolean", showCamps = "boolean", filterSharedOff = "boolean", recruitsOff = "boolean",
 	arenaOff = "boolean", -- (1.2: the Blood Arena turned off on this account)
+	playerMenus = "boolean", -- (1.5.5: Olympus's lines in the game's right-click menus, PlayerMenu.lua)
 }
 -- 1.2: lines on until their No (nil is on): only their No (false) goes in a backup, and only a No
 -- comes back, so a restore turns sharing off, never on. [key] = the module's own switch, called
@@ -668,6 +669,7 @@ function Backup.Apply(d)
 	if shown.borders and ns.Borders and ns.Borders.SetEnabled then ns.SafeCall("backup", ns.Borders.SetEnabled, ns.db.borders ~= false) end
 	if shown.nameplates and ns.Nameplates and ns.Nameplates.SetEnabled then ns.SafeCall("backup", ns.Nameplates.SetEnabled, ns.db.nameplates ~= false) end
 	if shown.showMap and ns.Map and ns.Map.Refresh then ns.SafeCall("backup", ns.Map.Refresh) end
+	if shown.playerMenus and ns.PlayerMenu and ns.PlayerMenu.SetEnabled then ns.SafeCall("backup", ns.PlayerMenu.SetEnabled, ns.db.playerMenus ~= false, true) end
 	for key, switch in pairs(Backup.NOES) do
 		local m = ns[switch.module]
 		if shown[key] and ns.db[key] == false and type(m) == "table" and not m.missing and type(m[switch.set]) == "function" then

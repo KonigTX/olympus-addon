@@ -106,7 +106,7 @@ function P.OpenSettings()
 	if not ns.IsMember() then return false end
 	if not window then
 		local f = ns.Window("OlympusPlayerTooltipOptions", nil, { title = L.PLAYER_TOOLTIP_SETTINGS, inset = false })
-		f:SetSize(390, 300); f:SetPoint("CENTER"); f:SetFrameStrata("DIALOG")
+		f:SetSize(390, 400); f:SetPoint("CENTER"); f:SetFrameStrata("DIALOG")
 		local note = f:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 		note:SetPoint("TOPLEFT", 24, -45); note:SetWidth(342); note:SetJustifyH("LEFT"); note:SetText(L.PLAYER_TOOLTIP_DESC)
 		f.checks = {}
@@ -130,12 +130,30 @@ function P.OpenSettings()
 				f.size:SetText(L.PLAYER_TOOLTIP_SIZE:format(P.Options().scale))
 			end)
 		end
+		-- 1.5.5 (a contributor's ask): Olympus's lines in the game's right-click menus, on or off
+		-- (PlayerMenu.SetEnabled, the same switch as /oly menus), and when that takes effect.
+		local head = f:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+		head:SetPoint("TOPLEFT", 24, -214); head:SetText(L.PLAYERMENU_SETTING)
+		local menus = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
+		menus:SetPoint("TOPLEFT", 22, -236); menus:SetSize(28, 28)
+		local menusLabel = menus:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+		menusLabel:SetPoint("LEFT", menus, "RIGHT", 4, 0); menusLabel:SetWidth(300); menusLabel:SetJustifyH("LEFT")
+		menusLabel:SetText(L.PLAYERMENU_SETTING_LABEL)
+		menus:SetScript("OnClick", function(self)
+			local PM = ns.PlayerMenu
+			if PM and PM.SetEnabled then PM.SetEnabled(self:GetChecked() == true) end
+		end)
+		local menusNote = f:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+		menusNote:SetPoint("TOPLEFT", 24, -270); menusNote:SetWidth(342); menusNote:SetJustifyH("LEFT")
+		menusNote:SetText(L.PLAYERMENU_SETTING_NOTE)
+		f.menus, f.menusNote = menus, menusNote
 		local footer = f:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 		footer:SetPoint("BOTTOMLEFT", 24, 28); footer:SetWidth(342); footer:SetJustifyH("LEFT"); footer:SetText(L.PLAYER_TOOLTIP_NEXT)
 		window = f
 	end
 	local o = P.Options()
 	for key, button in pairs(window.checks) do button:SetChecked(o[key]) end
+	window.menus:SetChecked(not (ns.PlayerMenu and ns.PlayerMenu.Enabled and not ns.PlayerMenu.Enabled()))
 	window.size:SetText(L.PLAYER_TOOLTIP_SIZE:format(o.scale))
 	window:Show(); window:Raise()
 	return window
