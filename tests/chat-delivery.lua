@@ -104,12 +104,19 @@ local function Dispatcher(probeEvent)
 	error("no dispatcher")
 end
 
-test("chat delivery (1.5.5): a chat event whose text or sender is a secret value reaches no handler; another secret field reaches them as nil; a plain one as it came", function()
+-- A value the game marks secret: anything done with it but passing it on errors.
+local function Secret()
+	return setmetatable({}, { __index = function() error("a secret value was read") end,
+		__len = function() error("a secret value was measured") end, __eq = function() error("a secret value was compared") end })
+end
+
+-- (The check of the 1.5.5 chat lane: a secret field after the second once reached the handlers as
+-- nil. Now no field of a chat event with a secret one reaches them.)
+test("chat delivery (1.5.5): a chat event with any secret field (its text, its sender, a GUID, a channel's name) reaches no handler, counted; a plain one as it came", function()
 	local savedSecret, savedCapture = rawget(_G, "issecretvalue"), ns.CaptureError
 	local ok, err = pcall(function()
 		local dispatch = Dispatcher("CHAT_MSG_OLYMPUS_TEST")
-		local secret = setmetatable({}, { __index = function() error("a secret value was read") end,
-			__len = function() error("a secret value was measured") end, __eq = function() error("a secret value was compared") end })
+		local secret = Secret()
 		issecretvalue = function(v) return rawequal(v, secret) end
 		local errors = {}
 		ns.CaptureError = function(where, e) errors[#errors + 1] = where .. ": " .. tostring(e) end
@@ -121,11 +128,10 @@ test("chat delivery (1.5.5): a chat event whose text or sender is a secret value
 		eq(#calls, 0, "a secret text or sender: no handler called")
 		eq(ns.secretChatSkipped - before, 2, "counted for /oly status")
 		dispatch(nil, "CHAT_MSG_OLYMPUS_TEST", "hello", "Some One-Realm", "", "", "", "", 0, 6, secret, 0, secret)
-		eq(#calls, 1, "a secret GUID or channel name: called")
-		eq(calls[1][1], "hello"); eq(calls[1][2], "Some One-Realm"); eq(calls[1][8], 6)
-		eq(calls[1][9], nil, "the secret field as nil"); eq(calls[1][11], nil); eq(calls[1][10], 0)
+		eq(#calls, 0, "a secret GUID or channel name: no handler called either, never the field as nil")
+		eq(ns.secretChatSkipped - before, 3)
 		dispatch(nil, "CHAT_MSG_OLYMPUS_TEST", "plain", "Some One-Realm", "x")
-		eq(#calls, 2); eq(calls[2][1], "plain"); eq(calls[2][3], "x")
+		eq(#calls, 1); eq(calls[1][1], "plain"); eq(calls[1][3], "x"); eq(calls[1].n, 3)
 		-- The game's own non-chat events are passed as they come (a secret there is the handler's).
 		local other = {}
 		ns.RegisterEvent("OLYMPUS_TEST_OTHER", function(a) other[#other + 1] = a end)
@@ -133,6 +139,36 @@ test("chat delivery (1.5.5): a chat event whose text or sender is a secret value
 		eq(#other, 1)
 		eq(#errors, 0, table.concat(errors, "; "))
 	end)
+	issecretvalue, ns.CaptureError = savedSecret, savedCapture
+	if not ok then error(err, 0) end
+end)
+
+-- (The check of the 1.5.5 chat lane, blocking.) An outsider's word on another channel we sit in:
+-- Comm's OnAddonMessage drops it by its channel number (field 7) and lets a word with no number
+-- through. A secret number once reached it as nil, and the word passed as one from our channel.
+test("chat delivery (1.5.5): an addon word whose channel number (field 7) is secret reaches no handler, logged or not, counted; with a plain number it comes as it was", function()
+	local savedSecret, savedCapture = rawget(_G, "issecretvalue"), ns.CaptureError
+	local probing, words = true, {}
+	local ok, err = pcall(function()
+		local dispatch = Dispatcher("CHAT_MSG_OLYMPUS_TEST")
+		local secret = Secret()
+		issecretvalue = function(v) return rawequal(v, secret) end
+		local errors = {}
+		ns.CaptureError = function(where, e) errors[#errors + 1] = where .. ": " .. tostring(e) end
+		local function Probe(...) if probing then words[#words + 1] = { n = select("#", ...), ... } end end
+		ns.RegisterEvent("CHAT_MSG_ADDON", Probe)
+		ns.RegisterEvent("CHAT_MSG_ADDON_LOGGED", Probe)
+		local before = ns.secretChatSkipped
+		-- (prefix, text, channel, sender, target, zoneChannelID, localID, channelName)
+		dispatch(nil, "CHAT_MSG_ADDON", ns.PREFIX, "X1~from another channel", "CHANNEL", "Out Sider-Realm", "", 0, secret, "Trade")
+		dispatch(nil, "CHAT_MSG_ADDON_LOGGED", ns.PREFIX, "M1~A~Olympus II~1~~hi", "CHANNEL", "Out Sider-Realm", "", 0, secret, "Trade")
+		eq(#words, 0, "no handler called: never taken as a word from our channel")
+		eq(ns.secretChatSkipped - before, 2, "both counted")
+		dispatch(nil, "CHAT_MSG_ADDON", "SOMEADDON", "plain words", "CHANNEL", "Out Sider-Realm", "", 0, 9, "Trade")
+		eq(#words, 1); eq(words[1][2], "plain words"); eq(words[1][7], 9, "its number as it came"); eq(words[1].n, 8)
+		eq(#errors, 0, table.concat(errors, "; "))
+	end)
+	probing = false
 	issecretvalue, ns.CaptureError = savedSecret, savedCapture
 	if not ok then error(err, 0) end
 end)

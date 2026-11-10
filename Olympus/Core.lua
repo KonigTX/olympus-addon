@@ -2265,34 +2265,18 @@ function ns.RegisterEvent(event, fn)
 end
 -- (1.5.5, the players' /oly bug reports of 2026-11-08: "attempt to get length of local 'text' (a
 -- secret string value, while execution tainted by 'Olympus')", 3 at ChatHall.lua and 33 at
--- Relay.lua in one session, 96 in another.) A chat event whose text or sender is secret reaches no
--- handler of ours: nothing in it can be read. Any other field of it that is secret (a GUID, a
--- channel's name) reaches them as nil. One guard here for every chat handler, present and future.
+-- Relay.lua in one session, 96 in another.) A chat event with any secret field reaches no handler
+-- of ours, counted for /oly status. Not even its other fields: a secret one handed on as nil reads
+-- as "not given", and a check can pass on that. CHAT_MSG_ADDON's channel number (field 7) is how
+-- Comm's OnAddonMessage drops an outsider's word from another channel, and a client that gives no
+-- number passes it. One guard here for every chat handler, present and future.
 ns.secretChatSkipped = 0
 eventFrame:SetScript("OnEvent", function(_, event, ...)
 	local h = handlers[event]
 	if not h then return end
-	if chatEvent[event] and type(issecretvalue) == "function" then
-		local n, clean = select("#", ...), true
-		for i = 1, n do
-			if ns.IsSecret((select(i, ...))) then
-				if i <= 2 then
-					ns.secretChatSkipped = ns.secretChatSkipped + 1
-					return
-				end
-				clean = false
-			end
-		end
-		if not clean then
-			-- (Only the fields that can be read are kept: no secret is stored anywhere.)
-			local args = {}
-			for i = 1, n do
-				local v = select(i, ...)
-				if not ns.IsSecret(v) then args[i] = v end
-			end
-			for i = 1, #h do ns.SafeCall("event " .. event, h[i], unpack(args, 1, n)) end
-			return
-		end
+	if chatEvent[event] and ns.IsSecret(...) then
+		ns.secretChatSkipped = ns.secretChatSkipped + 1
+		return
 	end
 	for i = 1, #h do ns.SafeCall("event " .. event, h[i], ...) end
 end)

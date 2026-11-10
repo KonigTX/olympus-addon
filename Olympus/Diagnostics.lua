@@ -750,7 +750,7 @@ function ns.StatusText()
 		local ch = ns.Channels and ns.Channels.Stats()
 		if ch then
 			-- (moved, 1.1.1: lines not sent because the channel changed before they left, GitHub #34.)
-			-- (secret, 1.5.5: chat events whose text or sender came as a secret value, skipped unread, Core.lua.)
+			-- (secret, 1.5.5: chat events with a field that came as a secret value, skipped unread, Core.lua.)
 			add("chat: sent=%d shown=%d hidden=%d lane=%d moved=%d muted=%s drops bad=%d dup=%d rate=%d flood=%d forged=%d unverified=%d rank=%d secret=%d",
 				ch.sent, ch.shown, ch.hidden, c.chatQueue or 0, ch.moved or 0, #ch.muted > 0 and table.concat(ch.muted, ",") or "none",
 				ch.bad, ch.dup, ch.rate, ch.flood, ch.forged, ch.unverified, ch.rank, tonumber(ns.secretChatSkipped) or 0)
