@@ -2128,8 +2128,9 @@ function Comm.ResetOutsider() outsiderAsm = Codec.NewAssembler() end -- (tests)
 
 local function OnAddonMessage(prefix, text, dist, sender, target, zoneChannelID, localID, channelName)
 	-- (1.5.5) A value the client keeps secret (a chat lockdown) is never compared or read: the prefix
-	-- first (every addon's messages come here), then what ours carries.
-	if ns.Secret("addon message", prefix) or prefix ~= ns.PREFIX then return end
+	-- first (every addon's messages come here: a secret one can't be told ours, so it is not counted
+	-- in /oly bug), then what ours carries (counted).
+	if ns.Secret(nil, prefix) or prefix ~= ns.PREFIX then return end
 	if ns.Secret("addon message", text, dist, sender, target, localID, channelName) then return end
 	if type(sender) ~= "string" or sender == "" or type(text) ~= "string" then return end
 	SyncGuild()

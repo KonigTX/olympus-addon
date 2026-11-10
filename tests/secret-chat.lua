@@ -118,6 +118,11 @@ test("1.5.5 secret chat: an addon message or a channel notice with a secret pref
 		local captured = WithSecrets(function()
 			local s = Secret.New()
 			eq(Fire("CHAT_MSG_ADDON", s, "H1~1.5.5", "GUILD", "Mate-Realm"), nil, "a secret prefix (any addon's)")
+			-- (The independent check: a secret prefix may be any addon's, so it is not counted as
+			-- Olympus's; nor is another addon's message with a secret text.)
+			eq(ns.SecretSkips()["addon message"], nil, "a secret prefix is not counted as ours")
+			eq(Fire("CHAT_MSG_ADDON", "OtherAddon", s, "GUILD", "Mate-Realm"), nil, "another addon's secret text")
+			eq(ns.SecretSkips()["addon message"], nil, "another addon's message is not counted")
 			eq(Fire("CHAT_MSG_ADDON", ns.PREFIX, s, "GUILD", "Mate-Realm"), nil, "a secret text")
 			eq(Fire("CHAT_MSG_ADDON", ns.PREFIX, "H1~1.5.5", "GUILD", s), nil, "a secret sender")
 			eq(Fire("CHAT_MSG_ADDON", ns.PREFIX, "H1~1.5.5", "CHANNEL", "Mate-Realm", "", 0, 5, s), nil, "a secret channel name")
@@ -132,7 +137,7 @@ test("1.5.5 secret chat: an addon message or a channel notice with a secret pref
 		eq(#captured, 0, "no error caught either: " .. table.concat(captured, " | "))
 		eq(cns.Comm.Stats().recv, before, "nothing secret counted as heard")
 		local skips = ns.SecretSkips()
-		eq(skips["addon message"], 6); eq(skips["channel notice"], 3)
+		eq(skips["addon message"], 5, "ours alone: 4 events and Inject"); eq(skips["channel notice"], 3)
 	end)
 	C_ChatInfo = savedChat
 	if not ok then error(err, 0) end

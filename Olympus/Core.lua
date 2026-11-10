@@ -2200,7 +2200,8 @@ end
 -- runs ("attempt to index local 'text' (a secret string value, while execution tainted by
 -- 'Olympus')": Relay.lua and ChatHall.lua in the players' /oly bug of 11-08 and 11-09). True when any
 -- of the values is one, or when the check itself fails: nothing of it is read. Counted by `where`
--- (a fixed name of ours) for /oly bug (ns.SecretSkips); a client without issecretvalue keeps none.
+-- (a fixed name of ours) for /oly bug (ns.SecretSkips); nil `where`, not counted (a value that may be
+-- another addon's: an addon message's prefix); a client without issecretvalue keeps none.
 local secretSkips, secretWheres = {}, 0
 ns.SECRET_WHERE_MAX = 16
 function ns.Secret(where, ...)
