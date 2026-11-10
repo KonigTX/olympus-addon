@@ -326,6 +326,20 @@ local function Fallback()
 	return nil
 end
 local function Answered(key, now) return now - (verified[key] or -math.huge) < Relay.VERIFIED_FOR end
+-- (The lanes' hooks, step 0's: asked through these so a hook a merge left out never stops the pick.)
+local function IsSigned(name)
+	local f = Relay.IsSignedRelay
+	if type(f) == "function" then return f(name) == true end
+	return Relay.IsRelay(name)
+end
+local function Pinned()
+	local f = Relay.PinnedRelay
+	return type(f) == "function" and f() or nil
+end
+local function Newer(key)
+	local f = Relay.AtLeast
+	return type(f) == "function" and f(relayVersion[key], Relay.PREFER_VERSION) == true
+end
 function Relay.Pick()
 	if not Relay.On() then return nil end
 	local now = Now()
@@ -339,7 +353,7 @@ function Relay.Pick()
 	if F and F.Serving() then return Picked(mine, true, "provisional self") end
 	local seed = Lower(GetGuildInfo and GetGuildInfo("player") or ns.me or "") .. "#" .. tostring(math.floor(now / Relay.PICK_WINDOW))
 	local function From(pool) return pool[(Hash(seed) % #pool) + 1] end
-	local pin = Relay.PinnedRelay()
+	local pin = Pinned()
 	if type(pin) == "string" and pin ~= "" then
 		local key = Lower(ns.ShortName(pin))
 		if (offline[key] or 0) <= now and Answered(key, now) then return Picked(ns.ShortName(pin), true, "pinned") end
@@ -348,11 +362,11 @@ function Relay.Pick()
 	for _, n in ipairs(Relay.Names(false)) do
 		local key = n:lower()
 		if (offline[key] or 0) <= now then
-			local isSigned = Relay.IsSignedRelay(n)
+			local isSigned = IsSigned(n)
 			if not Answered(key, now) then
 				if isSigned then live[#live + 1] = n end
 			elseif not isSigned then pins[#pins + 1] = n
-			elseif Relay.AtLeast(relayVersion[key], Relay.PREFER_VERSION) then newer[#newer + 1] = n
+			elseif Newer(key) then newer[#newer + 1] = n
 			else signed[#signed + 1] = n end
 		end
 	end
@@ -374,7 +388,7 @@ function Relay.SignedAnswered(now)
 	now = now or Now()
 	for _, n in ipairs(Relay.Names(false)) do
 		local key = n:lower()
-		if (offline[key] or 0) <= now and Answered(key, now) and Relay.IsSignedRelay(n) then return n end
+		if (offline[key] or 0) <= now and Answered(key, now) and IsSigned(n) then return n end
 	end
 	return nil
 end
@@ -382,7 +396,7 @@ function Relay.SignedLive(now)
 	now = now or Now()
 	local k = 0
 	for _, n in ipairs(Relay.Names(false)) do
-		if (offline[n:lower()] or 0) <= now and Relay.IsSignedRelay(n) then k = k + 1 end
+		if (offline[n:lower()] or 0) <= now and IsSigned(n) then k = k + 1 end
 	end
 	return k
 end
