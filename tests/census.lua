@@ -640,6 +640,37 @@ test("census continuity: recording a cached census preserves observation time an
 	eq(stale.history.characters, 1000); eq(stale.history.counted, false, "an expired count remains separate historical information")
 end)
 
+test("census continuity: an extra older counted guild cannot veto complete newer coverage", function()
+	local w = GroupWorld()
+	w.ns.rdb.guilds["Olympus Dawn"] = { total = 640, online = 40, t = w.clock - 600 }
+	w.ns.rdb.guilds["Olympus Dusk"] = { total = 360, online = 30, t = w.clock - 300 }
+	assert(w.D.RecordGroupCensus())
+	w.ns.Comm.loginAt = w.clock
+	w.ns.rdb.guilds["Olympus Dawn"] = { total = 630, online = 20, t = w.clock }
+	w.ns.rdb.guilds["Olympus Dusk"] = { total = 350, online = 10, t = w.clock }
+	w.ns.rdb.guilds["Olympus Ash"] = { total = 120, online = 5, t = w.clock - w.D.FRESH - 1 }
+	local s = w.D.Summary()
+	eq(s.characters, 1100, "all counted rows contribute their actual totals after newer coverage is complete")
+	eq(s.total, 1100); eq(s.snapshot, nil); eq(#s.guilds, 3)
+	eq(s.online, 30, "the older guild contributes no online presence")
+end)
+
+test("census continuity: older counted guilds cannot fill a gap in newer coverage", function()
+	local w = GroupWorld()
+	w.ns.rdb.guilds["Olympus Dawn"] = { total = 640, online = 40, t = w.clock - 600 }
+	w.ns.rdb.guilds["Olympus Dusk"] = { total = 360, online = 30, t = w.clock - 300 }
+	assert(w.D.RecordGroupCensus())
+	w.ns.Comm.loginAt = w.clock
+	w.ns.rdb.guilds["Olympus Dawn"] = { total = 630, online = 20, t = w.clock }
+	w.ns.rdb.guilds["Olympus Dusk"] = nil
+	w.ns.rdb.guilds["Olympus Ash"] = { total = 120, online = 5, t = w.clock - w.D.FRESH - 1 }
+	local s = w.D.Summary()
+	eq(s.characters, 1000, "incomplete newer coverage still shows the retained census")
+	eq(s.snapshot.guilds, 2); eq(s.snapshot.observed, w.clock - 600)
+	eq(s.live.characters, 750); eq(s.live.guilds, 2, "live coverage still includes every counted guild")
+	eq(s.online, 20)
+end)
+
 test("census continuity: incoming origins and witnesses are bounded and retain no authority or private fields", function()
 	local w = GroupWorld()
 	for i = 1, w.D.GROUP_MAX + 30 do

@@ -1910,12 +1910,13 @@ function ns.KingsScreen()
 end
 
 -- Who sees the High Council in the census, its marks there and its titles (0.9.9, the author's
--- call): until launch the councillors themselves, the author's own client (the one holding the
--- signed lists, CouncilList.lua) and the King's (names hidden, below); everyone once the signed
--- titles list says it is public. The game's own chat shows the mark to everyone (1.1.5,
+-- call): until launch the councillors themselves, the author's own client (by his author name or
+-- its local signed lists, CouncilList.lua) and the King's (names hidden, below); everyone once the
+-- signed titles list says it is public. The game's own chat shows the mark to everyone (1.1.5,
 -- Borders.lua; the Olympus chats did from 0.9.8 to 1.1.5).
 function ns.CouncilVisible()
-	if ns.COUNCIL_SIGNED ~= nil or ns.COUNCIL_TITLES ~= nil or ns.IsHighCouncillor(ns.me) or ns.KingsScreen() then return true end
+	if ns.COUNCIL_SIGNED ~= nil or ns.COUNCIL_TITLES ~= nil or ns.IsAuthorName(ns.me)
+		or ns.IsHighCouncillor(ns.me) or ns.KingsScreen() then return true end
 	local t = ns.CouncilTitles()
 	return t ~= nil and t.public == true
 end

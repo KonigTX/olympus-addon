@@ -97,6 +97,42 @@ end
 -- Relay.Names as one string, ",A,B,", to look a name up in.
 local function Relays(R) return "," .. table.concat(R.Names(true), ",") .. "," end
 
+test("1.5.5 roles: the saved signed author sees a private council without the author's sidecar, with no council membership; other viewers stay private and the King's screen stays masked", function()
+	local saved = { signed = ns.COUNCIL_SIGNED, titles = ns.COUNCIL_TITLES, dev = ns.devThrone,
+		view = ns.db.devKingView, shown = ns.CouncilNamesShown() }
+	local ok, err = pcall(WithForever, PVE_REALM, "Alliance", function()
+		ns.COUNCIL_SIGNED, ns.COUNCIL_TITLES, ns.devThrone, ns.db.devKingView = nil, nil, nil, nil
+		ns.SetCouncilNamesShown(false)
+		Take(PVE_NAMES, PVE)
+		eq(ns.CouncilTitles().public, false, "the saved signed list remains private")
+		local author = "Quill Maker-" .. PVE_REALM
+		As(author, OTHER, 3)
+		eq(ns.IsAuthorName(ns.me), true, "the author comes from the saved signed titles")
+		eq(ns.IsHighCouncillor(ns.me), false, "author visibility grants no council membership")
+		eq(ns.CouncilVisible(), true, "the author sees the council without CouncilList.lua")
+		eq(ns.KingsScreen(), false); eq(ns.CouncilMasked(), false)
+		-- His preview still follows the King's mask, even though the author may see the council.
+		ns.devThrone = true
+		eq(ns.King.Preview(), true); eq(ns.CouncilMasked(), true)
+		ns.devThrone = nil
+		As("Some Body-" .. PVE_REALM, OTHER, 3)
+		eq(ns.IsAuthorName(ns.me), false); eq(ns.CouncilVisible(), false, "holding the list alone does not reveal it")
+		As("Quill Maker-" .. PVP_REALM, OTHER, 3)
+		eq(ns.IsAuthorName(ns.me), false); eq(ns.CouncilVisible(), false, "a namesake of another realm group is no author")
+		As("Test Councillor-" .. PVE_REALM, OTHER, 3)
+		eq(ns.IsHighCouncillor(ns.me), true); eq(ns.CouncilVisible(), true, "a genuine councillor still sees it")
+		As(KING, OTHER, 3)
+		eq(ns.King.IsKing(), true); eq(ns.CouncilVisible(), true); eq(ns.CouncilMasked(), true, "the King keeps his mask")
+		As(author, OTHER, 3)
+		ns.rdb.councilTitles = nil
+		ns.Workshop.ResetVerify()
+		eq(ns.IsAuthorName(ns.me), false); eq(ns.CouncilVisible(), false, "no signed author identity: no extra visibility")
+	end)
+	ns.COUNCIL_SIGNED, ns.COUNCIL_TITLES, ns.devThrone, ns.db.devKingView = saved.signed, saved.titles, saved.dev, saved.view
+	ns.SetCouncilNamesShown(saved.shown)
+	if not ok then error(err, 0) end
+end)
+
 ---------------------------------------------------------------------------
 -- The Quaestor
 ---------------------------------------------------------------------------

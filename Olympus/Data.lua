@@ -1805,11 +1805,15 @@ function Data.ApplyGroupSnapshot(s, now)
 			and (not held or e.observed > held.observed) then held = e end
 	end
 	if not held then return end
-	local counted, observed = 0, now
+	local counted, refreshed = 0, 0
 	for _, e in ipairs(s.guilds) do
-		if e.counted then counted, observed = counted + 1, math.min(observed, ObservationTime(e.g)) end
+		if e.counted then
+			counted = counted + 1
+			if ObservationTime(e.g) >= held.observed then refreshed = refreshed + 1 end
+		end
 	end
-	if not held.unscoped and counted >= held.guilds and s.characters > 0 and observed >= held.observed then return end
+	-- Enough newer guild reports reconcile the saved coverage. An extra older row cannot veto them.
+	if not held.unscoped and refreshed >= held.guilds and s.characters > 0 then return end
 	local snapshot = { group = group, faction = held.faction, observed = held.observed, source = held.src,
 		witnesses = held.w, characters = held.characters, people = held.people, guilds = held.guilds,
 		age = math.max(0, now - held.observed), unscoped = held.unscoped,
