@@ -163,8 +163,20 @@ test("1.5.5 the level race's apology: once, to a character told of a comet, one 
 	W3.NoErrors(w)
 end)
 
-test("1.5.5 the level race's apology at login: a character whose saved profile shows a comet, with no arena data saved, gets it a minute after his login", function()
-	local w = World.New({ compliance = "shipped" })
+-- (Changed with the independent check of 1.5.5: the apology waits for a signed list that names the
+-- Speedrunner, H.ApologyDue. The release carries that list, so his client holds it from his login on, as
+-- ListWorld's do; a client with no such list sends none.)
+test("1.5.5 the level race's apology at login: a character whose saved profile shows a comet, with no arena data saved, gets it a minute after his login where his client holds a signed list naming the Speedrunner; with no such list, none", function()
+	local bare = World.New({ compliance = "shipped" })
+	local b = bare:Client("Corin Ash")
+	W3.Rules(bare, b)
+	local bm = bare:As(b, b.ns.ArenaProfile.Mine, true)
+	bm.frame = "level-race-20"
+	Kept(bare, b)
+	bare:Run(b.ns.HonorsNet.REFRESH_DELAY + 1)
+	eq(Count(b, APOLOGY), 0, "no list naming the Speedrunner: no apology yet")
+	W3.NoErrors(bare)
+	local w = ListWorld("^speedrunner^Alliance^Fenra Swift-Emberfall", { compliance = "shipped" })
 	local c = w:Client("Brisa Vale")
 	W3.Rules(w, c)
 	local m = w:As(c, c.ns.ArenaProfile.Mine, true)
@@ -257,4 +269,134 @@ test("1.5.5 the signed list's ^speedrunner^ entry: one name a side, lower case k
 	eq(p.author.Alliance[1], "Quill Maker-Emberfall", "the author's as before")
 	eq(next(ns.ReadPins("^speedrunner^Alliance^Fenra Swift").speedrunner), nil, "a name without its realm is refused")
 	eq(ns.PINS_MAX.speedrunner, 1)
+end)
+
+-- (1.5.5, the independent check) The Speedrunner's first 1.5.5 look could run before his client held the
+-- signed list naming him (titles lists travel over the guild and the channel alone, and Forever drops the
+-- channel's): the apology went to him then, the race's letters left his list for good, and when the list
+-- came his comet was back without a letter. Now the apology waits for a list that names a Speedrunner
+-- (H.ApologyDue), never lets the race letters of the one it names go (H.Apologize), and one named after an
+-- apology already went out gets the Speedrunner's letter under a mark of its own (H.SpeedrunnerLetter).
+-- Both orders below.
+local function Traces(w, c, opts)
+	local m = w:As(c, c.ns.ArenaProfile.Mine, true)
+	if opts.wore then m.frame, m.title = "level-race-60", "level-race-60" end
+	if opts.saw then m.seen = { ["level-60"] = { place = 1, frame = "level-race-60", title = "level-race-60" } } end
+	m.lettered, m.letters = {}, {}
+	for i, key in ipairs(opts.told or {}) do
+		m.lettered[key] = true
+		m.letters[#m.letters + 1] = { key = key, t = w.clock - 3600 * (10 - i), read = true }
+	end
+	return m
+end
+local function DataChanged(w, c) w:As(c, function() c.ns.Fire("DATA_CHANGED") end) end
+
+test("1.5.5 the race's apology waits for a signed list naming the Speedrunner: before one is held, neither his first look nor another's sends it or lets a race letter go; the list naming him (DATA_CHANGED) gives his comet back with his race letters kept and never the apology, the other's apology a moment later", function()
+	local w = World.New({ compliance = "shipped" })
+	local fast, other = w:Client("Fenra Swift"), w:Client("Brisa Vale")
+	Kept(w, fast); Kept(w, other)
+	Traces(w, fast, { wore = true, saw = true, told = { "level-race-20", "level-race-60" } })
+	Traces(w, other, { told = { "level-race-40" } })
+	-- Their first looks under 1.5.5, no list held yet: nothing sent, nothing let go.
+	for _, c in ipairs({ fast, other }) do
+		eq(w:As(c, c.ns.HonorsNet.ApologyDue), false, c.name .. ": not due before a list names the Speedrunner")
+		w:As(c, c.ns.HonorsNet.Refresh)
+		eq(Count(c, APOLOGY), 0, c.name .. ": no apology before the list")
+	end
+	eq(Count(fast, "level-race-60"), 1, "his race letter kept"); eq(Count(fast, "level-race-20"), 1)
+	eq(Count(other, "level-race-40"), 1, "hers too")
+	eq(w:As(fast, fast.ns.HonorsNet.Apologize, true), false, "not even when asked outright")
+	eq(Count(fast, "level-race-60"), 1); eq(Count(fast, APOLOGY), 0)
+	-- A list naming nobody as the Speedrunner (an older kind of list) does not open it either.
+	for _, c in ipairs({ fast, other }) do
+		Pins(c, "^author^Alliance^Quill Maker-Emberfall")
+		DataChanged(w, c)
+	end
+	w:Run(3)
+	eq(Count(fast, APOLOGY), 0); eq(Count(other, APOLOGY), 0, "a list that names no Speedrunner")
+	-- The list naming him reaches both (DATA_CHANGED): his comet back, worn as before, his letters kept,
+	-- never the apology; hers a moment later, her race letter let go.
+	for _, c in ipairs({ fast, other }) do
+		Pins(c, "^speedrunner^Alliance^" .. fast.name)
+		DataChanged(w, c)
+	end
+	w:Run(3)
+	local pick = fast.ns.ArenaProfile.Pick()
+	eq(pick.frame, "level-race-60", "his comet back"); eq(pick.title, "level-race-60")
+	eq(Count(fast, "level-race-60"), 1, "his race letter kept, and no second one"); eq(Count(fast, "level-race-20"), 1)
+	eq(Count(fast, APOLOGY), 0, "never the apology")
+	eq(w:As(fast, fast.ns.HonorsNet.ApologyDue), false)
+	eq(w:As(fast, fast.ns.HonorsNet.Apologize, true), false, "never to the Speedrunner the list names, even asked outright")
+	eq(Count(fast, "level-race-60"), 1, "his race letter still kept"); eq(Count(fast, APOLOGY), 0)
+	eq(Count(other, APOLOGY), 1, "hers, once the list is held")
+	eq(Count(other, "level-race-40"), 0, "her race letter let go")
+	-- Another look changes nothing.
+	for _, c in ipairs({ fast, other }) do w:As(c, c.ns.HonorsNet.Refresh) end
+	eq(Count(fast, APOLOGY), 0); eq(Count(fast, "level-race-60"), 1); eq(Count(other, APOLOGY), 1)
+	W3.NoErrors(w)
+end)
+
+test("1.5.5 the Olympus Speedrunner named after the race's apology went out to him (a newer list): his gold comet switches on and the Speedrunner's letter comes under its own mark, once, though the race's mark says he was told; one told of the bronze comet alone gets one letter, not two; one who was not wearing it then switches on all the same", function()
+	local w = World.New({ compliance = "shipped" })
+	local fast, bronze, plain = w:Client("Fenra Swift"), w:Client("Brisa Vale"), w:Client("Dovan Quell")
+	Kept(w, fast); Kept(w, bronze); Kept(w, plain)
+	local net = fast.ns.HonorsNet
+	Traces(w, fast, { wore = true, saw = true, told = { "level-race-60" } })
+	Traces(w, bronze, { told = { "level-race-20" } })
+	Traces(w, plain, { saw = true, told = { "level-race-60" } })
+	-- A list naming another character: the apology to each, their race letters let go.
+	for _, c in ipairs({ fast, bronze, plain }) do
+		Pins(c, "^speedrunner^Alliance^Ilsa Marrow-Emberfall")
+		w:As(c, c.ns.HonorsNet.Refresh)
+		eq(Count(c, APOLOGY), 1, c.name .. ": the apology")
+		w:As(c, c.ns.HonorsNet.CloseLetter, true)
+	end
+	eq(Count(fast, "level-race-60"), 0, "his race letter let go"); eq(Count(bronze, "level-race-20"), 0)
+	eq(fast.ns.ArenaProfile.Pick().frame, "rank", "not his comet then")
+	eq(net.Lettered()["level-race-60"], true, "the race's own mark still says told")
+	-- A newer list names him: switched on, the Speedrunner's letter under its own mark, shown.
+	Pins(fast, "^speedrunner^Alliance^" .. fast.name)
+	DataChanged(w, fast)
+	w:Run(3)
+	local pick = fast.ns.ArenaProfile.Pick()
+	eq(pick.frame, "level-race-60", "his comet worn"); eq(pick.title, "level-race-60")
+	eq(Count(fast, "level-race-60"), 1, "the Speedrunner's letter")
+	eq(net.Lettered()[net.SPEEDRUNNER_MARK], true, "told under its own mark")
+	local f = net.LetterFrame()
+	eq(f ~= nil and f:IsShown(), true, "the letter shows")
+	eq(f.body:GetText(), (net.LetterText("level-race-60")), "in the Speedrunner's words")
+	eq(f.wear:GetText(), fast.ns.L.HONOR_LETTER_WEAR)
+	eq(w:As(fast, net.CloseLetter, true), true)
+	eq(Count(fast, APOLOGY), 1, "the apology stays as it went, once")
+	-- Once: another look, a newer list naming him again after one without him, a reload.
+	w:As(fast, net.Refresh)
+	Pins(fast, "^speedrunner^Alliance^Ilsa Marrow-Emberfall"); DataChanged(w, fast); w:Run(3)
+	eq(fast.ns.ArenaProfile.Pick().frame, "rank", "held no more")
+	Pins(fast, "^speedrunner^Alliance^" .. fast.name); DataChanged(w, fast); w:Run(3)
+	eq(fast.ns.ArenaProfile.Pick().frame, "level-race-60", "his again")
+	Kept(w, fast)
+	Pins(fast, "^speedrunner^Alliance^" .. fast.name); DataChanged(w, fast)
+	w:Run(fast.ns.HonorsNet.REFRESH_DELAY + 1)
+	w:As(fast, fast.ns.HonorsNet.Refresh)
+	eq(Count(fast, "level-race-60"), 1, "never twice")
+	eq(Count(fast, APOLOGY), 1)
+	-- Told of the bronze comet alone, named later: the gold comet's letter comes once (the race's mark of
+	-- it untold), never a second one under the Speedrunner's mark.
+	Pins(bronze, "^speedrunner^Alliance^" .. bronze.name)
+	DataChanged(w, bronze)
+	w:Run(3)
+	eq(bronze.ns.ArenaProfile.Pick().frame, "level-race-60", "switched on")
+	eq(Count(bronze, "level-race-60"), 1, "one letter")
+	w:As(bronze, bronze.ns.HonorsNet.Refresh)
+	eq(Count(bronze, "level-race-60"), 1, "still one")
+	-- Told of the gold comet and remembering it, not wearing it when the apology went out (no pick of his
+	-- stood in for, to come back): named later, it switches on as the new honour it is under its own mark.
+	eq(plain.ns.ArenaProfile.Pick().frame, "rank")
+	Pins(plain, "^speedrunner^Alliance^" .. plain.name)
+	DataChanged(w, plain)
+	w:Run(3)
+	eq(plain.ns.ArenaProfile.Pick().frame, "level-race-60", "switched on, told anew")
+	eq(plain.ns.ArenaProfile.Pick().title, "level-race-60")
+	eq(Count(plain, "level-race-60"), 1, "his letter")
+	W3.NoErrors(w)
 end)

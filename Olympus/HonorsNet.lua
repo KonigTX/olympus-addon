@@ -1727,8 +1727,9 @@ function H.Refresh()
 	refreshing = true
 	local P = ns.ArenaProfile
 	local ok, err = pcall(function()
-		-- (1.5.5) The level race's apology, worked out before this look stands his comet in.
-		local sorry = H.ApologyDue()
+		-- (1.5.5) The level race's apology, worked out before this look stands his comet in; and the
+		-- Speedrunner named after it went out to him, his gold comet told anew (H.SpeedrunnerAnew).
+		local sorry, anew = H.ApologyDue(), H.SpeedrunnerAnew()
 		local held = H.Holdings(ns.me, P.MyGk())
 		local before = P.Pick()
 		local first = before.seen == nil
@@ -1747,6 +1748,7 @@ function H.Refresh()
 		-- (1.2.4: now, so a closed month's list over is remembered where it ended, not lost: the next
 		-- month's list naming him there switches nothing on, Honors.Update's opts.)
 		local pick, earned, lost = ns.Honors.Update(before, held, known, function(h)
+			if anew and h.key == H.SPEEDRUNNER_KEY then return false end
 			return told[H.LetterMark(h.key, h.period)] == true
 		end, { now = H.Inputs().now })
 		-- (1.2.6) The red cross worn here: the cross he holds is what everyone else sees, whatever
@@ -1769,6 +1771,7 @@ function H.Refresh()
 			if (h.frame or h.title) and not h.noLetter then H.QueueLetter(h.key, h.period) end
 		end
 		if sorry then H.Apologize(true) end
+		if anew then H.SpeedrunnerLetter(held) end
 		if sent or #earned > 0 then
 			gen = gen + 1
 			ns.Fire("HONORS_CHANGED", ns.me)
@@ -1873,17 +1876,32 @@ local function RaceTrace(m)
 	end
 	return false
 end
+-- (1.5.5, the independent check) Whether the signed titles list this client holds, its realm group's
+-- (ns.SignedPins), names an Olympus Speedrunner, either side's. Until one does, nobody here can tell whose
+-- the gold comet is: the apology waits (H.ApologyDue), so the Speedrunner's first look under 1.5.5, run
+-- before his list reached him (titles lists travel over the guild and the channel alone), never sends it
+-- to him nor lets his race letters go. The release carries the list (Workshop.TakeShipped): normally at
+-- once.
+function H.SpeedrunnerNamed()
+	local p = type(ns.SignedPins) == "function" and ns.SignedPins() or nil
+	local s = type(p) == "table" and p.speedrunner or nil
+	return type(s) == "table" and (s.Alliance ~= nil or s.Horde ~= nil)
+end
+-- This character is the Speedrunner the list held names (ns.IsSpeedrunnerName).
+local function Speedrunner() return type(ns.IsSpeedrunnerName) == "function" and ns.IsSpeedrunnerName(ns.me) == true end
 function H.ApologyDue()
 	local P = ns.ArenaProfile
 	if not ns.db or type(P) ~= "table" or P.missing or type(P.Mine) ~= "function" then return false end
 	if H.Lettered()[H.APOLOGY_KEY] then return false end
-	if type(ns.IsSpeedrunnerName) == "function" and ns.IsSpeedrunnerName(ns.me) == true then return false end
+	if not H.SpeedrunnerNamed() or Speedrunner() then return false end
 	return RaceTrace(P.Mine())
 end
--- due: H.ApologyDue's answer from before a look stood his comet in (H.Refresh), else asked now.
+-- due: H.ApologyDue's answer from before a look stood his comet in (H.Refresh), else asked now. Never to the
+-- Speedrunner the list held names, nor before a list names one: his race letters are his.
 function H.Apologize(due)
 	if due == nil then due = H.ApologyDue() end
 	if not due or H.Lettered()[H.APOLOGY_KEY] then return false end
+	if not H.SpeedrunnerNamed() or Speedrunner() then return false end
 	local m = ns.ArenaProfile.Mine(true)
 	if type(m.letters) == "table" then
 		for i = #m.letters, 1, -1 do
@@ -1892,6 +1910,38 @@ function H.Apologize(due)
 		end
 	end
 	H.QueueLetter(H.APOLOGY_KEY)
+	return true
+end
+-- (1.5.5, the independent check) The Speedrunner named after the apology went out to this character (a
+-- newer list names him: the one held then named another): the apology let his race letters go, and the
+-- race's own mark of the gold comet (lettered["level-race-60"]) may say he was told of it long ago, so its
+-- letter would never come. The gold comet is told anew under a mark of its own: it switches on as a new
+-- honour does (H.Refresh), and the Speedrunner's letter comes once (H.SpeedrunnerLetter).
+H.SPEEDRUNNER_KEY = "level-race-60"
+H.SPEEDRUNNER_MARK = "speedrunner@level-race-60"
+function H.SpeedrunnerAnew()
+	if not ns.db or not Speedrunner() then return false end
+	local told = H.Lettered()
+	return told[H.APOLOGY_KEY] == true and not told[H.SPEEDRUNNER_MARK]
+end
+-- held: the look's (H.Refresh). His letter of the gold comet under its own mark; one listed already (queued
+-- since the apology let the race's go: the race's mark was untold) is that letter, and is only marked.
+function H.SpeedrunnerLetter(held)
+	if not H.SpeedrunnerAnew() then return false end
+	local gold = false
+	for _, h in ipairs(type(held) == "table" and held or {}) do
+		if type(h) == "table" and h.key == H.SPEEDRUNNER_KEY then gold = true break end
+	end
+	if not gold then return false end
+	for _, x in ipairs(H.Letters()) do
+		if type(x) == "table" and x.key == H.SPEEDRUNNER_KEY then
+			local m = ns.ArenaProfile.Mine(true)
+			m.lettered = H.Lettered()
+			m.lettered[H.SPEEDRUNNER_MARK] = true
+			return false
+		end
+	end
+	H.QueueLetter(H.SPEEDRUNNER_KEY, nil, nil, H.SPEEDRUNNER_MARK)
 	return true
 end
 
@@ -1907,11 +1957,12 @@ end
 -- queues nothing), and marks an earlier build left are let go. now: its caller found nothing in
 -- the way and, with the gamepad UI, the Olympus window open: it shows now, as the window's own
 -- opening shows a letter waiting, H.WindowShown.)
-function H.QueueLetter(key, period, now)
+-- (1.5.5: as, the mark it is told under where not its own: the Speedrunner's, H.SpeedrunnerLetter.)
+function H.QueueLetter(key, period, now, as)
 	if type(key) ~= "string" then return end
 	local told = H.Lettered()
 	local slayer = H.LetterFamily(key) == "wanted"
-	local mark = H.LetterMark(key, period)
+	local mark = type(as) == "string" and as or H.LetterMark(key, period)
 	if not slayer and told[mark] then return end
 	local P = ns.ArenaProfile
 	local m = P.Mine(true)
@@ -2604,19 +2655,20 @@ ns.On("LOGIN", function()
 	-- (1.5.5: also the Olympus Speedrunner's, his gold comet held by the signed list alone, and a
 	-- character the level race's apology is due to, with no arena data saved.)
 	H.speedrunner = type(ns.IsSpeedrunnerName) == "function" and ns.IsSpeedrunnerName(ns.me) == true
-	if H.Store() or (titles and next(titles)) or H.speedrunner or H.ApologyDue() then
+	H.sorryDue = H.ApologyDue()
+	if H.Store() or (titles and next(titles)) or H.speedrunner or H.sorryDue then
 		ns.After(H.REFRESH_DELAY, "arena honours refresh", function() H.Refresh() end)
 	end
 end)
 -- (1.5.5) A signed list that names us the Olympus Speedrunner, or no longer does (DATA_CHANGED: a newer
--- titles list taken): our honours looked at again.
+-- titles list taken): our honours looked at again. (The independent check: so too once the apology falls
+-- due, a list naming the Speedrunner taken after our login: H.ApologyDue waits for one.)
 ns.On("DATA_CHANGED", function()
 	if not ns.db or type(ns.IsSpeedrunnerName) ~= "function" then return end
-	local now = ns.IsSpeedrunnerName(ns.me) == true
-	if now ~= (H.speedrunner == true) then
-		H.speedrunner = now
-		H.RefreshSoon()
-	end
+	local now, sorry = ns.IsSpeedrunnerName(ns.me) == true, H.ApologyDue()
+	local look = now ~= (H.speedrunner == true) or (sorry and not H.sorryDue)
+	H.speedrunner, H.sorryDue = now, sorry
+	if look then H.RefreshSoon() end
 end)
 -- Our honours looked at again a moment after a change that may be ours (the realm's words, the
 -- belts, our own), once for a burst.

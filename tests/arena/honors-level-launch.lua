@@ -98,15 +98,14 @@ test("1.2.4 pre-launch level race (1.4.0: a realm the launch list does not name)
 	w:Fire(c, "PLAYER_LEVEL_UP", 20)
 	w:Run(3700)
 	eq(s.levels[60][1], place); eq(s.claims.old, claim); eq(s.vouchRule, 1)
-	-- (1.5.5, the owner's call: he wore the race's gold title, so the race's apology is his one letter,
-	-- once; no award letter.)
-	local function OnlyApology()
-		for _, list in ipairs({ net.QueuedLetters(), net.Letters() }) do
-			for _, x in ipairs(list) do eq(x.key, "apology@level-race", "no award letter") end
-		end
-		eq(#net.Letters(), 1, "the apology, once")
+	-- (1.5.5, the owner's call: he wore the race's gold title, so the race's apology would be his one
+	-- letter; with the independent check it waits for a signed list naming the Olympus Speedrunner, and
+	-- this client holds none (H.ApologyDue; the apology's own tests: tests/arena/honors-speedrunner.lua).
+	-- So no letter at all, as before 1.5.5.)
+	local function NoLetter()
+		eq(#net.QueuedLetters(), 0, "no award letter"); eq(#net.Letters(), 0, "no apology before a list naming the Speedrunner")
 	end
-	eq(next(s.struck or {}), nil); OnlyApology()
+	eq(next(s.struck or {}), nil); NoLetter()
 	eq(#w:Sent{ from = c, type = "IL" }, 0)
 	w:Logout(c); w:Login(c)
 	net = Net(w, c)
@@ -118,7 +117,7 @@ test("1.2.4 pre-launch level race (1.4.0: a realm the launch list does not name)
 	eq(net.Levels(), kept.levels, "raw history remains readable")
 	NoLevel(net.Holdings(c.name, c.guid)); eq(net.Verified(c.name, c.guid).title, nil)
 	eq(net.LevelRaceActive(), false); eq(w:Events(c, true).PLAYER_LEVEL_UP, nil)
-	OnlyApology()
+	NoLetter()
 	W3.NoErrors(w)
 end)
 
