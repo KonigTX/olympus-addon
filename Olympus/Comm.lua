@@ -502,6 +502,17 @@ end
 --   client whose version is no release, over GUILD and on the channel; the record the right-click
 --   menu and /oly builds show, and the lock on such a client's words).
 local handlers = {}
+local dispatchSender, injectedSender
+local function Dispatch(handler, dist, sender, text)
+	local previous = dispatchSender
+	local kind = text:sub(1, 2)
+	-- Only a relay envelope can lend its admission to its own origin while unwrapped.
+	dispatchSender = ((dist == "WHISPER" and (kind == "RL" or kind == "RM" or kind == "RX" or kind == "RW"))
+		or (dist == "GUILD" and kind == "RG")) and sender or nil
+	local ok, err = pcall(handler, dist, sender, text)
+	dispatchSender = previous
+	if not ok then error(err, 0) end
+end
 -- 1.1 (Moderation.lua): a client the moderators took off (net-off) sends none of what they hide.
 local function Held(msg)
 	local M = ns.Moderation
@@ -2127,6 +2138,8 @@ end
 function Comm.ResetOutsider() outsiderAsm = Codec.NewAssembler() end -- (tests)
 
 local function OnAddonMessage(prefix, text, dist, sender, target, zoneChannelID, localID, channelName)
+	local admittedSender = injectedSender
+	injectedSender = nil -- one Inject invocation only, never a reentrant native packet
 	-- (1.5.5) A value the client keeps secret (a chat lockdown) is never compared or read: the prefix
 	-- first (every addon's messages come here: a secret one can't be told ours, so it is not counted
 	-- in /oly bug), then what ours carries (counted).
@@ -2196,7 +2209,9 @@ local function OnAddonMessage(prefix, text, dist, sender, target, zoneChannelID,
 			return
 		end
 	end
-	if not Comm.Admit(sender, GetTime()) then return end
+	-- A relay's own word was already admitted with its envelope. Unwrapping it on this
+	-- same call stack must not spend a second token; a different forwarded origin still does.
+	if sender ~= admittedSender and not Comm.Admit(sender, GetTime()) then return end
 	stats.recv = stats.recv + 1
 	-- Olympus Link (0.9.10; 1.4.0 its own addon, Olympus_Link): a High Councillor's addon waiting to
 	-- hear the author (Link.HeardFrom)
@@ -2275,7 +2290,7 @@ local function OnAddonMessage(prefix, text, dist, sender, target, zoneChannelID,
 	end
 	local handler = handlers[text:sub(1, 2)]
 	if handler and text:sub(3, 3) == "~" then
-		handler(dist, sender, text)
+		Dispatch(handler, dist, sender, text)
 		return
 	end
 	-- A piece, while the High Council's lists wait to answer an ask (1.0.0, Workshop.lua: an answer
@@ -2291,7 +2306,7 @@ local function OnAddonMessage(prefix, text, dist, sender, target, zoneChannelID,
 		-- Only those are put together; versions before 1.0.0 put nothing together from GUILD.
 		local full = Codec.Feed(guildAsm, sender, text, now)
 		local whole = full and full:sub(1, 2)
-		if whole and GUILD_PIECES[whole] and full:sub(3, 3) == "~" and handlers[whole] then handlers[whole](dist, sender, full) end
+		if whole and GUILD_PIECES[whole] and full:sub(3, 3) == "~" and handlers[whole] then Dispatch(handlers[whole], dist, sender, full) end
 		return
 	end
 	if dist == "WHISPER" then
@@ -2299,7 +2314,7 @@ local function OnAddonMessage(prefix, text, dist, sender, target, zoneChannelID,
 		-- Authority.lua still checks the route, signature, complete-set digest and replay boundary.
 		local full = Codec.Feed(whisperAsm, sender, text, now)
 		local kind = full and full:sub(1, 2)
-		if kind and WHISPER_PIECES[kind] and full:sub(3, 3) == "~" and handlers[kind] then handlers[kind](dist, sender, full) end
+		if kind and WHISPER_PIECES[kind] and full:sub(3, 3) == "~" and handlers[kind] then Dispatch(handlers[kind], dist, sender, full) end
 		return
 	end
 	if dist == "CHANNEL" then
@@ -2313,7 +2328,7 @@ local function OnAddonMessage(prefix, text, dist, sender, target, zoneChannelID,
 			-- in pieces (Comm.SendChat, Comm.Send), so such a decree shows without its words and
 			-- such a line is dropped (Decree.lua, Channels.lua).
 			deliveredLogged = false
-			fullHandler(dist, sender, full)
+			Dispatch(fullHandler, dist, sender, full)
 			return
 		end
 		-- (1.2.3) Its sender's last report again but for its time: that report's row, not decoded.
@@ -2381,10 +2396,11 @@ ns.On("LOGIN", function()
 	-- 1.4.3: a message the relay carried, taken as if it had come on the channel from its origin
 	-- (Relay.lua); logged as its origin sent it.
 	function Comm.Inject(dist, sender, text, logged)
-		local was = deliveredLogged
+		local was, previous = deliveredLogged, injectedSender
 		deliveredLogged = logged == true
+		injectedSender = dispatchSender
 		local ok, err = pcall(OnAddonMessage, ns.PREFIX, text, dist, sender)
-		deliveredLogged = was
+		deliveredLogged, injectedSender = was, previous
 		if not ok and ns.CaptureError then pcall(ns.CaptureError, "relay inject", err) end
 		return ok
 	end
