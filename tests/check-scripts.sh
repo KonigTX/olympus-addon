@@ -471,6 +471,81 @@ LUA
 	git -C "$pkg" commit -qam "the leave-out list back"
 	printf 'ok: package.sh --release116: the 1.1.6 package without the files only the bets need, its TOCs naming only files it has\n'
 
+	# 1.5.5: the author's signed lists in the package (OLY_SIGNED_LISTS, written by scripts/ship-lists.lua). This
+	# copy's Sign.lua carries the Church tests' throwaway key, so the lists it signed (tests/fixtures/church-council.lua,
+	# every name invented, the Twelve Apostles among them) stand for the author's.
+	cp "$repo_root/scripts/ship-lists.lua" "$pkg/scripts/"
+	luajit - "$repo_root/tests/fixtures/church-council.lua" "$pkg/Olympus/Sign.lua" "$pkg/lists-source.txt" <<'LUA' || package_fail 'the test key in the copy'
+local K = dofile(arg[1])
+local f = assert(io.open(arg[2], "rb"))
+local s = f:read("*a")
+f:close()
+local n
+s, n = s:gsub('\nSign%.N = FromHex%("%x+"%)\nSign%.MU = FromHex%("%x+"%)\nSign%.K = %d+\n',
+	('\nSign.N = FromHex("%s")\nSign.MU = FromHex("%s")\nSign.K = %d\n'):format(K.N, K.MU, K.K), 1)
+assert(n == 1, "the key's three lines in Sign.lua")
+f = assert(io.open(arg[2], "wb"))
+f:write(s)
+f:close()
+f = assert(io.open(arg[3], "wb"))
+f:write(K.names, "\n", K.titles1, "\n", K.titles2, "\n")
+f:close()
+LUA
+	git -C "$pkg" add scripts/ship-lists.lua Olympus/Sign.lua
+	git -C "$pkg" commit -qm "the Church tests' key, for the signed lists"
+	mkdir -p "$pkg/lists"
+	lists="$pkg/lists/SignedLists.lua"
+	(cd "$pkg" && luajit scripts/ship-lists.lua lists-source.txt "$lists" > lists.txt 2>&1) || { cat "$pkg/lists.txt" >&2; package_fail 'ship-lists.lua refused the signed fixture lists'; }
+	grep -Fq 'titles 1791178761 (Apostles: Alliance 12)' "$pkg/lists.txt" || package_fail 'ship-lists.lua kept the newest titles, with the twelve Apostles'
+	if grep -Eq 'Aldric|Bera|Corin|Tallow' "$pkg/lists.txt"; then package_fail 'ship-lists.lua printed a name'; fi
+	if (cd "$pkg" && luajit scripts/ship-lists.lua lists-source.txt Olympus/SignedLists.lua > out.txt 2>&1); then package_fail 'ship-lists.lua wrote into the addon folder'; fi
+	[ ! -e "$pkg/Olympus/SignedLists.lua" ] || package_fail 'ship-lists.lua left a file in the addon folder'
+	# Without the lists: the release as before, no file and no TOC line for it.
+	unzip -Z1 "$release" > "$pkg/list.txt"
+	unzip -p "$release" Olympus/Olympus.toc | tr -d '\r' > "$pkg/toc.txt"
+	grep -qxF 'Olympus/SignedLists.lua' "$pkg/list.txt" && package_fail 'a release without OLY_SIGNED_LISTS carries the lists'
+	grep -qxF 'SignedLists.lua' "$pkg/toc.txt" && package_fail 'a release without OLY_SIGNED_LISTS names them'
+	# With them: the file byte for byte, named right after Core.lua; the repository untouched.
+	rm -f "$release"
+	(cd "$pkg" && OLY_SIGNED_LISTS="$lists" OLY_REQUIRE_LISTS=1 bash scripts/package.sh > out.txt 2> err.txt) || { cat "$pkg/err.txt" >&2; package_fail 'the release with the lists did not build'; }
+	[ "$(cat "$pkg/out.txt")" = "dist/Olympus-$version.zip" ] || package_fail 'the zip path alone on stdout'
+	package_manifest_matches "$release"
+	package_checksum_matches "$release"
+	package_has_no_wager_modules "$release"
+	grep -qxF 'Olympus/SignedLists.lua' "${release%.zip}.files.txt" || package_fail 'the manifest lacks Olympus/SignedLists.lua'
+	unzip -p "$release" Olympus/SignedLists.lua | cmp -s - "$lists" || package_fail 'the lists in the zip are not the file given'
+	unzip -p "$release" Olympus/Olympus.toc | tr -d '\r' | awk 'prev == "Core.lua" && $0 == "SignedLists.lua" { found = 1 } { prev = $0 } END { exit !found }' ||
+		package_fail 'SignedLists.lua right after Core.lua in the zip'"'"'s TOC'
+	cmp -s "$repo_root/Olympus/Olympus.toc" "$pkg/Olympus/Olympus.toc" || package_fail 'the lists changed the repository copy'"'"'s TOC'
+	[ ! -e "$pkg/Olympus/SignedLists.lua" ] || package_fail 'the lists were written into the repository'
+	[ -z "$(git -C "$pkg" status --porcelain -- Olympus)" ] || package_fail 'the lists left a change in the addon folder'
+	# A relative path is the caller's.
+	(cd "$pkg/lists" && OLY_SIGNED_LISTS=SignedLists.lua bash ../scripts/package.sh > ../out.txt 2>&1) || { cat "$pkg/out.txt" >&2; package_fail 'a relative OLY_SIGNED_LISTS'; }
+	# A test build carries them too, beside TestBuild.lua.
+	(cd "$pkg" && OLY_SIGNED_LISTS="$lists" bash scripts/package.sh --test 5 > out.txt 2> err.txt) || { cat "$pkg/err.txt" >&2; package_fail 'the test build with the lists did not build'; }
+	unzip -p "$pkg/dist/Olympus-$version-test5.zip" Olympus/Olympus.toc | tr -d '\r' > "$pkg/toc.txt"
+	grep -qxF 'TestBuild.lua' "$pkg/toc.txt" && grep -qxF 'SignedLists.lua' "$pkg/toc.txt" || package_fail 'the test build names TestBuild.lua and SignedLists.lua'
+	unzip -p "$pkg/dist/Olympus-$version-test5.zip" Olympus/SignedLists.lua | cmp -s - "$lists" || package_fail 'the lists in the test build'
+	# Refused, nothing packaged: required but not given, a file that is not there, a changed byte, the author's key.
+	rm -f "$release"
+	if (cd "$pkg" && OLY_REQUIRE_LISTS=1 bash scripts/package.sh > out.txt 2>&1); then package_fail 'OLY_REQUIRE_LISTS=1 without the lists built'; fi
+	grep -Fq 'OLY_REQUIRE_LISTS=1: no OLY_SIGNED_LISTS file given' "$pkg/out.txt" || package_fail 'the missing-lists refusal says why'
+	if (cd "$pkg" && OLY_SIGNED_LISTS="$pkg/lists/None.lua" bash scripts/package.sh > out.txt 2>&1); then package_fail 'a lists file that is not there built'; fi
+	grep -Fq 'is not a file' "$pkg/out.txt" || package_fail 'the absent-file refusal says why'
+	sed 's/Bera Stone/Bera Stane/' "$lists" > "$pkg/lists/Changed.lua"
+	if (cd "$pkg" && OLY_SIGNED_LISTS="$pkg/lists/Changed.lua" bash scripts/package.sh > out.txt 2>&1); then package_fail 'a changed list built'; fi
+	grep -Fq 'fails its signature' "$pkg/out.txt" && grep -Fq 'failed its check, nothing packaged' "$pkg/out.txt" || package_fail 'the changed-list refusal says why'
+	{ cat "$lists"; printf 'ns.COUNCIL_SIGNED = "x"\n'; } > "$pkg/lists/More.lua"
+	if (cd "$pkg" && OLY_SIGNED_LISTS="$pkg/lists/More.lua" bash scripts/package.sh > out.txt 2>&1); then package_fail 'a lists file that sets more built'; fi
+	grep -Fq 'not only ns.SHIPPED_LISTS' "$pkg/out.txt" || package_fail 'the more-than-lists refusal says why'
+	[ ! -e "$release" ] || package_fail 'a refused package left a zip'
+	cp "$repo_root/Olympus/Sign.lua" "$pkg/Olympus/Sign.lua"
+	git -C "$pkg" commit -qam "the author's key back"
+	if (cd "$pkg" && OLY_SIGNED_LISTS="$lists" bash scripts/package.sh > out.txt 2>&1); then package_fail 'the test key'"'"'s lists built with the author'"'"'s key'; fi
+	grep -Fq 'fails its signature with the key in' "$pkg/out.txt" || package_fail 'the wrong-key refusal says why'
+	rm -rf "$pkg/lists" "$pkg/lists-source.txt" "$pkg/lists.txt"
+	printf 'ok: package.sh OLY_SIGNED_LISTS: the signed lists in the release and a test build after Core.lua, checked with the key that ships; none, required, absent, changed, more or another key refused\n'
+
 	printf 'return {}\n' > "$pkg/Olympus/UntrackedWouldShip.lua"
 	if (cd "$pkg" && bash scripts/package.sh > out.txt 2>&1); then package_fail 'an untracked addon file silently shipped'; fi
 	grep -Fq 'refuses untracked or ignored addon file: Olympus/UntrackedWouldShip.lua' "$pkg/out.txt" || package_fail 'the untracked-file refusal says why'

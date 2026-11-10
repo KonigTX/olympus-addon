@@ -3552,6 +3552,8 @@ python3 scripts/council-sign.py check     # the author: read dist/CouncilList.lu
 scripts/package.sh                        # dist/Olympus-<version>.zip (Olympus, Arena and SiteAggregate)
 scripts/package.sh --test N               # test build N with all three folders and rollback steps
 scripts/package.sh --release116           # 1.1.6: the release without scripts/bets-only.txt's files, in dist/release116/
+luajit scripts/ship-lists.lua [--group G] <CouncilList.lua> dist/SignedLists.lua  # 1.5.5: the signed lists for a zip (signs nothing)
+OLY_SIGNED_LISTS=dist/SignedLists.lua scripts/package.sh  # 1.5.5: a package carrying them (OLY_REQUIRE_LISTS=1: refused without)
 WOW_HOST=user@pc scripts/deploy.sh        # copy all bundled addon folders to a Windows PC over SSH
 OLY_TREE=dist/test1 WOW_HOST=user@pc scripts/deploy.sh  # deploy a test build's three folders instead
 WOW_HOST=user@pc scripts/logs.sh          # read the log and captured errors from that PC
@@ -3652,6 +3654,23 @@ command signs the whole council again and prints the titles list to paste; the a
 `dist/CouncilList.lua` into his game and `/reload`s, and anyone in Olympus can paste the printed
 `HT1~` text with `/oly approved paste`. `/oly status` says where each identity comes from
 (`identities: King signed ...`), never a name.
+
+Since 1.5.5 a release carries the signed lists too, so a list reaches every client that updates
+(the Twelve Apostles came in one titles list that only a paste and the relays carried, and it
+reached almost nobody). `scripts/ship-lists.lua` copies lists already signed (it signs nothing)
+from a `CouncilList.lua` or from the printed `HS1~`/`HT1~` text into a file under `dist/`, the
+newest names and titles of each realm group (`--group` keeps the groups named), each one checked
+with the key in `Olympus/Sign.lua`; it prints realm groups, times and counts, never a name.
+`scripts/package.sh` puts that file in the zip alone (`OLY_SIGNED_LISTS`), checked again with the
+key the package carries, as `Olympus/SignedLists.lua` named in the zip's `Olympus.toc` after
+`Core.lua`; `OLY_REQUIRE_LISTS=1` refuses a package without it. The repository never holds the file
+or names it (it names players), and every client takes the lists at login with the checks of any
+list (`Workshop.TakeShipped`): a newer list relayed or pasted since still wins.
+
+```bash
+luajit scripts/ship-lists.lua --group "<realm group>" <CouncilList.lua> dist/SignedLists.lua
+OLY_SIGNED_LISTS=dist/SignedLists.lua OLY_REQUIRE_LISTS=1 scripts/package.sh
+```
 
 `<Name-Realm>` is his character as the server writes it (first name and surname, then his
 realm), on a realm of the list's group. The script refuses anything the addon would not take,
