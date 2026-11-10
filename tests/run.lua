@@ -7005,6 +7005,8 @@ assert(loadfile(ROOT .. "tests/census-author.lua"))(ns, test, eq, { RelayWorld =
 assert(loadfile(ROOT .. "tests/relay-presentation.lua"))(ns, test, eq, { RelayWorld = RelayWorld })
 -- 1.5.4: the presentation, the relay's admission and the relay rules (tests/relay-admit.lua).
 assert(loadfile(ROOT .. "tests/relay-admit.lua"))(ns, test, eq, { RelayWorld = RelayWorld, FreshComm = FreshComm, ROOT = ROOT })
+-- 1.5.5: the provisional relays and Forever's no-channel rule (tests/relay-fallback.lua).
+assert(loadfile(ROOT .. "tests/relay-fallback.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
 assert(loadfile(ROOT .. "tests/roster-subrealm.lua"))(ns, test, eq)
 -- 1.5.5: every chat line reaches every member once (tests/chat-delivery.lua).
 assert(loadfile(ROOT .. "tests/chat-delivery.lua"))(ns, test, eq, { RelayWorld = RelayWorld })
@@ -7100,7 +7102,7 @@ test("1.4.3 the relay: where names split, a channel message goes to the picked s
 	if not ok then error(err, 0) end
 end)
 
-test("1.4.3 the relay: a relay that is offline (the server's word) or never answers the ping is left out and the next one picked; none left: the channel as before; a reporter registers with its relay every REGISTER_EVERY; off Forever nothing runs", function()
+test("1.4.3 the relay: a relay that is offline (the server's word) or never answers the ping is left out and the next one picked; none left: (1.5.5) held for one, our guild has it at once, never the channel; a reporter registers with its relay every REGISTER_EVERY; off Forever nothing runs", function()
 	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild, nf = ERR_CHAT_PLAYER_NOT_FOUND_S }
 	local ok, err = pcall(function()
 		GetChannelName = function() return 5 end
@@ -7132,23 +7134,28 @@ test("1.4.3 the relay: a relay that is offline (the server's word) or never answ
 		timers[1]() -- (Hildryn's ping, the first by name, unanswered)
 		eq(O.Relay.Pick(), "Max Ran", "the one that never answered is left out")
 		eq(O.Relay.Stats().dead, 1)
-		timers[3]() -- PING_WAIT past with no answer: to the pick anyway, as 1.4.3 did
+		-- PING_WAIT past with no answer: (1.5.5) still held for an answer (1.4.3 to 1.5.4 sent it to the
+		-- pick anyway, lost when that relay was offline); the first answer takes it.
+		timers[3]()
+		opump()
+		eq(#osentOf("RL~P~X1~b"), 0, "(1.5.5) held")
+		odeliver("WHISPER", "Max Ran-Realm", "RY~")
 		opump()
 		eq(osentOf("RL~P~X1~b")[1].target, "Max Ran")
-		odeliver("WHISPER", "Max Ran-Realm", "RY~")
 		eq(select(2, O.Relay.Pick()), true, "answered: sure")
-		-- Both out: the channel as before.
+		-- Both out: (1.5.5) never the channel, which delivers nothing on Forever (1.4.3 to 1.5.4 sent it
+		-- there): our guild has the word at once, as a relay hands it on (RG from ourselves), and it
+		-- waits for a relay (Relay.HOLD_FOR; tests/relay-fallback.lua).
 		O.Relay.NotFound(("No player named '%s' is currently playing."):format(O.Relay.Pick()))
 		eq(O.Relay.Pick(), nil)
 		eq(O.Comm.ChannelReady(), true, "the channel joined")
 		wipe(osent)
 		eq(O.Comm.Send("CHANNEL", "X1~c"), true)
 		opump()
-		-- (1.5.4) Our presentation to Max Ran, queued when it answered, leaves in this pump too: the
-		-- word itself goes on the channel, and no relay carries it.
-		local onChannel = osentOf("X1~c")
-		eq(#onChannel, 1); eq(onChannel[1].dist, "CHANNEL"); eq(onChannel[1].msg, "X1~c")
-		eq(#osentOf("RL~P~X1~c"), 0)
+		eq(#osentOf("X1~c"), 0, "nothing on the channel")
+		local rg = osentOf("RG~P~Orig Inal~X1~c")
+		eq(#rg, 1, "our guild's copy"); eq(rg[1].dist, "GUILD")
+		eq(#osentOf("RL~P~X1~c"), 0); eq(O.Relay.Stats().pending, 1, "held for a relay")
 		-- The reporter registers with its relay (MaybeBroadcast calls it) every REGISTER_EVERY.
 		O.Relay.Reset()
 		wipe(osent)
@@ -7175,7 +7182,7 @@ test("1.4.3 the relay: a relay that is offline (the server's word) or never answ
 	if not ok then error(err, 0) end
 end)
 
-test("1.4.4 the relay: the first message with no relay answered pings every relay at once and waits, each ping's no-player line kept out of the chat; the first answer takes what waits, to that relay; a keyed message held takes the waiting one's place; past PENDING_MAX the oldest is dropped, its callback told; past PING_WAIT with no answer it goes to the pick anyway; an answered relay is preferred until VERIFIED_FOR; a reporter's hop 2 is quieted too; Reset clears what waits", function()
+test("1.4.4 the relay: the first message with no relay answered pings every relay at once and waits, each ping's no-player line kept out of the chat; the first answer takes what waits, to that relay; a keyed message held takes the waiting one's place; past PENDING_MAX the oldest is dropped, its callback told; past PING_WAIT with no answer it (1.5.5) waits for an answer; an answered relay is preferred until VERIFIED_FOR; a reporter's hop 2 is quieted too; Reset clears what waits", function()
 	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild }
 	local ok, err = pcall(function()
 		GetChannelName = function() return 0 end
@@ -7231,7 +7238,8 @@ test("1.4.4 the relay: the first message with no relay answered pings every rela
 		timers[3](); opump()
 		eq(#osentOf("RL~P~X1~"), 3)
 		-- VERIFIED_FOR past (and DEAD_FOR, so Hildryn is tried again): not sure, the next message held
-		-- and both pinged again; PING_WAIT past with no answer: to the pick anyway, as 1.4.3 did.
+		-- and both pinged again; PING_WAIT past with no answer: (1.5.5) still held (1.4.3 to 1.5.4 sent it
+		-- to the pick anyway, lost when that relay was offline); the first answer takes it.
 		O.clock = O.clock + O.Relay.VERIFIED_FOR
 		eq(O.Relay.Stats().sure, false)
 		wipe(osent); wipe(timers)
@@ -7240,8 +7248,11 @@ test("1.4.4 the relay: the first message with no relay answered pings every rela
 		eq(#osentOf("RL~P~RP~"), 2, "both pinged again"); eq(#osentOf("RL~P~X1~"), 0, "held"); eq(#timers, 3)
 		local pick = O.Relay.Pick()
 		timers[3](); opump()
+		eq(#osentOf("RL~P~X1~five"), 0, "(1.5.5) still held")
+		odeliver("WHISPER", pick .. "-Realm", "RY~"); opump()
 		eq(osentOf("RL~P~X1~five")[1].target, pick)
-		-- Reset clears what waits.
+		-- Reset clears what waits (VERIFIED_FOR past that answer: the next word waits again).
+		O.clock = O.clock + O.Relay.VERIFIED_FOR
 		eq(O.Comm.Send("CHANNEL", "X1~six"), true)
 		eq(O.Relay.Stats().pending, 1)
 		O.Relay.Reset()

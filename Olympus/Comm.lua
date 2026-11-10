@@ -332,12 +332,31 @@ local function NormalizeOptions(options)
 	}
 end
 
+-- (1.5.5) Where the relay carries the channel (Forever), whether a relay answers now or not: there
+-- the channel delivers nothing, so no word goes on it (Enqueue, SendChatPart).
+local function Forever() local R = ns.Relay return type(R) == "table" and R.On() == true end
+-- A callback told once, whoever tells it (Relay.Out holds a word and tells it later).
+local function Once(done)
+	if done == nil then return nil end
+	local told = false
+	return function(...)
+		if told then return end
+		told = true
+		return done(...)
+	end
+end
 local function Enqueue(dist, parts, key, target, urgent, logged, done, options)
 	SyncGuild()
 	-- 1.4.3: on Forever the channel delivers nothing; what was for it goes to our relay by whisper
-	-- (Relay.Out, which comes back here as WHISPER jobs). Without a relay to pick, the channel as before.
-	if dist == "CHANNEL" and RelayOn() and not (options and options.relayed) then
-		if ns.Relay.Out(parts, logged, done, key, urgent, options) then return true end
+	-- (Relay.Out, which comes back here as WHISPER jobs). (1.5.5) Always, relay or none: Relay.Out
+	-- holds it for one (HOLD_FOR), our guild hearing a single word at once, and tells its callback once.
+	-- 1.5.4 made a channel job when no relay could be picked (lost), and when Relay.Out refused a word,
+	-- with the callback it had told already.
+	if dist == "CHANNEL" and Forever() and not (options and options.relayed) then
+		local once = Once(done)
+		if ns.Relay.Out(parts, logged, once, key, urgent, options) then return true end
+		if once then ns.SafeCall("send done", once, false, "norelay") end
+		return false
 	end
 	local job = { dist = dist, parts = parts, i = 1, key = key, target = target,
 		urgent = urgent and true or false, logged = logged == true, done = done,
@@ -1043,12 +1062,15 @@ local function SendChatPart()
 			return
 		end
 	end
-	local sent
-	if RelayOn() then
-		sent = ns.Relay.Out({ item.msg }, true, nil, nil, true) -- (1.4.3: a chat line by the relay, logged at hop 1)
-	else
-		sent = SendNow("CHANNEL", item.msg, true)
+	-- (1.4.3) On Forever a chat line goes by the relay, logged at hop 1. (1.5.5) Never on the channel
+	-- there, relay or none (Relay.Out: our guild has it at once, the line waits for a relay); its
+	-- callback hears how it went once, when it left or was dropped ("norelay" past HOLD_FOR).
+	if Forever() then
+		local once = Once(item.done)
+		if not ns.Relay.Out({ item.msg }, true, once, nil, true) and once then ns.SafeCall("chat sent", once, false, "norelay") end
+		return
 	end
+	local sent = SendNow("CHANNEL", item.msg, true)
 	if item.done then ns.SafeCall("chat sent", item.done, sent, (not sent) and "failed" or nil) end
 end
 
@@ -1134,9 +1156,16 @@ end
 -- dev's relay fell behind, whole reports and the signed lists waited and fell out of the queue;
 -- four parts a pump is 3.3 a second, under the server's limit of ten).
 Comm.PUMP_PARTS_RELAY = 4
+-- (1.5.5) A serving provisional relay (RelayFallback.lua) PUMP_PARTS_PROVISIONAL: 100 whispers a
+-- minute for its registrants' snapshots, half a signed relay's.
+Comm.PUMP_PARTS_PROVISIONAL = 2
 local function Pump()
 	local R = ns.Relay
-	local parts = (type(R) == "table" and R.On() and R.IsRelay(ns.me)) and Comm.PUMP_PARTS_RELAY or 1
+	local parts = 1
+	if type(R) == "table" and R.On() then
+		if R.IsRelay(ns.me) then parts = Comm.PUMP_PARTS_RELAY
+		elseif type(R.ServingProvisional) == "function" and R.ServingProvisional() then parts = Comm.PUMP_PARTS_PROVISIONAL end
+	end
 	for _ = 1, parts do
 		if queueSize == 0 and not chatQueue[1] then return end
 		PumpOnce()
