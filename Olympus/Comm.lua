@@ -1747,6 +1747,14 @@ function Comm.QuietAfter(now)
 	return math.max(QUIET_MIN, math.ceil(QUIET_TOTAL / #Comm.PresenceRealms(now)))
 end
 
+-- (1.5.5) Guild peer -> true when its hello says it takes the relay's tree ("N", its 8th field:
+-- RelayTree.lua loaded). The first such peer is our guild's registrant (MaybeBroadcast).
+local peerTree = {}
+local function TreeLoaded()
+	local T = ns.RelayTree
+	return type(T) == "table" and not T.missing
+end
+
 -- force: now, whatever the above (the player changed what the hello says).
 function Comm.Hello(force)
 	SyncGuild()
@@ -1754,11 +1762,18 @@ function Comm.Hello(force)
 	-- Quiet presence (Core.lua): no hello at all, forced or not; our guildmates' clients age us out
 	-- (COUNT_WINDOW) as after a logout, and we are never elected.
 	if Quiet() then return end
-	local now, before = ns.Now(), 0
+	local now, before, beforeTree = ns.Now(), 0, 0
 	for name, t in pairs(Comm.Electable(now)) do
-		if now - t <= PEER_WINDOW and name < (ns.me or "") then before = before + 1 end
+		if now - t <= PEER_WINDOW and name < (ns.me or "") then
+			before = before + 1
+			if peerTree[name] then beforeTree = beforeTree + 1 end
+		end
 	end
-	if not force and before >= Comm.QuietAfter(now) and now - lastHello < 600 then return end
+	-- (1.5.5) A client that takes the relay's tree talks on while fewer guildmates with N than that sort
+	-- before it: it may be our registrant (MaybeBroadcast), and a quiet one is past PEER_WINDOW there.
+	local quietAfter = Comm.QuietAfter(now)
+	local talk = before < quietAfter or (TreeLoaded() and beforeTree < quietAfter)
+	if not force and not talk and now - lastHello < 600 then return end
 	lastHello = now
 	-- Our realm rides along: guildmates on another realm show in /oly status (topology). So does
 	-- our channel: without the key we can't hear a reporter on the sealed one (MaybeBroadcast).
@@ -1767,8 +1782,10 @@ function Comm.Hello(force)
 	local sealed = ns.rdb and ns.rdb.realmKey and "s" or "p"
 	-- The fields after it: "z" (our zone shared), "b" (an arena bank on duty), and (1.4.1) "L<n>",
 	-- our channel lane when it is not the first. Empty ones at the end are left out, as before.
+	-- (1.5.5) "N" after "R": this client takes the relay's tree (RelayTree.lua; a 1.5.5 client updated
+	-- without restarting the game has its stand-in, and says nothing). Older versions never read it.
 	local tail = { ns.Layers and ns.Layers.Sharing and ns.Layers.Sharing() and "z" or "", Comm.BankOnDuty() and "b" or "",
-		Lane() > 0 and ("L" .. Lane()) or "", "R" } -- (1.4.3: "R", this client carries the relay)
+		Lane() > 0 and ("L" .. Lane()) or "", "R", TreeLoaded() and "N" or "" } -- (1.4.3: "R", this client carries the relay)
 	while #tail > 0 and tail[#tail] == "" do tail[#tail] = nil end
 	local extra = #tail > 0 and ("~" .. table.concat(tail, "~")) or ""
 	Enqueue("GUILD", { "H1~" .. ns.VERSION .. "~" .. tostring(ns.realm) .. "~" .. sealed .. extra }, "hello")
@@ -1842,13 +1859,23 @@ local function LastReport(every)
 	return lastBroadcast
 end
 
+-- (1.5.5) Our guild's registrant: the first by name of the peers that may be elected whose hello says N,
+-- ourselves too when we take the tree; nil when none does (then the reporter registers, as before).
+local function Registrant(pool, now)
+	local first = TreeLoaded() and ns.me or nil
+	for name, t in pairs(pool) do
+		if peerTree[name] and now - t <= PEER_WINDOW and (not first or name < first) then first = name end
+	end
+	return first
+end
+
 function Comm.MaybeBroadcast(report)
 	SyncGuild()
 	local now = ns.Now()
 	-- Quiet presence (Core.lua) too: neither the reporter nor its runner-up, so no report and no
 	-- census answer (Q1) of ours says we are online.
 	if Comm.BankOnDuty() or Quiet() then
-		Comm.isReporter, Comm.isRunnerUp, watch = false, false, nil
+		Comm.isReporter, Comm.isRunnerUp, Comm.isRegistrant, watch = false, false, false, nil
 		Comm.lastReport = report
 		return
 	end
@@ -1885,7 +1912,17 @@ function Comm.MaybeBroadcast(report)
 	Comm.isReporter = best == ns.me
 	Comm.reporterName = ns.DisplayName(best)
 	Comm.lastReport = report
-	if Comm.isReporter and ns.Relay and ns.Relay.On() then ns.SafeCall("relay register", ns.Relay.Register) end
+	-- (1.5.5) Only the registrant registers our guild with its relay (Relay.Register), and tells it we
+	-- take the tree (RelayTree.Announce): a reporter without N leaves both to it while it is known. An
+	-- older reporter still registers (its own code); a relay keeps the registration that takes the tree.
+	local registrant = Registrant(pool, now)
+	local relayed = ns.Relay and ns.Relay.On()
+	Comm.isRegistrant = (registrant or best) == ns.me
+	Comm.registrantName = ns.DisplayName(registrant or best)
+	if Comm.isRegistrant and relayed then
+		ns.SafeCall("relay register", ns.Relay.Register)
+		if TreeLoaded() and type(ns.RelayTree.Announce) == "function" then ns.SafeCall("relay tree", ns.RelayTree.Announce) end
+	end
 	-- The runner-up of the election reports too, every WITNESS_EVERY: a report never proves
 	-- its own sender's rank, so other guilds trust a reporter who leads the guild (or is an
 	-- officer) only once a second sender names them (Data.KnownRank).
@@ -1903,7 +1940,11 @@ function Comm.MaybeBroadcast(report)
 	end
 	-- Only while the reporter is heard on our channel: the point is to back an active one.
 	Comm.isRunnerUp = second == ns.me and best ~= nil and now - (heardOwn[ns.ShortName(best)] or -math.huge) <= 2 * BROADCAST_EVERY
-	local every = Comm.isReporter and BROADCAST_EVERY or (Comm.isRunnerUp and WITNESS_EVERY or nil)
+	-- (1.5.5) With no signed relay (Relay.InFallback: the fallback relays, RelayFallback.lua), a reporter
+	-- without N sends our report where nobody hears it: its registrant reports our guild too, as often.
+	local dual = Comm.isRegistrant and not Comm.isReporter and best ~= nil and not peerTree[best] and relayed
+		and type(ns.Relay.InFallback) == "function" and ns.Relay.InFallback() == true
+	local every = (Comm.isReporter or dual) and BROADCAST_EVERY or (Comm.isRunnerUp and WITNESS_EVERY or nil)
 	if not every or now - LastReport(every) < every then return end
 	-- Right after login we don't know our guildmates yet and would wrongly think we are the
 	-- reporter: wait one hello round first.
@@ -2278,6 +2319,7 @@ local function OnAddonMessage(prefix, text, dist, sender, target, zoneChannelID,
 		local lane = tonumber(text:match("^H1~[^~]*~[^~]*~[^~]*~[^~]*~[^~]*~L(%d+)")) or 0
 		peerLane[sender] = lane > 0 and lane or nil
 		peerRelay[sender] = text:match("^H1~[^~]*~[^~]*~[^~]*~[^~]*~[^~]*~[^~]*~R") ~= nil or nil -- (1.4.3)
+		peerTree[sender] = text:match("^H1~[^~]*~[^~]*~[^~]*~[^~]*~[^~]*~[^~]*~[^~]*~N") ~= nil or nil -- (1.5.5)
 		if lane > Lane() then
 			local rank = ns.Roster and ns.Roster.RankOf and ns.Roster.RankOf(sender)
 			if type(rank) == "number" and rank <= (ns.CAPTAIN_RANK or 2) then Comm.TakeLane(lane, sender) end
