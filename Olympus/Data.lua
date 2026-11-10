@@ -1655,6 +1655,9 @@ function Data.BetaOnLaunch(noted, here)
 	if type(noted) ~= "string" or noted == "" then return true end
 	return Data.IsBetaGroup(noted)
 end
+-- A Forever family's ruleset ("ForeverRPPvP": "rppvp"), by its rules word in lower case (1.5.5: the
+-- [Olympus] dropdown's families too, Channels.lua).
+Data.RULES_KIND = { pve = "pve", pvp = "pvp", rp = "rp", rppvp = "rppvp", hardcore = "hardcore", hc = "hardcore" }
 -- The kind ("pvp", "pve", "rp", "rppvp", "hardcore") and region ("NA", "EU") of a group, from the
 -- first of its realms the signed realm table names; nil, nil while none is known.
 function Data.GroupInfo(group)
@@ -1671,7 +1674,7 @@ function Data.GroupInfo(group)
 		if fam then rules = fam:match("^Forever(%a+)$"); group = fam end
 	end
 	if rules then
-		local kind = ({ pve = "pve", pvp = "pvp", rp = "rp", rppvp = "rppvp", hardcore = "hardcore", hc = "hardcore" })[rules:lower()]
+		local kind = Data.RULES_KIND[rules:lower()]
 		local realms = {}
 		for _, r in ipairs(type(ns.GroupRealms) == "function" and ns.GroupRealms(group) or {}) do realms[#realms + 1] = r end
 		local pins = type(ns.SignedPins) == "function" and ns.SignedPins() or nil

@@ -9,6 +9,14 @@ local ADDON, ns = ...
 local code = GetLocale and GetLocale()
 if code ~= "deDE" then return end
 ns.Locale("deDE", {
+	CHATWIN_GROUP_ALL = "Alle",
+	CHATWIN_GROUP_PVP = "PvP",
+	CHATWIN_GROUP_PVE = "PvE",
+	CHATWIN_GROUP_RP = "Rollenspiel",
+	CHATWIN_GROUP_RPPVP = "RP-PvP",
+	CHATWIN_GROUP_TITLE = "Regelwerke",
+	CHATWIN_GROUP_TIP = "Wähle die Regelwerke für den Olympus-Chat. Alle kennzeichnet Nachrichten anderer Regelwerke.",
+	CHATWIN_GROUP_EMPTY = "Keine Nachrichten für dieses Regelwerk.",
 	LETTER_1_5_3_TITLE = "Verifizierungshinweise nur für Gildenleiter",
 	LETTER_1_5_3_HEAD = "Verifizierungshinweise nur für Gildenleiter",
 	LETTER_1_5_3 = "Version 1.5.3.\n\n- Hinweise für Mitglieder nach Fristablauf sind vorübergehend ausgesetzt.\n- Gildenleiter und Hoher Rat erhalten weiterhin Erinnerungen; Fristen und gespeicherte Bestätigungen bleiben bestehen.\n\nAktualisiere Olympus und lade die Oberfläche neu. Alte Versionen zeigen weiterhin die bisherigen Hinweise.",

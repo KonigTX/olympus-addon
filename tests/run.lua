@@ -55349,6 +55349,8 @@ do
 	assert(loadfile(ROOT .. "tests/chat-picker-anchor.lua"))(ns, test, eq, WithWindow, ForeverWorld)
 	assert(loadfile(ROOT .. "tests/chat-role-badges.lua"))(ns, test, eq, WithWindow)
 	assert(loadfile(ROOT .. "tests/chat-guild-labels.lua"))(ns, test, eq, WithWindow)
+	-- (1.5.5: the realm families in [Olympus], the dev's dropdown and tags, tests/chat-groups.lua.)
+	assert(loadfile(ROOT .. "tests/chat-groups.lua"))(ns, test, eq, { WithWindow = WithWindow, ADDON_DIR = ADDON_DIR })
 	assert(loadfile(ROOT .. "tests/letter-content.lua"))(ns, test, eq)
 	assert(loadfile(ROOT .. "tests/player-profile-fight-history.lua"))(ns, test, eq, WithWindow)
 	-- (1.2.1: the views' work while nobody looks: the world map, the crafters' board, the Chat tab.)

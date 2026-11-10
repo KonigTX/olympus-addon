@@ -9,6 +9,14 @@ local ADDON, ns = ...
 local code = GetLocale and GetLocale()
 if code ~= "frFR" then return end
 ns.Locale("frFR", {
+	CHATWIN_GROUP_ALL = "Tous",
+	CHATWIN_GROUP_PVP = "JcJ",
+	CHATWIN_GROUP_PVE = "JcE",
+	CHATWIN_GROUP_RP = "Jeu de rôle",
+	CHATWIN_GROUP_RPPVP = "JdR-JcJ",
+	CHATWIN_GROUP_TITLE = "Règles",
+	CHATWIN_GROUP_TIP = "Choisissez les règles du chat Olympus. Tous indique les messages provenant des autres règles.",
+	CHATWIN_GROUP_EMPTY = "Aucun message pour ces règles.",
 	LETTER_1_5_3_TITLE = "Les rappels restent réservés aux chefs de guilde",
 	LETTER_1_5_3_HEAD = "Les rappels restent réservés aux chefs de guilde",
 	LETTER_1_5_3 = "Version 1.5.3.\n\n- Les avertissements aux membres après expiration du délai sont suspendus.\n- Les rappels aux chefs de guilde et au Haut Conseil continuent ; les délais et validations restent en place.\n\nMettez Olympus à jour et rechargez l'interface. Les anciennes versions conservent leurs avertissements.",

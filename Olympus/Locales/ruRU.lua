@@ -9,6 +9,14 @@ local ADDON, ns = ...
 local code = GetLocale and GetLocale()
 if code ~= "ruRU" then return end
 ns.Locale("ruRU", {
+	CHATWIN_GROUP_ALL = "Все",
+	CHATWIN_GROUP_PVP = "PvP",
+	CHATWIN_GROUP_PVE = "PvE",
+	CHATWIN_GROUP_RP = "Ролевая игра",
+	CHATWIN_GROUP_RPPVP = "РП-PvP",
+	CHATWIN_GROUP_TITLE = "Наборы правил",
+	CHATWIN_GROUP_TIP = "Выберите наборы правил для чата Olympus. Все отмечает сообщения из других наборов правил.",
+	CHATWIN_GROUP_EMPTY = "Нет сообщений для этого набора правил.",
 	LETTER_1_5_3_TITLE = "Напоминания о проверке остаются у глав гильдий",
 	LETTER_1_5_3_HEAD = "Напоминания о проверке остаются у глав гильдий",
 	LETTER_1_5_3 = "Версия 1.5.3.\n\n- Предупреждения участникам после истечения срока временно отключены.\n- Напоминания главам гильдий и Высшему совету продолжаются; сроки и подтверждения сохраняются.\n\nОбновите Olympus и перезагрузите интерфейс. Старые версии продолжают показывать предупреждения.",

@@ -9,6 +9,14 @@ local ADDON, ns = ...
 local code = GetLocale and GetLocale()
 if code ~= "esES" and code ~= "esMX" then return end
 ns.Locale({ "esES", "esMX" }, {
+	CHATWIN_GROUP_ALL = "Todos",
+	CHATWIN_GROUP_PVP = "JcJ",
+	CHATWIN_GROUP_PVE = "JcE",
+	CHATWIN_GROUP_RP = "Rol",
+	CHATWIN_GROUP_RPPVP = "Rol-JcJ",
+	CHATWIN_GROUP_TITLE = "Reglas",
+	CHATWIN_GROUP_TIP = "Elige qué reglas aparecen en el chat Olympus. Todos identifica los mensajes de otras reglas.",
+	CHATWIN_GROUP_EMPTY = "No hay mensajes de estas reglas.",
 	LETTER_1_5_3_TITLE = "Los recordatorios quedan con los maestros de hermandad",
 	LETTER_1_5_3_HEAD = "Los recordatorios quedan con los maestros de hermandad",
 	LETTER_1_5_3 = "Versión 1.5.3.\n\n- Se pausan los avisos a miembros cuando vence el plazo.\n- Continúan los recordatorios a los maestros y al Alto Consejo; se conservan los plazos y las verificaciones.\n\nActualiza Olympus y recarga la interfaz. Las versiones antiguas mantienen sus avisos.",

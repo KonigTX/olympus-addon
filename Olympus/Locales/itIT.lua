@@ -9,6 +9,14 @@ local ADDON, ns = ...
 local code = GetLocale and GetLocale()
 if code ~= "itIT" then return end
 ns.Locale("itIT", {
+	CHATWIN_GROUP_ALL = "Tutti",
+	CHATWIN_GROUP_PVP = "PvP",
+	CHATWIN_GROUP_PVE = "PvE",
+	CHATWIN_GROUP_RP = "Gioco di ruolo",
+	CHATWIN_GROUP_RPPVP = "GdR-PvP",
+	CHATWIN_GROUP_TITLE = "Regole",
+	CHATWIN_GROUP_TIP = "Scegli le regole della chat Olympus. Tutti identifica i messaggi provenienti dalle altre regole.",
+	CHATWIN_GROUP_EMPTY = "Nessun messaggio per queste regole.",
 	LETTER_1_5_3_TITLE = "I promemoria restano ai capigilda",
 	LETTER_1_5_3_HEAD = "I promemoria restano ai capigilda",
 	LETTER_1_5_3 = "Versione 1.5.3.\n\n- Gli avvisi ai membri dopo la scadenza sono sospesi.\n- Continuano i promemoria ai capigilda e all'Alto Consiglio; scadenze e verifiche restano valide.\n\nAggiorna Olympus e ricarica l'interfaccia. Le vecchie versioni mantengono gli avvisi precedenti.",
