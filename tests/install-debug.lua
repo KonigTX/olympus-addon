@@ -113,6 +113,8 @@ test("1.5.5 install: a client this copy does not list, and files of two versions
 	WithInstall({ tocVersion = "1.4.6" }, function() assert(Has(ns.Install().problems, "mixed"), "an old TOC over new files") end)
 	WithInstall({ site = "1.4.6-site.1" }, function() assert(Has(ns.Install().problems, "mixed"), "an old site reporter") end)
 	WithInstall({ site = ns.VERSION .. "-site.3" }, function() eq(#ns.Install().problems, 0, "the site reporter's own build number") end)
+	WithInstall({ tocVersion = ns.VERSION .. "-test.3" }, function() eq(#ns.Install().problems, 0, "an arena test build's TOC (scripts/package.sh --test)") end)
+	WithInstall({ arena = ns.VERSION .. "-test.3" }, function() assert(Has(ns.Install().problems, "mixed"), "the arena module's version is ours alone") end)
 	-- The message in every language keeps the English one's codes (tests/locales-full.lua checks the rest).
 	for _, k in ipairs({ "INSTALL_BEHIND", "INSTALL_TOC", "INSTALL_MIXED", "INSTALL_FLAVOR" }) do
 		assert(type(ns.L[k]) == "string" and ns.L[k] ~= k, k)

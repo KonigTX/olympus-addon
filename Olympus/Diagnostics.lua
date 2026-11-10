@@ -465,10 +465,12 @@ function ns.Install()
 	s.author = type(W) == "table" and type(W.AuthorVersion) == "function" and Try(W.AuthorVersion) or nil
 	s.peers, s.peersCount = PeersNewer()
 	if not s.declared then s.problems[#s.problems + 1] = "toc" end
-	-- (The site reporter's version is ours and its own build number: "1.5.5-site.1".)
-	if s.tocVersion and s.tocVersion ~= s.version then s.odd = s.tocVersion
+	-- (Ours, or ours and a build of it: an arena test build's TOC says "1.5.5-test.3", the site
+	-- reporter's "1.5.5-site.1", scripts/package.sh; the arena module's is ours alone.)
+	local function Ours(v) return v == s.version or v:sub(1, #s.version + 1) == s.version .. "-" end
+	if s.tocVersion and not Ours(s.tocVersion) then s.odd = s.tocVersion
 	elseif s.arena and s.arena ~= s.version then s.odd = s.arena
-	elseif s.site and s.site ~= s.version and s.site:sub(1, #s.version + 1) ~= s.version .. "-" then s.odd = s.site end
+	elseif s.site and not Ours(s.site) then s.odd = s.site end
 	if s.odd then s.problems[#s.problems + 1] = "mixed" end
 	local behind = type(W) == "table" and type(W.Behind) == "function" and Try(W.Behind) or nil
 	if behind or s.peers then s.problems[#s.problems + 1] = "behind" end
