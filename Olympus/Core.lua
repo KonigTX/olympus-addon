@@ -2497,6 +2497,9 @@ StandIn("RoleBriefings", { "Slash", "Open", "OpenKind", "Letters" }) -- durable 
 StandIn("SelfTest", { "Slash" })
 -- Guild verification (Verify.lua, /oly verify).
 StandIn("Verify", { "Slash" })
+-- 1.5.5: the relay's tree to the registrants and the fallback relays (RelayTree.lua, RelayFallback.lua).
+StandIn("RelayTree", {})
+StandIn("RelayFallback", {})
 
 -- Blizzard's gamepad UI (WoW: Forever's controller mode) is on.
 function ns.GamepadUI()

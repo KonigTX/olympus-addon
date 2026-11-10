@@ -993,6 +993,9 @@ end
 local function GlobalTrusted(name)
 	return ns.Church and ns.Church.IsLedgerRelay and ns.Church.IsLedgerRelay(name) == true
 end
+-- (1.5.5) The census's trust gate as the relays ask it, and its counters for /oly bug (lane trust fills both).
+function Data.CensusTrusted(name) return GlobalTrusted(name) end
+function Data.CensusStats() return {} end
 -- 1.4.0: a member who may answer an ask with what it holds (any member; trust is the receiver's).
 local function GlobalMember()
 	if ns.QuietPresence and ns.QuietPresence() then return false end
