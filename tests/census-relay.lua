@@ -1,6 +1,397 @@
 -- Production Data -> Comm chunk queue -> Relay envelopes -> native send API.
 local ns, test, eq, extra = ...
 
+test("relay admission: unwrapping a relay's own word pays once, while native packets and different origins keep their limits", function()
+	local saved = { member = ns.IsMember, chat = C_ChatInfo, time = GetTime }
+	local ok, err = pcall(function()
+		ns.IsMember = function() return true end
+		GetTime = function() return 0 end
+		local O, deliver, _, heard = extra.RelayWorld("Late-Realm", "Olympus II")
+		O.db = { blocked = {} }
+		local caught
+		O.CaptureError = function(_, err) caught = err end
+		local relay, other = "Max Ran-Realm", "Hildryn Payne-Realm"
+		for i = 1, 61 do deliver("WHISPER", relay, "RM~P~" .. relay .. "~X1~own " .. i) end
+		eq(#heard, 60, "the 60 native envelopes each pay once; the 61st is refused")
+		O.Comm.ResetAdmission()
+		for i = 1, 60 do deliver("WHISPER", relay, "RM~P~Origin-Realm~X1~forwarded " .. i) end
+		eq(#heard, 120)
+		for i = 1, 60 do deliver("WHISPER", other, "RM~P~Origin-Realm~X1~another route " .. i) end
+		eq(#heard, 120, "another relay cannot bypass the forwarded origin's exhausted budget")
+		O.Comm.ResetAdmission()
+		O.Comm.Handle("X1", function() error("handler failure") end)
+		deliver("WHISPER", relay, "RM~P~" .. relay .. "~X1~error")
+		assert(caught and caught:find("handler failure", 1, true))
+		for _ = 1, 59 do assert(O.Comm.Admit(relay, 0)) end
+		local calls = 0
+		O.Comm.Handle("X1", function() calls = calls + 1 end)
+		O.Comm.Inject("CHANNEL", relay, "X1~outside the admitted call", false)
+		eq(calls, 0, "a handler error cannot leave an admission exemption behind")
+	end)
+	ns.IsMember, C_ChatInfo, GetTime = saved.member, saved.chat, saved.time
+	if not ok then error(err, 0) end
+end)
+
+test("census scope relay: a queue-sized current-group snapshot crosses relays and reaches late reporters whole", function()
+	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo,
+		inGuild = IsInGuild, chat = C_ChatInfo, time = GetTime, serverTime = GetServerTime,
+		number = GetNumGuildMembers, row = GetGuildRosterInfo }
+	local ok, err = pcall(function()
+		GetChannelName = function() return 0 end
+		ns.IsMember = function() return true end
+		IsInGuild = function() return true end
+		local started = 1794160000
+		local guild, clock = "OLYMPUS PLATINUM", started
+		GetGuildInfo = function() return guild, "Member", 3 end
+		GetTime = function() return clock end
+		GetServerTime = function() return math.floor(clock) end
+		GetNumGuildMembers = function() return 108, 6 end
+		local function Census(N)
+			N.clock = clock
+			N.group, N.faction, N.db = "ForeverPvE", "Alliance", { blocked = {} }
+			N.rdb.guilds, N.rdb.seen = {}, {}
+			N.Church = { IsLedgerRelay = N.Relay.IsRelay }
+			N.QuietPresence = function() return false end
+			assert(loadfile(extra.addon .. "Data.lua"))("Olympus", N)
+			N.Comm.Handle("CG", N.Data.ReceiveGlobalCensus)
+		end
+		local R, rdeliver, sent = extra.RelayWorld("Max Ran-CAMWOWUS2Realm1PvE", "OLYMPUS PLATINUM")
+		Census(R)
+		local api = C_ChatInfo
+		local total, online = 0, 0
+		local names = { "Olympus Dawn", "KNIGHTS OF OLYMPUS", "olympus dusk" }
+		for i = 1, 161 do
+			guild = names[i] or (i == 161 and "Other Adventurers" or ("Olympus Guild Number %03d"):format(i))
+			local O, odeliver, osent, _, opump = extra.RelayWorld("Reporter" .. i .. "-Realm", guild)
+			Census(O)
+			O.realm = "CAMWOWUS2Realm1PvE"
+			GetGuildRosterInfo = function(row)
+				return row == 1 and O.me or "Member" .. row .. "-Realm", "Member", row == 1 and 0 or 3,
+					30, "Warrior", "Stormwind City", "", "", row <= 6, 0, "WARRIOR"
+			end
+			assert(loadfile(extra.addon .. "Roster.lua"))("Olympus", O)
+			local report = assert(O.Roster.Scan())
+			eq(O.Roster.complete, true); eq(report.total, 108); eq(report.online, 6)
+			O.Data.SetLocal(report)
+			odeliver("WHISPER", R.me, "RY~")
+			O.Comm.Broadcast(report); opump(100)
+			guild = "OLYMPUS PLATINUM"
+			for _, p in ipairs(osent) do
+				if p.target == "Max Ran" then rdeliver("WHISPER", O.me, p.msg) end
+			end
+			if i <= 160 then total, online = total + 108, online + 6 end
+			-- A second reporter and a repeated relay copy still describe the same roster.
+			if i == 1 then
+				for _, sender in ipairs({ "Second-Realm", O.me }) do
+					for _, p in ipairs(osent) do if p.target == "Max Ran" then rdeliver("WHISPER", sender, p.msg) end end
+				end
+			end
+			C_ChatInfo = api
+			for _ = 1, 100 do R.Comm.Pump() end -- finish presentation replies before the snapshot
+		end
+		eq(R.Data.Summary().characters, total); eq(#R.Data.Summary().guilds, 160)
+		eq(R.rdb.guilds["Other Adventurers"], nil, "a non-federation roster is excluded")
+		C_ChatInfo = api
+		rdeliver("WHISPER", "Hildryn Payne-CAMWOWUS2Realm7PvE", "RY~")
+		eq(R.Relay.Pick(), "Max Ran", "the snapshot's origin is its own relay")
+		local payload = R.Data.GlobalCensusPayload()
+		eq(#R.Codec.Chunk(payload, "17"), 34, "exercise the live report's 34-part size")
+		assert(2 * #R.Codec.Chunk(payload, "17") > R.Comm.MAX_QUEUE,
+			"the snapshot's separately wrapped relay pieces exceed the send queue")
+		local timers = {}
+		R.After = function(delay, label, fn)
+			if label == "relay drip" then timers[#timers + 1] = { at = clock + delay, fn = fn } end
+		end
+		for i = 1, R.Comm.MAX_QUEUE - 2 do
+			assert(R.Comm.Whisper("Busy-Realm", "X1~control " .. i, nil, true))
+		end
+		assert(R.Data.SendGlobalCensus())
+		for _ = 1, 100 do
+			clock = clock + 1.2; R.clock = clock
+			local due = timers; timers = {}
+			for _, timer in ipairs(due) do
+				if timer.at <= clock then timer.fn() else timers[#timers + 1] = timer end
+			end
+			R.Comm.Pump()
+			assert(R.Comm.QueueSize() <= R.Comm.MAX_QUEUE, "the existing send bound stays in force")
+		end
+		local S, sdeliver, forwarded = extra.RelayWorld("Hildryn Payne-CAMWOWUS2Realm7PvE", "OLYMPUS PLATINUM")
+		Census(S)
+		local admit, refused = S.Comm.Admit, 0
+		S.Comm.Admit = function(...)
+			local yes = admit(...)
+			if not yes then refused = refused + 1 end
+			return yes
+		end
+		for i = 1, 3 do sdeliver("WHISPER", "Late" .. i .. "-Realm", "RL~P~RR~Olympus Late " .. i) end
+		-- Replay native sends at the sender's pace, through Comm and both relay envelopes.
+		clock = started
+		for _, p in ipairs(sent) do
+			clock = clock + 0.3; S.clock = clock
+			if p.target == "Hildryn Payne" then sdeliver("WHISPER", R.me, p.msg) end
+		end
+		eq(refused, 0, "one bounded snapshot must fit receive admission at the relay's send pace")
+		eq(S.Data.Summary().characters, total, "the second relay receives every guild, not a partial snapshot")
+		for _ = 1, 100 do clock = clock + 1.2; S.clock = clock; S.Comm.Pump() end
+		for i = 1, 3 do
+			local L, ldeliver = extra.RelayWorld("Late" .. i .. "-Realm", "OLYMPUS PLATINUM")
+			Census(L)
+			L.Data.SetLocal({ guild = "OLYMPUS PLATINUM", total = 108, online = 6, zones = {} })
+			eq(L.Data.Summary().characters, 108, "the late client initially sees only its own roster")
+			for _, p in ipairs(forwarded) do
+				clock = clock + 0.3; L.clock = clock
+				if p.target == "Late" .. i then
+					ldeliver("WHISPER", S.me, p.msg)
+					ldeliver("WHISPER", R.me, p.msg) -- the same original through another signed relay
+				end
+			end
+			local summary = L.Data.Summary()
+			eq(summary.characters, total + 108, "a late current-group client counts every roster once")
+			eq(summary.online, online + 6); eq(#summary.guilds, 161)
+			local children = {}
+			for _, row in ipairs(summary.guilds) do
+				eq(children[row.name:lower()], nil, "one child row per actual guild")
+				children[row.name:lower()] = true
+				eq(row.g.total, 108); eq(row.g.online, 6)
+			end
+			for _, name in ipairs(names) do assert(children[name:lower()], name .. " remains a separate child") end
+		end
+	end)
+	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild, C_ChatInfo, GetTime, GetServerTime, GetNumGuildMembers, GetGuildRosterInfo =
+		saved.channel, saved.member, saved.guild, saved.inGuild, saved.chat, saved.time, saved.serverTime, saved.number, saved.row
+	-- Roster.Scan caches the rows it last read. Restore the harness's native fixture so this
+	-- isolated transport case cannot change what later status tests inspect.
+	pcall(ns.Roster.Scan)
+	if not ok then error(err, 0) end
+end)
+
+-- A real queue and relay with deterministic elapsed time; native sends remain rate limited.
+local function WithTransfer(fn)
+	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo,
+		inGuild = IsInGuild, chat = C_ChatInfo, time = GetTime }
+	local ok, err = pcall(function()
+		GetChannelName = function() return 0 end
+		ns.IsMember = function() return true end
+		IsInGuild = function() return true end
+		GetGuildInfo = function() return "Olympus II", "Member", 3 end
+		local R, deliver, sent = extra.RelayWorld("Max Ran-CAMWOWUS2Realm1PvE", "Olympus II")
+		GetTime = function() return R.clock end
+		local timers = {}
+		R.After = function(delay, label, f)
+			if label == "relay drip" then timers[#timers + 1] = { at = R.clock + delay, f = f } end
+		end
+		local function Run(pumps)
+			for _ = 1, pumps do
+				R.clock = R.clock + 1.2
+				local due = timers; timers = {}
+				for _, t in ipairs(due) do
+					if t.at <= R.clock then t.f() else timers[#timers + 1] = t end
+				end
+				local before = #sent
+				R.Comm.Pump()
+				assert(#sent - before <= 4, "the native pump keeps its four-message rate limit")
+				assert(R.Comm.QueueSize() <= R.Comm.MAX_QUEUE, "the native queue remains bounded")
+			end
+		end
+		fn(R, deliver, sent, Run)
+	end)
+	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild, C_ChatInfo, GetTime =
+		saved.channel, saved.member, saved.guild, saved.inGuild, saved.chat, saved.time
+	if not ok then error(err, 0) end
+end
+
+local function TransferWord(R, head, pieces)
+	return (head .. ("x"):rep(R.Codec.CHUNK * pieces)):sub(1, R.Codec.CHUNK * pieces)
+end
+local function OfferTransfer(R, word, id, origin)
+	for _, p in ipairs(R.Codec.Chunk(word, id)) do
+		R.Relay.HandleIn("WHISPER", origin or R.me, "RL~P~" .. p)
+	end
+end
+-- Decode every native envelope and assert that no transfer which sent a piece lost its tail.
+local function TransferWords(R, sent, kind)
+	local outer, inner, words, pieces = {}, {}, {}, {}
+	for _, p in ipairs(sent) do
+		outer[p.target] = outer[p.target] or R.Codec.NewAssembler()
+		local envelope = p.msg:sub(1, 3) == kind .. "~" and p.msg or R.Codec.Feed(outer[p.target], "relay", p.msg, 0)
+		local origin, body
+		if envelope then origin, body = envelope:match("^" .. kind .. "~P~([^~]+)~(.*)$") end
+		if body then
+			inner[p.target] = inner[p.target] or R.Codec.NewAssembler()
+			local id, index, count = body:match("^C(%w+):(%d+):(%d+):")
+			local word = body
+			if id then
+				local key = p.target .. " " .. origin .. " " .. id
+				local transfer = pieces[key] or { count = tonumber(count), got = {} }
+				pieces[key], transfer.got[tonumber(index)] = transfer, true
+				word = R.Codec.Feed(inner[p.target], origin, body, 0)
+			end
+			if word then
+				words[p.target] = words[p.target] or {}
+				words[p.target][word] = (words[p.target][word] or 0) + 1
+			end
+		end
+	end
+	for key, transfer in pairs(pieces) do
+		local count = 0
+		for _ in pairs(transfer.got) do count = count + 1 end
+		eq(count, transfer.count, "every started transfer stays whole: " .. key)
+	end
+	return words
+end
+
+test("relay admission hardening: an ordinary or nested native handler cannot reuse the envelope's token", function()
+	WithTransfer(function(R, deliver)
+		R.db = { blocked = {} }
+		local origin, other = "Hildryn Payne-Realm", "Other-Realm"
+		local calls = 0
+		R.Comm.Handle("X1", function(_, sender, text)
+			calls = calls + 1
+			if text == "X1~outer" then
+				deliver("WHISPER", sender, "X1~native reentry")
+				R.Comm.Inject("CHANNEL", sender, "X1~nested injection")
+				R.Comm.Inject("CHANNEL", other, "X1~different origin")
+			end
+		end)
+		for _ = 1, 59 do assert(R.Comm.Admit(origin, R.clock)) end
+		for _ = 1, 60 do assert(R.Comm.Admit(other, R.clock)) end
+		deliver("WHISPER", origin, "RM~P~" .. origin .. "~X1~outer")
+		eq(calls, 1, "only the admitted envelope's own word gets its token")
+		R.Comm.ResetAdmission()
+		calls = 0
+		for _ = 1, 59 do assert(R.Comm.Admit(origin, R.clock)) end
+		for _ = 1, 60 do assert(R.Comm.Admit(other, R.clock)) end
+		deliver("WHISPER", origin, "X1~outer")
+		eq(calls, 1, "an ordinary handler has no relay envelope admission to lend")
+		R.Comm.Inject("CHANNEL", origin, "X1~after return")
+		eq(calls, 1, "the exemption does not survive the call stack")
+	end)
+end)
+
+test("relay transfer hardening: verification expires between batches, but only an entirely waiting transfer is dropped", function()
+	WithTransfer(function(R, _, sent, Run)
+		R.Relay.HandleAck("WHISPER", "Hildryn Payne-Realm", "RY~")
+		R.clock = R.clock + R.Relay.VERIFIED_FOR - 2
+		local word = TransferWord(R, "CG~2~S~1~ForeverPvE~Alliance~", 34)
+		OfferTransfer(R, word, "810")
+		Run(1) -- first batch starts before verification expires
+		assert(#sent > 0)
+		Run(100)
+		eq((TransferWords(R, sent, "RX")["Hildryn Payne"] or {})[word], 1)
+	end)
+	WithTransfer(function(R, _, sent, Run)
+		R.Relay.HandleAck("WHISPER", "Hildryn Payne-Realm", "RY~")
+		R.clock = R.clock + R.Relay.VERIFIED_FOR - 2
+		for i = 1, R.Comm.QueueRoom() do assert(R.Comm.Whisper("Busy-Realm", "X1~" .. i, nil, true)) end
+		OfferTransfer(R, TransferWord(R, "CG~2~S~1~ForeverPvE~Alliance~", 34), "811")
+		Run(100)
+		eq(next(TransferWords(R, sent, "RX")), nil, "expiry before the first batch drops the complete transfer")
+	end)
+end)
+
+test("relay transfer hardening: signed RX progress survives sixty seconds while idle and absolute expiry remain bounded", function()
+	for _, mode in ipairs({ "progress", "absolute", "idle", "duplicate" }) do
+		WithTransfer(function(R, _, sent, Run)
+			local origin = "Hildryn Payne-CAMWOWUS2Realm7PvE"
+			R.Relay.HandleIn("WHISPER", "Late-Realm", "RL~P~RR~Olympus Late")
+			local word = TransferWord(R, "CG~2~S~1~ForeverPvE~Alliance~", mode == "progress" and 34 or 10)
+			local parts = R.Codec.Chunk(word, "820")
+			local function Part(i)
+				R.Relay.HandleAcross("WHISPER", origin, "RX~P~" .. origin .. "~" .. parts[i])
+			end
+			Part(1)
+			if mode == "duplicate" then R.clock = R.clock + 50; Part(1); R.clock = R.clock + 11 end
+			for i = 2, #parts do
+				if mode == "progress" then R.clock = R.clock + 3
+				elseif mode == "absolute" then R.clock = R.clock + 40
+				elseif mode == "idle" and i == 2 then R.clock = R.clock + R.Relay.SET_WAIT + 1 end
+				Part(i)
+			end
+			Run(100)
+			-- Expired sets may use the ordinary trickle, but must never produce a whole snapshot.
+			local outer, inner, got = R.Codec.NewAssembler(), R.Codec.NewAssembler(), false
+			for _, p in ipairs(sent) do
+				if p.target == "Late" then
+					local rm = p.msg:sub(1, 3) == "RM~" and p.msg or R.Codec.Feed(outer, "relay", p.msg, 0)
+					local body = rm and rm:match("^RM~P~[^~]+~(.*)$")
+					if body and (body == word or R.Codec.Feed(inner, origin, body, 0) == word) then got = true end
+				end
+			end
+			eq(got, mode == "progress", mode .. ": only continuing progress inside the absolute age completes")
+		end)
+	end
+end)
+
+test("relay transfer hardening: flood bounds count whole transfers globally and per peer, keeping the active tail and current census", function()
+	for _, peers in ipairs({ 1, 6 }) do
+		WithTransfer(function(R, _, sent, Run)
+			for i = 1, peers do
+				local name = "Peer " .. i
+				R.rdb.council.names[name:lower()] = name
+				R.Relay.HandleAck("WHISPER", name .. "-Realm", "RY~")
+			end
+			local first = TransferWord(R, "TR~First~", 34)
+			OfferTransfer(R, first, "830")
+			Run(1) -- flood only after the first batch has actually started
+			for i = 1, 20 do
+				OfferTransfer(R, TransferWord(R, "TR~Mail " .. i .. "~", 34), tostring(830 + i))
+				local origin = "Origin " .. i
+				R.rdb.council.names[origin:lower()] = origin
+				OfferTransfer(R, TransferWord(R, "CG~2~S~1~ForeverPvE~Alliance~" .. i, 34), tostring(860 + i), origin .. "-Realm")
+			end
+			local newest = TransferWord(R, "CG~2~S~2~ForeverPvE~Alliance~", 34)
+			OfferTransfer(R, newest, "899")
+			Run(250)
+			local words, total, firstSent = TransferWords(R, sent, "RX"), 0, 0
+			for i = 1, peers do
+				local got, count = words["Peer " .. i] or {}, 0
+				for _, copies in pairs(got) do count = count + copies end
+				assert(count <= 2, "one peer has only its bounded share")
+				eq(got[newest], 1, "the current census reaches every peer after the flood")
+				firstSent = firstSent + (got[first] or 0)
+				total = total + count
+			end
+			eq(firstSent, 1, "the started transfer survives all evictions")
+			assert(total <= 8, "the global backlog is bounded across distinct origins and kinds")
+			eq(R.Comm.QueueSize(), 0)
+		end)
+	end
+end)
+
+test("relay transfer hardening: a full bound never evicts the sole in-flight transfer", function()
+	for _, bound in ipairs({ "ACROSS_MAX", "ACROSS_PER_PEER" }) do
+		WithTransfer(function(R, _, sent, Run)
+			R.Relay[bound] = 1
+			R.Relay.HandleAck("WHISPER", "Hildryn Payne-Realm", "RY~")
+			local first = TransferWord(R, "TR~First~", 34)
+			OfferTransfer(R, first, "910")
+			Run(1)
+			OfferTransfer(R, TransferWord(R, "TR~Second~", 34), "911")
+			Run(100)
+			local got, count = TransferWords(R, sent, "RX")["Hildryn Payne"] or {}, 0
+			for _ in pairs(got) do count = count + 1 end
+			eq(count, 1, bound .. ": refuse new work when no complete waiting transfer can be evicted")
+			eq(got[first], 1)
+		end)
+	end
+end)
+
+test("relay transfer hardening: shrinking replacements replace whole waiting copies without splicing an active tail", function()
+	WithTransfer(function(R, _, sent, Run)
+		R.Relay.HandleAck("WHISPER", "Hildryn Payne-Realm", "RY~")
+		local first = TransferWord(R, "CG~2~S~1~ForeverPvE~Alliance~", 34)
+		OfferTransfer(R, first, "901")
+		Run(1)
+		OfferTransfer(R, TransferWord(R, "CG~2~S~2~ForeverPvE~Alliance~", 34), "902")
+		local newest = TransferWord(R, "CG~2~S~3~ForeverPvE~Alliance~", 2)
+		OfferTransfer(R, newest, "903")
+		Run(100)
+		local got, count = TransferWords(R, sent, "RX")["Hildryn Payne"] or {}, 0
+		for _ in pairs(got) do count = count + 1 end
+		eq(count, 2); eq(got[first], 1); eq(got[newest], 1)
+	end)
+end)
+
 test("census scope relay: count snapshots and portable observations drain through the actual relay while revoked capabilities stop", function()
 	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild, chat = C_ChatInfo }
 	local ok, err = pcall(function()

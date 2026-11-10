@@ -1267,12 +1267,84 @@ function Bank.Lapsed()
 	return true
 end
 
+-- (1.5.5) One character on WoW: Forever: the same name on any sub-realm of one realm family (its
+-- names are one across a family: Roster.RankOf, Verify.SamePerson); anywhere else the exact name.
+local function SameCharacter(a, b)
+	if type(a) ~= "string" or type(b) ~= "string" or a == "" or b == "" then return false end
+	a, b = ns.FullName(a), ns.FullName(b)
+	if ns.Fold(a) == ns.Fold(b) then return true end
+	if not ns.splitNames or ns.Fold(ns.ShortName(a)) ~= ns.Fold(ns.ShortName(b)) then return false end
+	local family = ns.ForeverFamily(ns.RealmOf(a) or ns.realm)
+	return family ~= nil and family == ns.ForeverFamily(ns.RealmOf(b) or ns.realm)
+end
+
+-- (1.5.5) The names the census of `guild` files `who` under on another sub-realm of his Forever
+-- family: a report names its guild's leader and officers with its reporter's sub-realm (Data.lua's
+-- Ranks), and a treasurer's whisper comes stamped with his own, so an officer playing on another
+-- sub-realm than his guild's reporters was nobody the census knew, and his snapshot was dropped
+-- without a word. Every vote's names are looked at; each is still judged by Data.KnownRank's rules
+-- (another sender must name him, the short name never vouching for itself).
+local function CensusNames(who, guild)
+	local out = {}
+	if not ns.splitNames or not ns.Data or type(ns.Data.Guild) ~= "function" then return out end
+	local g = ns.Data.Guild(guild)
+	if type(g) ~= "table" then return out end
+	local seen = { [ns.Fold(who)] = true }
+	local function Add(name)
+		if type(name) ~= "string" or name == "" then return end
+		local key = ns.Fold(name)
+		if not seen[key] and SameCharacter(name, who) then seen[key], out[#out + 1] = true, name end
+	end
+	if type(g.leader) == "string" then Add(ns.FullName(g.leader, g.realm)) end
+	for _, v in pairs(type(g.vouch) == "table" and g.vouch or {}) do
+		if type(v) == "table" and type(v.ranks) == "table" then
+			for name in pairs(v.ranks) do Add(name) end
+		end
+	end
+	table.sort(out)
+	return out
+end
+
+-- (1.5.5) The guild master a verifier approved (Verify.Status "verified": the King, a High Councillor
+-- or the author approved the guild with him as its master, and no other one leads it now as far as the
+-- census or our roster says). The census alone needs two reports naming a guild master (Data.KnownRank),
+-- so the master of a small guild, its only reporter, was held all session and never shown. The approval
+-- stands in for that second report alone (the audit's review); the rest KnownRank asks of a guild master
+-- still holds: a census that ranks anyone of his guild now (Data.CanRank, asked first by LordOrCaptain;
+-- else "no other one leads it now" was a row kept from days ago, or none, and an approval saved across a
+-- week away stood for a master replaced since) and this login's reports in (Data.CROWN_AFTER). Meanwhile
+-- his snapshot is held (Unsettled), and Bank.Recheck takes it once both hold (the window's end, his
+-- guild's next report: DATA_CHANGED).
+local function VerifiedMaster(who, guild)
+	local V = ns.Verify
+	if type(V) ~= "table" or V.missing or type(V.Status) ~= "function" then return false end
+	if ns.Now() - (ns.Comm and ns.Comm.loginAt or 0) < ns.Data.CROWN_AFTER then return false end
+	local ok, status, info = pcall(V.Status, guild)
+	if not ok or status ~= "verified" or type(info) ~= "table" or type(info.entry) ~= "table" then return false end
+	return SameCharacter(info.entry.gm, who)
+end
+
 -- A Lord or Captain of `guild`: the legacy census until explicit enforcement, then our roster
--- for our guild and the author-signed leadership manifest for another.
+-- for our guild and the author-signed leadership manifest for another. (1.5.5) In the legacy census,
+-- also as one of his Forever family's other sub-realms names him (CensusNames), and a guild master a
+-- verifier approved (VerifiedMaster). Never once enforcement is on: the signed manifest says who is who.
+-- Neither of these two where the census ranks nobody of the guild now (Data.CanRank, as Data.KnownRank
+-- asks before any rank; the audit's review: a verifier's approval stood where the census itself ranked
+-- nobody of the guild any more).
 function Bank.LordOrCaptain(sender, guild)
 	if type(sender) ~= "string" or type(guild) ~= "string" or guild == "" then return false end
-	local rank = ns.Data.AuthorizedRank(ns.FullName(sender), guild)
-	return rank ~= nil and rank <= ns.CAPTAIN_RANK
+	local who = ns.FullName(sender)
+	local rank = ns.Data.AuthorizedRank(who, guild)
+	if rank ~= nil then return rank <= ns.CAPTAIN_RANK end
+	if ns.Authority and ns.Authority.Enforced and ns.Authority.Enforced() then return false end
+	-- (Our own guild: our roster alone says who is who, Roster.RankOf its own sub-realms included.)
+	if guild == GetGuildInfo("player") then return false end
+	if not (ns.Data.CanRank and ns.Data.CanRank(guild)) then return false end
+	for _, name in ipairs(CensusNames(who, guild)) do
+		rank = ns.Data.AuthorizedRank(name, guild)
+		if rank ~= nil and rank <= ns.CAPTAIN_RANK then return true end
+	end
+	return VerifiedMaster(who, guild)
 end
 
 -- 1.2.4: the legacy census refused `sender` for `guild` only because it cannot say yet: inside our
@@ -1293,7 +1365,14 @@ local function Unsettled(sender, guild)
 	if guild == GetGuildInfo("player") then return false end
 	local g = D.Guild(guild)
 	if type(g) ~= "table" or now - (tonumber(g.t) or 0) > D.FRESH then return true end
-	return D.Names ~= nil and D.Names(ns.FullName(sender), guild, ns.CAPTAIN_RANK) == true
+	if D.Names == nil then return false end
+	local who = ns.FullName(sender)
+	if D.Names(who, guild, ns.CAPTAIN_RANK) == true then return true end
+	-- (1.5.5) A report naming him under another sub-realm of his family (CensusNames) holds it too.
+	for _, name in ipairs(CensusNames(who, guild)) do
+		if D.Names(name, guild, ns.CAPTAIN_RANK) == true then return true end
+	end
+	return false
 end
 Bank.Unsettled = Unsettled
 

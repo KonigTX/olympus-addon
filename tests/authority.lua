@@ -281,6 +281,135 @@ local ns, test, eq, extra = ...
 		end)
 	end)
 
+	-- 1.5.5 (the audit of 11-10, Treasury [2]): a guild's bank snapshot (TS) is taken from its Lord or a
+	-- Captain alone (Bank.LordOrCaptain), as the legacy census proves them. On Forever a report files its
+	-- guild's leader and officers under its reporter's sub-realm (Data.lua's Ranks), and a treasurer's
+	-- whisper comes stamped with his own sub-realm: one on another sub-realm than his guild's reporters
+	-- was nobody, his snapshot dropped without a word (not even held). And a guild master named by his
+	-- own report alone (a small guild's only reporter) was held all session, never shown. Now the census's
+	-- name on another sub-realm of his Forever family counts by the census's own rules, and so does the
+	-- guild master a verifier approved; nobody else, and neither once enforcement is on. (The audit's
+	-- review: neither for a guild the moderators took off the network, which the approval got around; and
+	-- the approval stands in for the census's second report alone, so a verified master also waits for a
+	-- fresh census row of his guild and the login's window, as any guild master does, held meanwhile.)
+	test("authority: 1.5.5 a guild's Lord or Captain for its bank snapshot: the census's name on another sub-realm of his Forever family, and the guild master a verifier approved (his guild's census fresh, the login's window over: held till then); another family, another name, our own guild, a guild off the network or enforcement never", function()
+		WithState(function()
+			local B = ns.Bank
+			local saved = { split = ns.splitNames, verify = ns.Verify, store = ns.rdb.verify, council = ns.rdb.council,
+				gi = GetGuildInfo, clock = GetServerTime, dialogs = {} }
+			for k, v in pairs(StaticPopupDialogs) do saved.dialogs[k] = v end
+			local ok, err = pcall(function()
+				ns.splitNames, GetServerTime = true, nil
+				ns.realm, ns.group, ns.me = "CAMWOWUS2Realm5PvE", "ForeverPvE", "Viewer Person-CAMWOWUS2Realm5PvE"
+				GetGuildInfo = function() return "Olympus Hearth", "Member", 3 end
+				ns.rdb.verify, ns.rdb.council = nil, { at = 1, names = { ["vera stone"] = "Vera Stone" } }
+				-- The real Verify.lua (the harness holds Core's stand-in), in a namespace over the harness's.
+				local c = setmetatable({ L = setmetatable({}, { __index = ns.L }) }, { __index = ns })
+				c.Comm = { Handle = function() end, Send = function() return true end }
+				c.Fire, c.On, c.RegisterEvent, c.After = function() end, function() end, function() end, function() end
+				c.Every = function() return { Cancel = function() end } end
+				c.UI, c.Print = { Refresh = function() end }, function() end
+				assert(loadfile(ROOT .. "Olympus/Locales/VerifyText.lua"))("Olympus", c)
+				assert(loadfile(ROOT .. "Olympus/Verify.lua"))("Olympus", c)
+				ns.Verify = c.Verify
+				local HOME = "CAMWOWUS2Realm7PvE" -- the guild's reporters' sub-realm
+				local function Report(guild, leader, officers, senders)
+					local ranks, list, vouch = { [leader .. "-" .. HOME] = 0 }, {}, {}
+					for _, o in ipairs(officers) do ranks[o .. "-" .. HOME], list[#list + 1] = 1, { name = o } end
+					for _, src in ipairs(senders) do vouch[src .. "-" .. HOME] = { t = T0, sig = "same", ranks = ranks } end
+					ns.rdb.guilds[guild] = { guild = guild, realm = HOME, t = T0, leader = leader, officers = list, vouch = vouch }
+					ns.Comm.loginAt = T0 - D.CROWN_AFTER - 1
+				end
+				-- Two reporters on Realm7 name the guild master and an officer.
+				Report("Olympus Zeus", "Zed Master", { "Cap Keeper" }, { "Rep One", "Rep Two" })
+				eq(B.LordOrCaptain("Zed Master-" .. HOME, "Olympus Zeus"), true, "as the census names him")
+				eq(B.LordOrCaptain("Zed Master-CAMWOWUS2Realm5PvE", "Olympus Zeus"), true, "the guild master on another sub-realm of the family")
+				eq(B.LordOrCaptain("Cap Keeper-CAMWOWUS1Realm1PvE", "Olympus Zeus"), true, "the officer on another")
+				eq(B.LordOrCaptain("Zed Master-CAMWOWUS2Realm5PvP", "Olympus Zeus"), false, "his namesake in another family")
+				eq(B.LordOrCaptain("Zed Master-Elsewhere", "Olympus Zeus"), false, "a realm of no Forever family")
+				eq(B.LordOrCaptain("Rep One-CAMWOWUS2Realm5PvE", "Olympus Zeus"), false, "a reporter the census names no officer")
+				-- His own report alone proves nothing; under another sub-realm it now holds his snapshot (it was dropped).
+				Report("Olympus Tiny", "Tin Master", {}, { "Tin Master" })
+				eq(B.LordOrCaptain("Tin Master-CAMWOWUS2Realm5PvE", "Olympus Tiny"), false, "his own report alone")
+				eq(B.Unsettled("Tin Master-CAMWOWUS2Realm5PvE", "Olympus Tiny"), true, "held for more reports, not dropped")
+				eq(B.Unsettled("Tin Master-CAMWOWUS2Realm5PvP", "Olympus Tiny"), false, "another family's namesake: dropped")
+				-- A verifier approves the guild with him: its master, whatever the census can prove yet.
+				eq(c.Verify.Handle("CHANNEL", "Vera Stone-CAMWOWUS2Realm5PvE", ("GV~1~A~%d~Olympus Tiny~Tin Master-%s"):format(T0 - 60, HOME)), true)
+				eq(c.Verify.Status("Olympus Tiny"), "verified")
+				eq(B.LordOrCaptain("Tin Master-CAMWOWUS2Realm5PvE", "Olympus Tiny"), true, "the guild master a verifier approved")
+				eq(B.LordOrCaptain("Tin Master-" .. HOME, "Olympus Tiny"), true)
+				eq(B.LordOrCaptain("Tin Master-CAMWOWUS2Realm5PvP", "Olympus Tiny"), false, "not his namesake in another family")
+				eq(B.LordOrCaptain("Rep One-" .. HOME, "Olympus Tiny"), false, "nobody else of it")
+				-- Another guild master in the census: the approval lapses, and his standing with it.
+				Report("Olympus Tiny", "New Master", {}, { "New Master" })
+				eq(c.Verify.Status("Olympus Tiny") == "verified", false)
+				eq(B.LordOrCaptain("Tin Master-" .. HOME, "Olympus Tiny"), false, "no longer its master")
+				Report("Olympus Tiny", "Tin Master", {}, { "Tin Master" })
+				eq(B.LordOrCaptain("Tin Master-" .. HOME, "Olympus Tiny"), true, "leading it again: it stands again")
+				-- (The audit's review.) A guild the moderators took off the network (net-off) ranks nobody on
+				-- another's client (Data.KnownRank; Data.CanRank, which the bank asks, as Bank.lua names no
+				-- net-off): the approval stood for it, and must not; nor does another sub-realm's name. Another
+				-- guild is untouched, and the guild back on stands again.
+				local moderation, off = ns.Moderation, {}
+				ns.Moderation = setmetatable({ Guild = function(g) return off[g] end }, { __index = moderation })
+				off["Olympus Tiny"] = { by = "Mod One" }
+				eq(c.Verify.Status("Olympus Tiny"), "verified", "its approval still stands")
+				eq(B.LordOrCaptain("Tin Master-" .. HOME, "Olympus Tiny"), false, "net-off: not the guild master a verifier approved")
+				eq(B.LordOrCaptain("Tin Master-CAMWOWUS2Realm5PvE", "Olympus Tiny"), false)
+				eq(B.LordOrCaptain("Zed Master-CAMWOWUS2Realm5PvE", "Olympus Zeus"), true, "another guild untouched")
+				off["Olympus Zeus"] = { by = "Mod One" }
+				eq(B.LordOrCaptain("Zed Master-" .. HOME, "Olympus Zeus"), false, "net-off: not as the census names him")
+				eq(B.LordOrCaptain("Zed Master-CAMWOWUS2Realm5PvE", "Olympus Zeus"), false, "nor by another sub-realm's name")
+				eq(B.LordOrCaptain("Cap Keeper-CAMWOWUS1Realm1PvE", "Olympus Zeus"), false)
+				off = {}
+				eq(B.LordOrCaptain("Tin Master-" .. HOME, "Olympus Tiny"), true, "back on the network: he stands again")
+				eq(B.LordOrCaptain("Zed Master-CAMWOWUS2Realm5PvE", "Olympus Zeus"), true)
+				ns.Moderation = moderation
+				-- (The audit's review.) The approval stands in for the census's second report alone: as any guild
+				-- master (Data.KnownRank), his guild's census row heard within Data.FRESH, and this login's
+				-- reports in (Data.CROWN_AFTER). Meanwhile his snapshot is held, never dropped (Unsettled), and
+				-- taken once both hold (Bank.Recheck: the window's end, his guild's next report).
+				ns.Comm.loginAt = T0 - 10
+				eq(B.LordOrCaptain("Tin Master-" .. HOME, "Olympus Tiny"), false, "inside the login's window")
+				eq(B.Unsettled("Tin Master-" .. HOME, "Olympus Tiny"), true, "held meanwhile")
+				ns.Comm.loginAt = T0 - D.CROWN_AFTER - 1
+				eq(B.LordOrCaptain("Tin Master-" .. HOME, "Olympus Tiny"), true, "the window over")
+				ns.rdb.guilds["Olympus Tiny"].t = T0 - D.FRESH - 1
+				eq(c.Verify.Status("Olympus Tiny"), "verified", "the approval alone still says so")
+				eq(B.LordOrCaptain("Tin Master-" .. HOME, "Olympus Tiny"), false, "his guild's census row older than Data.FRESH")
+				eq(B.Unsettled("Tin Master-" .. HOME, "Olympus Tiny"), true, "held till its next report")
+				ns.rdb.guilds["Olympus Tiny"] = nil
+				eq(c.Verify.Status("Olympus Tiny"), "verified")
+				eq(B.LordOrCaptain("Tin Master-CAMWOWUS2Realm5PvE", "Olympus Tiny"), false, "no census row of his guild at all (a week away)")
+				eq(B.Unsettled("Tin Master-CAMWOWUS2Realm5PvE", "Olympus Tiny"), true, "held")
+				Report("Olympus Tiny", "Tin Master", {}, { "Tin Master" })
+				eq(B.LordOrCaptain("Tin Master-CAMWOWUS2Realm5PvE", "Olympus Tiny"), true, "his guild's report heard: he stands")
+				-- Our own guild: our roster alone (Roster.RankOf), never these.
+				GetGuildInfo = function() return "Olympus Tiny", "Member", 3 end
+				eq(B.LordOrCaptain("Tin Master-" .. HOME, "Olympus Tiny"), false, "not on our roster")
+				GetGuildInfo = function() return "Olympus Hearth", "Member", 3 end
+				-- Off Forever: the exact name alone, as before.
+				ns.splitNames = nil
+				eq(B.LordOrCaptain("Zed Master-CAMWOWUS2Realm5PvE", "Olympus Zeus"), false, "no Forever: another realm's name")
+				ns.splitNames = true
+				-- Under enforcement the signed manifest alone says who is who: neither the census's other names nor an approval.
+				-- (On the realm group the test's signed list is for, as WithState puts this client.)
+				ns.realm, ns.group, ns.me = "Realm", "Realm+Other", "Tester-Realm"
+				eq(B.LordOrCaptain("Zed Master-CAMWOWUS2Realm5PvE", "Olympus Zeus"), true, "before it")
+				eq(B.LordOrCaptain("Tin Master-CAMWOWUS2Realm5PvE", "Olympus Tiny"), true)
+				Install(Entry("Olympus Other=Signed Lord-Realm", 4), T0)
+				eq(A.Enforced(), true)
+				eq(B.LordOrCaptain("Zed Master-CAMWOWUS2Realm5PvE", "Olympus Zeus"), false, "enforced: the manifest names him nowhere")
+				eq(B.LordOrCaptain("Tin Master-CAMWOWUS2Realm5PvE", "Olympus Tiny"), false)
+				eq(B.Unsettled("Tin Master-CAMWOWUS2Realm5PvE", "Olympus Tiny"), false, "nor held")
+			end)
+			ns.splitNames, ns.Verify, ns.rdb.verify, ns.rdb.council = saved.split, saved.verify, saved.store, saved.council
+			GetGuildInfo, GetServerTime = saved.gi, saved.clock
+			for k in pairs(StaticPopupDialogs) do StaticPopupDialogs[k] = saved.dialogs[k] end
+			if not ok then error(err, 0) end
+		end)
+	end)
+
 	test("authority: queued chat rechecks signed authority at the actual game send", function()
 		WithState(function()
 			local cns = setmetatable({}, { __index = ns })

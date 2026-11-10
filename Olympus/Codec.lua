@@ -710,6 +710,43 @@ function Codec.Trusted(sender)
 	return ok and yes == true
 end
 
+-- (1.5.5) What became of each kind of message that comes in pieces, for /oly bug (Codec.PieceStats).
+-- A kind is its payload's first two letters ("R2" a census report, "CX", "LS"...), known from its first
+-- piece: "?" while that piece never came. Per kind: p pieces taken, a messages put together, i dropped
+-- incomplete and d refused or closed early; per reason: "stale" (no piece for a minute), "old" (open
+-- longer than ASM_MAX_AGE), "full" (no room for one more), "evicted" (a stranger's closed for a trusted
+-- sender's), "bad" (a piece's numbers out of bounds), "restart" (a first piece of another length under
+-- the same id: the pieces before are lost). Every assembler counts here (the channel's, the guild's, the
+-- whispers'), KINDS_MAX kinds at most, the rest as "other": what other players send stays bounded.
+Codec.KINDS_MAX = 24
+local pieceKinds, pieceWhy, kindsKept, piecesIn = {}, {}, 0, 0
+local function KindOf(body)
+	return type(body) == "string" and body:match("^(%w%w)") or "?"
+end
+local function Tally(kind, field, n, why)
+	local k = pieceKinds[kind]
+	if not k then
+		if kindsKept >= Codec.KINDS_MAX then kind = "other" else kindsKept = kindsKept + 1 end
+		k = pieceKinds[kind] or { p = 0, a = 0, i = 0, d = 0 }
+		pieceKinds[kind] = k
+	end
+	k[field] = k[field] + (n or 1)
+	if why then pieceWhy[why] = (pieceWhy[why] or 0) + 1 end
+end
+-- { pieces = every piece fed, kinds = { [kind] = { p, a, i, d } }, why = { [reason] = n } }: copies,
+-- this session's (p counts a message's pieces once it is put together or dropped).
+function Codec.PieceStats()
+	local kinds, why = {}, {}
+	for kind, k in pairs(pieceKinds) do kinds[kind] = { p = k.p, a = k.a, i = k.i, d = k.d } end
+	for reason, n in pairs(pieceWhy) do why[reason] = n end
+	return { pieces = piecesIn, kinds = kinds, why = why }
+end
+function Codec.ResetPieceStats() -- (tests)
+	for k in pairs(pieceKinds) do pieceKinds[k] = nil end
+	for k in pairs(pieceWhy) do pieceWhy[k] = nil end
+	kindsKept, piecesIn = 0, 0
+end
+
 -- When a message's first piece came (1.5.4: Feed moves e.t to its newest piece, e.first keeps this).
 local function Opened(e) return e.first or e.t end
 -- One open message of a stranger's closed for `sender`'s (who holds `mine`): true when one went.
@@ -737,6 +774,8 @@ local function Room(asm, sender, trusted, mine)
 		if not trusted then asm.none, asm.noneFor = asm.changes or 0, mine end
 		return false
 	end
+	local gone = asm.buf[victim]
+	Tally(gone.kind or "?", "d", 1, "evicted"); Tally(gone.kind or "?", "p", gone.got)
 	Codec.Close(asm, victim)
 	asm.evicted = (asm.evicted or 0) + 1
 	return true
@@ -747,11 +786,13 @@ function Codec.Feed(asm, sender, msg, now)
 	local id, i, n, body = msg:match("^C(%w+):(%d+):(%d+):(.*)$")
 	if not id then return nil end
 	i, n = tonumber(i), tonumber(n)
-	if n < 1 or n > Codec.MAX_CHUNKS or i < 1 or i > n then return nil end
+	piecesIn = piecesIn + 1
+	if n < 1 or n > Codec.MAX_CHUNKS or i < 1 or i > n then Tally(i == 1 and KindOf(body) or "?", "d", 1, "bad") return nil end
 	local key = sender .. "#" .. id
 	local e = asm.buf[key]
 	if not e or e.n ~= n then
 		local trusted = e and e.trusted
+		if e then Tally(e.kind or "?", "d", 1, "restart"); Tally(e.kind or "?", "p", e.got) end
 		if not e then
 			local mine = asm.bySender[sender] or 0
 			if mine < Codec.OPEN_PER_SENDER and asm.open >= Codec.OPEN_MAX then
@@ -760,6 +801,7 @@ function Codec.Feed(asm, sender, msg, now)
 			end
 			if mine >= Codec.OPEN_PER_SENDER or asm.open >= Codec.OPEN_MAX then
 				asm.refused = asm.refused + 1
+				Tally(i == 1 and KindOf(body) or "?", "d", 1, "full")
 				return nil
 			end
 			asm.bySender[sender], asm.open = mine + 1, asm.open + 1
@@ -771,6 +813,7 @@ function Codec.Feed(asm, sender, msg, now)
 	if not e.parts[i] then
 		e.parts[i] = body
 		e.got = e.got + 1
+		if i == 1 then e.kind = KindOf(body) end
 		-- Keep an assembly alive while its pieces keep arriving: the window below is meant
 		-- to catch senders that stopped, not slow ones. ASM_MAX_AGE bounds the total wait.
 		e.first = e.first or e.t
@@ -778,6 +821,7 @@ function Codec.Feed(asm, sender, msg, now)
 	end
 	if e.got == n then
 		Codec.Close(asm, key)
+		Tally(e.kind or "?", "a"); Tally(e.kind or "?", "p", n)
 		return table.concat(e.parts)
 	end
 	return nil
@@ -803,6 +847,7 @@ function Codec.Gc(asm, now)
 		if now - e.t > (e.n > 30 and 70 or 60) or now - (e.first or e.t) > Codec.ASM_MAX_AGE then
 			dropped = dropped + 1
 			sample = sample or ("%s %d/%d"):format(k, e.got, e.n)
+			Tally(e.kind or "?", "i", 1, now - (e.first or e.t) > Codec.ASM_MAX_AGE and "old" or "stale"); Tally(e.kind or "?", "p", e.got)
 			Codec.Close(asm, k)
 		end
 	end

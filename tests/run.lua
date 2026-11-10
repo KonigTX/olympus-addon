@@ -1490,13 +1490,14 @@ test("layer sample is stable and about 1 in 8", function()
 	assert(hits > 50 and hits < 150, "sample size " .. hits)
 end)
 
-test("realm view lists king, lords, captains and level race", function()
+-- (1.5.5: the level race is off; the census list of the highest levels stays, renamed Top levels.)
+test("realm view lists king, lords, captains and top levels", function()
 	ns.rdb.guilds = SampleGuilds()
 	local lines = ns.Views.RealmLines()
 	assert(lines[1].text:find("Asmon Layer", 1, true), "the King is online: his layer line comes first")
 	assert(lines[2].text:find("King") and lines[2].text:find("Asmongold"), lines[2].text)
 	local sawRace = false
-	for _, l in ipairs(lines) do if l.text == "Level race" then sawRace = true end end
+	for _, l in ipairs(lines) do if l.text == "Top levels" then sawRace = true end end
 	assert(sawRace)
 	ns.rdb.guilds = {}
 end)
@@ -7001,12 +7002,18 @@ assert(loadfile(ROOT .. "tests/relay-presentation.lua"))(ns, test, eq, { RelayWo
 -- 1.5.4: the presentation, the relay's admission and the relay rules (tests/relay-admit.lua).
 assert(loadfile(ROOT .. "tests/relay-admit.lua"))(ns, test, eq, { RelayWorld = RelayWorld, FreshComm = FreshComm, ROOT = ROOT })
 assert(loadfile(ROOT .. "tests/roster-subrealm.lua"))(ns, test, eq)
+-- 1.5.5: every chat line reaches every member once (tests/chat-delivery.lua).
+assert(loadfile(ROOT .. "tests/chat-delivery.lua"))(ns, test, eq, { RelayWorld = RelayWorld })
 assert(loadfile(ROOT .. "tests/king-crown-relay.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
 -- 1.5.4: the King's presence where he leads no guild named Olympus (tests/king-online.lua).
 assert(loadfile(ROOT .. "tests/king-online.lua"))(ns, test, eq, { RelayWorld = RelayWorld, ADDON_DIR = ADDON_DIR })
 assert(loadfile(ROOT .. "tests/hop-forever-king.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
 -- 1.5.4: modified builds (tests/builds.lua): detection, the record, the shared word, the views and the lock.
 assert(loadfile(ROOT .. "tests/builds.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
+-- 1.5.5: chat lines, senders and channel names the client keeps secret are never read (tests/secret-chat.lua).
+assert(loadfile(ROOT .. "tests/secret-chat.lua"))(ns, test, eq, { ROOT = ROOT })
+-- 1.5.5: an install that does not fit the game, and /oly bug's bounded debug section (tests/install-debug.lua).
+assert(loadfile(ROOT .. "tests/install-debug.lua"))(ns, test, eq, { ROOT = ROOT })
 
 test("1.4.3 the relay: where names split, a channel message goes to the picked signed relay by whisper (RL), pinged once; a chat line goes logged; the relay registers reporters (RR), forwards to each guild's reporter (RM) and hears it itself; a reporter takes it once and hands it to its guild (RG); a guildmate takes it once; a stranger's RM is dropped", function()
 	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild }
@@ -29178,9 +29185,11 @@ test("1.2.6 companion sections: guilds, rankings and wanted carry only public ro
 		eq(rankings.treasury, nil, "no treasury numbers while the King keeps the balance private")
 		eq(type(rankings.crafting), "table")
 		-- (1.2.6, the Companion's Rankings tab: `boards`, each public board's rows and the player's own
-		-- place, BridgeSections.lua; tests/bridge-people.lua checks what each holds.)
+		-- place, BridgeSections.lua; tests/bridge-people.lua checks what each holds. 1.5.5: and the realm
+		-- group they are of, realmGroup and pvp, which name nobody: tests/bridge-membership.lua's.)
 		for k in pairs(rankings) do
-			assert(({ slayers = true, donors = true, church = true, games = true, crafting = true, treasury = true, boards = true })[k], "ranking " .. k)
+			assert(({ slayers = true, donors = true, church = true, games = true, crafting = true, treasury = true, boards = true,
+				realmGroup = true, pvp = true })[k], "ranking " .. k)
 		end
 
 		eq(rankings.church.missionaries[1], "Pious"); eq(rankings.staff, nil, "only the public kinds")
@@ -33508,7 +33517,8 @@ end)
 -- (1.4.0, the author's ask before the launch: the letter Asmon reads on stream, in every language) Its
 -- own name, an icon on every news line (the three launch lines too), the King's word for the chat and
 -- the dev's own signature and no P.S. (the author's call); drawn, no {mark} is left as a code.
-test("1.4.0 the launch letter in every language: its own name, an icon on each of its eleven news lines, the dev's signature and no P.S.; drawn, no {mark} left as written", function()
+-- (1.5.5, the owner's call: its level race line left, the race being off: ten news lines.)
+test("1.4.0 the launch letter in every language: its own name, an icon on each of its ten news lines, the dev's signature and no P.S.; drawn, no {mark} left as written", function()
 	local files = { enUS = {}, ptBR = {}, deDE = { "deDE" }, esES = { "esES" }, frFR = { "frFR" }, itIT = { "itIT" }, ruRU = { "ruRU" } }
 	local english = LoadLocale("enUS").L
 	for code, list in pairs(files) do
@@ -33527,13 +33537,72 @@ test("1.4.0 the launch letter in every language: its own name, an icon on each o
 				assert(line:find("^%- {%a+} "), code .. ": an icon on " .. line)
 			end
 		end
-		eq(n, 11, code .. ": the news lines")
+		eq(n, 10, code .. ": the news lines")
+		eq(body:find("{gold}", 1, true), nil, code .. ": no level race line")
 		eq(body:find("P.S.", 1, true) or body:find("P.D.", 1, true), nil, code .. ": no P.S. (the author's call)")
 		local signed = lns.L.LETTER_1_4_0_SIGNED
 		assert(type(signed) == "string" and signed ~= "" and signed ~= lns.L.HONOR_LETTER_SIGN, code .. ": the dev's own signature, not the King's")
 		local ln = setmetatable({ L = lns.L, On = function() end }, { __index = ns })
 		assert(loadfile(ADDON_DIR .. "Letters.lua"))("Olympus", ln)
 		eq(ln.Letters.DrawMarks(body):find("{%a+}"), nil, code .. ": every mark drawn")
+	end
+end)
+
+-- (1.5.5, the owner's call: the level race is off) In every language: the Realm page's census list is
+-- Top levels; the gold comet's title is the Olympus Speedrunner's and its letter says so; the race's
+-- apology is short and plain: no em dash, no format code, no proof or contact line; bronze and silver
+-- have no title left; the 1.4.0 letter no longer announces the race.
+test("1.5.5 the level race off in every language: Top levels, the Olympus Speedrunner's title and letter, the apology's words", function()
+	local files = { enUS = {}, ptBR = {}, deDE = { "deDE" }, esES = { "esES" }, frFR = { "frFR" }, itIT = { "itIT" }, ruRU = { "ruRU" } }
+	local TOP = { enUS = "Top levels", ptBR = "Níveis mais altos", esES = "Niveles más altos", deDE = "Höchste Stufen",
+		frFR = "Plus hauts niveaux", itIT = "Livelli più alti", ruRU = "Высшие уровни" }
+	local SPEED = { enUS = "The Olympus Speedrunner", ptBR = "O Speedrunner do Olympus", esES = "El Speedrunner de Olympus",
+		deDE = "Der Speedrunner von Olympus", frFR = "Le Speedrunner d'Olympus", itIT = "Lo Speedrunner di Olympus", ruRU = "Спидраннер Olympus" }
+	local english = LoadLocale("enUS").L
+	for code, list in pairs(files) do
+		local L2 = LoadLocale(code, list).L
+		eq(L2.LEVEL_RACE, TOP[code], code .. ": the census list's heading")
+		eq(L2.HONOR_TITLES["level-race-60"], SPEED[code], code .. ": the gold comet's title")
+		eq(L2.HONOR_TITLES["level-race-20"], nil, code .. ": no bronze title"); eq(L2.HONOR_TITLES["level-race-40"], nil, code .. ": no silver title")
+		local level, sorry = L2.HONOR_LETTER.level, L2.HONOR_LETTER.apology
+		assert(type(sorry) == "string" and sorry ~= "", code .. ": the apology")
+		if code ~= "enUS" then
+			assert(sorry ~= english.HONOR_LETTER.apology, code .. ": the apology translated (the list taken whole)")
+			assert(L2.HONOR_APOLOGY_TITLE ~= english.HONOR_APOLOGY_TITLE, code .. ": its name translated")
+		end
+		eq(select(2, level:gsub("%%s", "")), 1, code .. ": the gold comet's letter names its title once")
+		eq(sorry:find("%", 1, true), nil, code .. ": no format code in the apology")
+		for _, text in ipairs({ sorry, level, L2.HONOR_APOLOGY_TITLE }) do
+			eq(text:find("\226\128\148", 1, true), nil, code .. ": no em dash")
+		end
+		eq(sorry:find("http", 1, true), nil, code .. ": no link"); eq(sorry:find("@", 1, true), nil, code .. ": no contact")
+		eq(L2.LETTER_1_4_0:find("{gold}", 1, true), nil, code .. ": the 1.4.0 letter no longer announces the race")
+		eq(rawget(L2, "ARENA_TITLE_FIRST_TO"), nil, code .. ": the design's fallback title gone")
+	end
+	eq(english.HONOR_LETTER.apology:lower():find("bug", 1, true) ~= nil, true, "the comet came from a bug")
+	eq(english.HONOR_LETTER.apology:lower():find("sorry", 1, true) ~= nil, true)
+	eq(english.HONOR_LETTER.apology:lower():find("proof", 1, true), nil, "no proof line")
+	eq(english.HONOR_LETTER.apology:lower():find("contact", 1, true), nil, "no contact line")
+end)
+
+-- (1.5.5, the independent check) A kept bronze or silver race letter showed the gold comet's words with
+-- its raw key for a title. Retired comets' letters have words of their own in every language: plain (no
+-- title to name, no format code), no em dash, translated; and a name for their line in the lists.
+test("1.5.5 retired comets' letters in every language: plain words of their own and a name, translated", function()
+	local files = { enUS = {}, ptBR = {}, deDE = { "deDE" }, esES = { "esES" }, frFR = { "frFR" }, itIT = { "itIT" }, ruRU = { "ruRU" } }
+	local english = LoadLocale("enUS").L
+	for code, list in pairs(files) do
+		local L2 = LoadLocale(code, list).L
+		local words, name = L2.HONOR_LETTER["level-retired"], rawget(L2, "HONOR_RETIRED_TITLE")
+		assert(type(words) == "string" and words ~= "", code .. ": the retired letter's words")
+		assert(type(name) == "string" and name ~= "", code .. ": its name")
+		if code ~= "enUS" then
+			assert(words ~= english.HONOR_LETTER["level-retired"], code .. ": translated (the list taken whole)")
+			assert(name ~= english.HONOR_RETIRED_TITLE, code .. ": its name translated")
+		end
+		eq(words:find("%", 1, true), nil, code .. ": no format code")
+		for _, text in ipairs({ words, name }) do eq(text:find("\226\128\148", 1, true), nil, code .. ": no em dash") end
+		eq(words:find("http", 1, true), nil, code .. ": no link")
 	end
 end)
 
@@ -37982,6 +38051,265 @@ test("1.1 the King's week: every client keeps the entries of the King and his Ha
 		K.HandleCommand("CHANNEL", KING, "T1~D~506~Olympus~7200~1~~Court")
 		eq(W.Cancel(506), true)
 		assert(LastWeek(w):find("^T1~D~506~Olympus II~0~0~~$"), LastWeek(w))
+	end)
+end)
+
+-- 1.5.5 (the audit of 11-10): the week's entries, their cancel, the setter's sheet and Open the Gates
+-- go logged, as a decree does (D1): the setter's own words, which a relay passes on to every guild's
+-- reporter whole, outside the trickle other clients' words share. A Steward or a Hand is no relay, and
+-- his, unlogged, reached about one guild in a hundred a send. A sheet too long for one message goes as
+-- several sheets of one piece each, never Codec's pieces (unlogged, and over GUILD no client put T1
+-- pieces together). Before: every one unlogged, a long sheet in pieces. (Changed on purpose, the audit's
+-- review: the lane's first draft sent every one logged, the timed repeats too, an entry's every RESEND,
+-- the sheet at its own pace and the gates' every GATES_RESEND. A relay sends a logged word to every
+-- reporter unkeyed, outside the trickle: each repeat waited there as a new whisper a reporter, a backlog
+-- without end (the next test). Logged now: an entry's first send, its cancel, a sheet sent on a change,
+-- the gates' opening and closing; the timed repeats unlogged, as before.)
+test("1.5.5 the King's week and the gates: an entry's first send and its cancel, a sheet on a change (a long one as several sheets, never pieces), the gates opened and closed go logged; their timed repeats unlogged", function()
+	WithWeek(function(w, W, K)
+		local sends, chunked = {}, 0
+		local savedChunked = ns.Comm.SendChunked
+		local ok, err = pcall(function()
+			ns.Comm.Send = function(dist, msg, key, urgent, logged)
+				local x = { dist = dist, msg = msg, key = key, urgent = urgent, logged = logged }
+				sends[#sends + 1], w.sent[#w.sent + 1] = x, x
+				return true
+			end
+			ns.Comm.SendChunked = function() chunked = chunked + 1 return true end
+			local function Last(prefix)
+				for i = #sends, 1, -1 do if sends[i].msg:sub(1, #prefix) == prefix then return sends[i] end end
+			end
+			AsKing()
+			eq(K.SetAgenda("Sat 20:00 Raid night"), true)
+			local entry = Last("T1~D~")
+			assert(entry and entry.msg:find("~1~~Raid night$"), "the new entry")
+			eq(entry.logged, true, "an entry's first send goes logged")
+			local id = W.Entries()[1].id
+			-- Its repeat for late logins, and the sheet (the counts, an empty one at once: a new entry's,
+			-- a change).
+			sends = {}
+			w.clock = w.clock + W.RESEND_FAR
+			W.Tick()
+			local again = Last("T1~D~")
+			assert(again and again.msg:find("^T1~D~" .. id .. "~Olympus~%d+~0~"), "a repeat")
+			eq(again.logged, false, "a timed repeat goes unlogged")
+			local sheet = Last("T1~R~")
+			assert(sheet, "the sheet"); eq(sheet.logged, true, "a new entry's first sheet goes logged"); eq(sheet.key, "sheet:army")
+			-- The sheet again at its own pace (nobody signed, the entry days away: SHEET_IDLE): unlogged.
+			sends = {}
+			w.clock = w.clock + W.SHEET_IDLE
+			W.Tick()
+			eq(Last("T1~D~"), nil, "no repeat of the entry yet")
+			sheet = Last("T1~R~")
+			assert(sheet, "the sheet at its pace"); eq(sheet.logged, false, "a timed sheet goes unlogged"); eq(sheet.key, "sheet:army")
+			-- A signup changes it: the sheet at once (SHEET_SOON), logged.
+			sends = {}
+			W.HandleSignup("WHISPER", "Zed-Realm", ("Y2~%d~T~Olympus Zeus"):format(id))
+			sheet = Last("T1~R~")
+			assert(sheet and sheet.msg:find("~" .. id .. ":", 1, true), "the changed sheet"); eq(sheet.logged, true, "a change's sheet goes logged")
+			-- Taken off: the cancel too.
+			eq(W.Cancel(id), true)
+			local cancel = Last("T1~D~")
+			eq(cancel.msg, ("T1~D~%d~Olympus~0~0~~"):format(id)); eq(cancel.logged, true, "a cancel goes logged")
+			-- A long sheet (40 entries' counts, 20 the army's and 20 his guild's): several sheets of one
+			-- message each, each entry once, never Codec's pieces; logged on a change, unlogged at its pace.
+			local list = {}
+			for i = 1, 40 do list[i] = { id = 90000 + i, mine = true, at = ns.Now() + 3600, guildOnly = i > 20 or nil } end
+			local function LongSheet(soon)
+				local entries, mayEdit, counts = W.Entries, W.MayEdit, W.Counts
+				W.Entries = function() return list end
+				W.MayEdit = function() return true end
+				W.Counts = function() return { T = 123, H = 45, D = 67, A = 8 } end
+				sends = {}
+				local sent, why = pcall(W.SendSheet, soon)
+				W.Entries, W.MayEdit, W.Counts = entries, mayEdit, counts
+				assert(sent, why)
+			end
+			LongSheet(true)
+			eq(chunked, 0, "never in pieces")
+			local seen, keys, army, guild = {}, {}, 0, 0
+			for _, x in ipairs(sends) do
+				local body, minutes = x.msg:match("^T1~R~%d+~Olympus~([^~]+)~(%d+)$")
+				assert(body, x.msg)
+				assert(#x.msg <= W.SHEET_BYTES, #x.msg .. " bytes")
+				eq(x.logged, true, "each one logged"); eq(minutes, "5", "the next in 5 minutes: entries near")
+				assert(not keys[x.key], "each its own key: " .. x.key)
+				keys[x.key] = true
+				if x.dist == "GUILD" then guild = guild + 1 else eq(x.dist, "CHANNEL"); army = army + 1 end
+				for part in body:gmatch("[^,]+") do
+					local eid = tonumber(part:match("^(%d+):123:45:67:8$"))
+					assert(eid and not seen[eid], part)
+					seen[eid] = x.dist
+				end
+			end
+			assert(army >= 2 and guild >= 2, ("several sheets each: %d to the army, %d to the guild"):format(army, guild))
+			for i = 1, 40 do eq(seen[90000 + i], i > 20 and "GUILD" or "CHANNEL", "entry " .. i .. " once, to its audience") end
+			assert(keys["sheet:army"] and keys["sheet:army:2"] and keys["sheet:guild"] and keys["sheet:guild:2"], "the first keeps its key")
+			-- The same long sheet at its own pace (SHEET_EVERY later): as many sheets, each unlogged, never pieces.
+			w.clock = w.clock + W.SHEET_EVERY
+			LongSheet(false)
+			eq(chunked, 0, "never in pieces")
+			eq(#sends, army + guild, "as many sheets as on the change")
+			for _, x in ipairs(sends) do
+				assert(x.msg:find("^T1~R~%d+~Olympus~"), x.msg)
+				eq(x.logged, false, "each one unlogged at its pace")
+			end
+			-- Open the Gates: logged; said again for late logins every GATES_RESEND, unlogged; closed: logged.
+			sends = {}
+			ns.Acts.OpenGates("Olympus Zeus")
+			local open = Last("T1~G~")
+			assert(open and open.msg:find("~Olympus Zeus$"), "the gates"); eq(open.logged, true, "their opening goes logged")
+			sends = {}
+			eq(ns.Acts.TickGates(), false)
+			eq(Last("T1~G~"), nil, "not again before GATES_RESEND")
+			w.clock = w.clock + ns.Acts.GATES_RESEND
+			eq(ns.Acts.TickGates(), false)
+			local gatesAgain = Last("T1~G~")
+			assert(gatesAgain and gatesAgain.msg:find("~Olympus Zeus$"), "said again")
+			eq(gatesAgain.logged, false, "a timed repeat goes unlogged")
+			ns.Acts.CloseGates()
+			local closed = Last("T1~G~")
+			assert(closed.msg:find("~0~$"), closed.msg); eq(closed.logged, true, "their closing goes logged")
+		end)
+		ns.Comm.SendChunked = savedChunked
+		if not ok then error(err, 0) end
+	end)
+end)
+
+-- 1.5.5: why logged reaches every guild. A relay passes a logged word (RL~L~) from a client that is
+-- no relay (a Hand's week entry) on to every reporter it holds, outside the trickle (Relay.lua's
+-- ToReporters), which his unlogged words share with every other client's. (The relay is driven until
+-- it is idle: its queue pumped, its timers and tickers run, its clock moving.)
+test("1.5.5 a relay passes a Hand's logged week entry on to every reporter it holds, after a burst of his unlogged words", function()
+	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild }
+	local ok, err = pcall(function()
+		GetChannelName = function() return 0 end
+		ns.IsMember = function() return true end
+		IsInGuild = function() return true end
+		GetGuildInfo = function() return "Olympus II", "Member", 3 end
+		local R, _, sent = Harness.RelayWorld("Relay Keeper-CAMWOWUS2Realm1PvE", "Olympus II")
+		R.rdb.council.names = { ["relay keeper"] = "Relay Keeper" } -- (a signed councillor's client: a relay)
+		local timers, tickers = {}, {}
+		R.After = function(_, _, fn) timers[#timers + 1] = fn end
+		R.Every = function(_, _, fn) tickers[#tickers + 1] = fn return { Cancel = function() end } end
+		local REPORTERS = 40
+		for i = 1, REPORTERS do
+			R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i))
+		end
+		local HAND = "Helper Hand-CAMWOWUS2Realm3PvE"
+		for i = 1, 12 do R.Relay.HandleIn("WHISPER", HAND, ("RL~P~X1~an unlogged word %d"):format(i)) end
+		local entry = "T1~D~501~Olympus~3600~1~~Raid night"
+		R.Relay.HandleIn("WHISPER", HAND, "RL~L~" .. entry)
+		for _ = 1, 1500 do
+			R.Comm.Pump()
+			local due = timers; timers = {}
+			for _, fn in ipairs(due) do fn() end
+			for _, fn in ipairs(tickers) do fn() end
+			R.clock = R.clock + 1
+		end
+		local got = {}
+		for _, x in ipairs(sent) do
+			if x.target and x.msg == "RM~L~" .. HAND .. "~" .. entry then got[x.target] = (got[x.target] or 0) + 1 end
+		end
+		local n = 0
+		for target in pairs(got) do
+			n = n + 1
+			assert(target:find("^Rep Number%d+"), target)
+		end
+		eq(n, REPORTERS, "every reporter gets the logged entry")
+	end)
+	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild = saved.channel, saved.member, saved.guild, saved.inGuild
+	C_ChatInfo = nil
+	if not ok then error(err, 0) end
+end)
+
+-- 1.5.5 (the audit's review): why the timed repeats stay unlogged, end to end. A setter's client that
+-- is a relay itself (the King's, a councillor's) hands its own words to every reporter it holds: a
+-- logged one unkeyed, so with the lane's first draft each repeat of his entry and of his sheet waited
+-- there as one more whisper a reporter, the queue filled (Comm's MAX_QUEUE) and the oldest words waiting
+-- were dropped to make room. Unlogged, a newer repeat takes the waiting one's place, reporter by
+-- reporter (Relay.lua's keys): one of each a reporter, however many come. The entry's first send, its
+-- first sheet and its cancel still reach every reporter, logged. (The setter's real Week.lua sends,
+-- through this relay's real Comm.lua and Relay.lua; the relay's queue drained when said.)
+test("1.5.5 a relay's queue holds one of each of a setter's timed repeats a reporter (his entry's, his sheet's), however many come; his entry's first send, its first sheet and its cancel reach every reporter logged", function()
+	WithWeek(function(w, W, K)
+		local saved = { channel = GetChannelName, member = ns.IsMember, inGuild = IsInGuild }
+		local ok, err = pcall(function()
+			GetChannelName = function() return 0 end
+			ns.IsMember = function() return true end
+			IsInGuild = function() return true end
+			AsKing()
+			local R, _, sent = Harness.RelayWorld("Relay Keeper-CAMWOWUS2Realm1PvE", "Olympus")
+			R.rdb.council.names = { ["relay keeper"] = "Relay Keeper" } -- (a signed councillor's client: a relay)
+			local timers = {}
+			R.After = function(delay, _, run)
+				timers[#timers + 1] = { at = R.clock + delay, run = run }
+			end
+			local function Drain()
+				for _ = 1, 200 do
+					if R.Comm.QueueSize() == 0 and R.Relay.ChatWaiting() == 0 then return end
+					R.clock = R.clock + 1.2
+					R.Comm.Pump()
+					local queued = timers
+					timers = {}
+					for _, timer in ipairs(queued) do
+						if timer.at <= R.clock then timer.run()
+						else timers[#timers + 1] = timer end
+					end
+				end
+				error("the relay's outbound queues never drained")
+			end
+			local REPORTERS = 12
+			for i = 1, REPORTERS do
+				R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i))
+			end
+			Drain()
+			-- The setter's words leave through this client: its own relay (Relay.Out hands them to itself).
+			ns.Comm.Send = function(dist, msg, key, urgent, logged, done, options)
+				return R.Comm.Send(dist, msg, key, urgent, logged, done, options)
+			end
+			-- To each reporter: how many copies of each kind, logged (RM~L~) or not (RM~P~).
+			local function Count(prefix)
+				local per, n = {}, 0
+				for _, x in ipairs(sent) do
+					if x.target and x.msg:sub(1, #prefix) == prefix then
+						assert(x.target:find("^Rep Number%d+"), x.target)
+						per[x.target] = (per[x.target] or 0) + 1
+					end
+				end
+				for _, c in pairs(per) do n = n + 1; eq(c, 1, "one copy a reporter: " .. prefix) end
+				return n
+			end
+			local ORIGIN = "Relay Keeper-CAMWOWUS2Realm1PvE"
+			eq(K.SetAgenda("Sat 20:00 Raid night"), true)
+			local id = W.Entries()[1].id
+			W.Tick() -- (the new entry's first sheet: a change's)
+			Drain()
+			eq(Count(("RM~L~%s~T1~D~%d~Olympus~"):format(ORIGIN, id)), REPORTERS, "the first send, logged, to every reporter")
+			eq(Count(("RM~L~%s~T1~R~"):format(ORIGIN)), REPORTERS, "the first sheet, logged, to every reporter")
+			-- Five rounds of timed repeats (the entry every RESEND_FAR, the sheet at its idle pace), the
+			-- relay's queue never drained between them: it holds one of each a reporter, as after the first.
+			wipe(sent)
+			local sizes = {}
+			for k = 1, 5 do
+				w.clock = w.clock + W.RESEND_FAR
+				W.Tick()
+				sizes[k] = R.Comm.QueueSize()
+			end
+			eq(sizes[1], 2 * REPORTERS, "a repeat and a sheet for each reporter")
+			for k = 2, 5 do eq(sizes[k], sizes[1], "round " .. k .. ": the waiting copies replaced, nothing added") end
+			Drain()
+			eq(Count(("RM~P~%s~T1~D~%d~Olympus~"):format(ORIGIN, id)), REPORTERS, "the entry's last repeat, unlogged, once to every reporter")
+			eq(Count(("RM~P~%s~T1~R~"):format(ORIGIN)), REPORTERS, "the last sheet, unlogged, once to every reporter")
+			eq(Count("RM~L~"), 0, "none of them logged")
+			-- Taken off: the cancel, logged, to every reporter.
+			wipe(sent)
+			eq(W.Cancel(id), true)
+			Drain()
+			eq(Count(("RM~L~%s~T1~D~%d~Olympus~0~0~~"):format(ORIGIN, id)), REPORTERS, "the cancel, logged, to every reporter")
+		end)
+		GetChannelName, ns.IsMember, IsInGuild = saved.channel, saved.member, saved.inGuild
+		if not ok then error(err, 0) end
 	end)
 end)
 
@@ -48206,14 +48534,50 @@ test("1.1 taking donations (the Treasurer's idea): a keeper's switch, a line on 
 			T.HandleDonations("CHANNEL", "Asmongold Asmongler-Realm", ("TD~Olympus~1~%d~"):format(w.clock))
 			assert(Texts(T.DonationLines()):find(ns.L.DONATIONS_LINE:format("Asmon"), 1, true), Texts(T.DonationLines()))
 			-- He logs out while on: his addon says off as it leaves; next session it starts off.
+			-- (1.5.5, changed on purpose: on Forever, where the relay carries the channel's words, Relay.On,
+			-- the off went raw on the channel, which delivers nothing there. Now it goes to his own guild over
+			-- GUILD, as the relay's hand-over from himself, RG, and nothing goes on the channel. The harness
+			-- loads no Relay.lua into its namespace: Relay.On's answer stands in for Forever's. Off Forever,
+			-- the channel as before: below.)
 			AsTreasurer()
 			T.SetDonations(true)
-			local said
-			C_ChatInfo = { SendAddonMessage = function(prefix, msg, dist, target) said = { prefix, msg, dist, target } end }
+			local said, says = nil, {}
+			local function Said() return { SendAddonMessage = function(prefix, msg, dist, target)
+				said = { prefix, msg, dist, target }
+				says[#says + 1] = said
+			end } end
+			C_ChatInfo = Said()
 			GetChannelName = function() return 7 end
 			ns.Comm.ChannelName = function() return "OlympusNet" end
+			local relay = ns.Relay
+			ns.Relay = { On = function() return true end }
+			local done, why = pcall(T.DonationsLogout)
+			ns.Relay = relay
+			assert(done, why)
+			eq(#says, 1, "one word")
+			eq(said[1], ns.PREFIX); eq(said[2], "RG~P~" .. ns.ShortName(TREASURER) .. "~TD~Olympus~0~0~"); eq(said[3], "GUILD"); eq(said[4], nil)
+			eq(T.TakingDonations(), false)
+			-- A guildmate's client takes it as his word: hop 3 (the real Relay.lua) hands it to the TD handler.
+			AsSoldier()
+			local function Listed() return Texts(T.DonationLines()):find(ns.ShortName(TREASURER), 1, true) ~= nil end
+			T.HandleDonations("CHANNEL", TREASURER, ("TD~Olympus~1~%d~"):format(w.clock))
+			eq(Listed(), true, "his line")
+			local R = Harness.RelayWorld("Soldier-Realm", "Olympus II")
+			R.Comm.Handle("TD", function(...) T.HandleDonations(...) end)
+			eq(R.Relay.HandleGuild("GUILD", "Guildmate-Realm", says[1][2]), true)
+			eq(Listed(), false, "his off over GUILD takes the line down")
+			-- Without the relay (Relay.lua missing) where names split: still never the channel.
+			C_ChatInfo = Said()
+			AsTreasurer()
+			T.SetDonations(true)
 			T.DonationsLogout()
-			eq(said and said[2], "TD~Olympus~0~0~"); eq(said[3], "CHANNEL"); eq(said[4], 7)
+			eq(#says, 2); eq(said[3], "GUILD", "where names split, no relay loaded: still not the channel")
+			-- Off Forever (names whole, no relay): the channel, as before.
+			ns.splitNames = false
+			T.SetDonations(true)
+			T.DonationsLogout()
+			ns.splitNames = true
+			eq(#says, 3); eq(said[2], "TD~Olympus~0~0~"); eq(said[3], "CHANNEL"); eq(said[4], 7)
 			eq(T.TakingDonations(), false)
 			-- A 1.0 client's addon leaves it unread.
 			C_ChatInfo = saved.cci
@@ -48228,6 +48592,33 @@ test("1.1 taking donations (the Treasurer's idea): a keeper's switch, a line on 
 		DEFAULT_CHAT_FRAME, C_Map.GetBestMapForUnit, ns.db.shareLocation, ns.db.chatMute = saved.chat, saved.best, saved.share, saved.mute
 		C_ChatInfo, GetChannelName, ns.Comm.ChannelName, ns.splitNames = saved.cci, saved.chan, saved.name, saved.split
 		ns.rdb.treasuryFlags = nil
+		if not ok then error(err, 0) end
+	end)
+end)
+
+-- 1.5.5 (the audit of 11-10). On Forever a keeper's "on" reaches the other guilds through a relay,
+-- stamped with his own sub-realm ("Name-CAMWOWUS2Realm7PvE"), while his "off" at logout reaches his
+-- guild over GUILD naming him plain (Treasury.DonationsLogout, RG), which each guildmate's client
+-- files under its own sub-realm. Forever's names are one across a family: the off takes his line
+-- down whichever stamp the on had; a namesake in another family is nobody's keeper. Before: the line
+-- stayed until DONATIONS_FRESH.
+test("1.5.5 taking donations on Forever: a keeper's off takes his line down whichever sub-realm of his family his on was stamped with; another family's namesake never", function()
+	WithThrone(function()
+		local T = ns.Treasury
+		local saved = { split = ns.splitNames, realm = ns.realm, group = ns.group, keepers = ns.rdb.treasuryKeepers }
+		local ok, err = pcall(function()
+			ns.splitNames, ns.realm, ns.group = true, "CAMWOWUS2Realm5PvE", "ForeverPvE"
+			ns.rdb.treasuryKeepers = { at = 1, names = { "Keeper Person-CAMWOWUS2Realm7PvE" } }
+			AsSoldier()
+			local function Listed() return Texts(T.DonationLines()):find("Keeper Person", 1, true) ~= nil end
+			T.HandleDonations("CHANNEL", "Keeper Person-CAMWOWUS2Realm7PvE", ("TD~Olympus Zeus~1~%d~"):format(ns.Now()))
+			eq(Listed(), true, "his on, through a relay")
+			T.HandleDonations("CHANNEL", "Keeper Person-CAMWOWUS2Realm5PvP", "TD~Olympus Zeus~0~0~")
+			eq(Listed(), true, "another family's namesake takes nothing down")
+			T.HandleDonations("CHANNEL", "Keeper Person", "TD~Olympus Zeus~0~0~")
+			eq(Listed(), false, "his off over GUILD, named plain: the same character")
+		end)
+		ns.splitNames, ns.realm, ns.group, ns.rdb.treasuryKeepers = saved.split, saved.realm, saved.group, saved.keepers
 		if not ok then error(err, 0) end
 	end)
 end)
@@ -62856,9 +63247,9 @@ end)()
 	end)
 
 	test("1.4.0: the version, the TOC's files in order, the new message types in Comm.lua's list", function()
-		eq(ns.VERSION, "1.5.4") -- the release has one identity in both folders
+		eq(ns.VERSION, "1.5.5") -- the release has one identity in both folders
 		local toc = assert(ReadFile(ADDON_DIR .. "Olympus.toc"))
-		assert(toc:find("## Version: 1.5.4", 1, true))
+		assert(toc:find("## Version: 1.5.5", 1, true))
 		eq(ns.Workshop.Newer("1.4.0", "1.3.3"), true, "the launch release is newer")
 		eq(ns.Workshop.Newer("1.3.3", "1.4.0"), false)
 		eq(ns.Workshop.Newer("1.4.1", "1.4.0"), true, "the next patch remains newer")
@@ -63305,7 +63696,7 @@ end)()
 	end
 
 	test("1.4.0 version letters: release identity agrees across both TOCs and localized letters; reading the old release does not hide the new letter", function()
-		eq(ns.VERSION, "1.5.4")
+		eq(ns.VERSION, "1.5.5")
 		for _, path in ipairs({ "Olympus/Olympus.toc", "Olympus_Arena/Olympus_Arena.toc" }) do
 			local toc = assert(ReadFile(ROOT .. path))
 			eq(toc:match("## Version:%s*(%S+)"), ns.VERSION, path)
@@ -63804,7 +64195,7 @@ end)()
 			eq(f.title:IsShown(), false); eq(f.body:IsShown(), false); eq(f.all:IsShown(), false)
 			local versions = Lt.Versions()
 			eq(#versions, #Lt.LIST, "a letter for every version listed")
-			eq(table.concat(versions, " "), "1.5.4 1.5.3 1.5.2 1.5.1 1.5.0 1.4.6 1.4.5 1.4.4 1.4.3 1.4.2 1.4.1 1.4.0 1.3.3 1.3.2 1.3.0 1.2.5.1 1.2.5 1.2.4 1.2.3 1.2.2 1.2.1 1.2.0 1.1.5 1.1.4 1.1.3 1.1.2 1.1.1 1.1.0", "newest first")
+			eq(table.concat(versions, " "), "1.5.5 1.5.4 1.5.3 1.5.2 1.5.1 1.5.0 1.4.6 1.4.5 1.4.4 1.4.3 1.4.2 1.4.1 1.4.0 1.3.3 1.3.2 1.3.0 1.2.5.1 1.2.5 1.2.4 1.2.3 1.2.2 1.2.1 1.2.0 1.1.5 1.1.4 1.1.3 1.1.2 1.1.1 1.1.0", "newest first")
 			for i, v in ipairs(versions) do
 				local r = f.rows[i]
 				eq(r:IsShown(), true); eq(r.version, v)

@@ -725,7 +725,6 @@ L.ARENA_SIM_TOAST_LATE = "Bank owes 3g 12s to 4 winners"
 L.ARENA_SIM_TOAST_REFUND = "Refunded: %s"
 L.ARENA_SIM_HALL = "The Hall"
 L.ARENA_SIM_HALL_LINE = "Season %d: %s"
-L.ARENA_SIM_LEVEL_RACE = "The level race"
 L.ARENA_SIM_LINEAGE = "A belt's lineage"
 L.ARENA_SIM_DRILL_TEXT = "The bank's client lost %d entries it had not sent. Replayed from %d auditors' copies: every balance equal."
 
@@ -1448,7 +1447,6 @@ if GetLocale and GetLocale() == "ptBR" then
 	L.ARENA_SIM_TOAST_REFUND = "Devolvido: %s"
 	L.ARENA_SIM_HALL = "O Salão"
 	L.ARENA_SIM_HALL_LINE = "Temporada %d: %s"
-	L.ARENA_SIM_LEVEL_RACE = "A corrida de nível"
 	L.ARENA_SIM_LINEAGE = "A linhagem de um cinturão"
 	L.ARENA_SIM_DRILL_TEXT = "O cliente do banco perdeu %d lançamentos não enviados. Refeito a partir de %d cópias de auditores: todos os saldos iguais."
 end

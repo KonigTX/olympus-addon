@@ -21,6 +21,9 @@ local ENCHANT = "|cffffd000|Henchant:7420|h[Enchant Chest - Minor Health]|h|r"
 local QUEST = "|cffffff00|Hquest:1234:60|h[The Defias Brotherhood]|h|r"
 local BARE = "|Hitem:19019::::::::60:::::::::|h[Thunderfury]|h"
 local NAMED = "|cnIQ4:|Hitem:19019::::::::60:::::::::|h[Thunderfury]|h|r"
+local TORCH_DATA = "item:1172::::::::25:1490::11::::::::"
+local TORCH = "|cnIQ3:|H" .. TORCH_DATA .. "|h[Graysons Torch]|h|r"
+local TORCH_HEX = "|cff0070dd|H" .. TORCH_DATA .. "|h[Grayson's Torch]|h|r"
 
 local function Links(text)
 	local out = {}
@@ -171,15 +174,20 @@ test("1.5.4 chat links at the sender: a line with a link leaves without a pipe, 
 	if not ok then error(err, 0) end
 end)
 
--- The Chat tab's stand-ins for the client's item data and link window, for the two tests below.
+-- The Chat tab's stand-ins for the client's item data and link window.
 local function WithItemData(fn)
 	local savedItem, savedRef, savedInfo, savedShift = rawget(_G, "C_Item"), rawget(_G, "SetItemRef"), rawget(_G, "GetItemInfo"), IsShiftKeyDown
+	local savedColours = rawget(_G, "ITEM_QUALITY_COLORS")
 	local ok, err = pcall(function()
-		local known = { [14342] = { "Mooncloth", ITEM } }
+		local known = { [14342] = { "Mooncloth", ITEM, 2 },
+			-- Forever returns a named quality colour; its cached link need not have the sender's payload.
+			[1172] = { "Grayson's Torch", "|cnIQ3:|Hitem:1172::::::::60:::::|h[Grayson's Torch]|h|r", 3 } }
+		-- Exact normalized bytes for the expected green/blue, without rounding the fixture's RGB.
+		ITEM_QUALITY_COLORS = { [2] = { r = 30 / 255, g = 1, b = 0 }, [3] = { r = 0, g = 112 / 255, b = 221 / 255 } }
 		local asked, refs = {}, {}
 		GetItemInfo = nil
 		C_Item = {
-			GetItemInfo = function(id) local k = known[tonumber(id)] if k then return k[1], k[2], 2 end end,
+			GetItemInfo = function(id) local k = known[tonumber(id)] if k then return k[1], k[2], k[3] end end,
 			IsItemDataCachedByID = function(id) return known[tonumber(id)] ~= nil end,
 			RequestLoadItemDataByID = function(id) asked[#asked + 1] = tonumber(id) end,
 		}
@@ -188,12 +196,13 @@ local function WithItemData(fn)
 		fn(known, asked, refs)
 	end)
 	C_Item, SetItemRef, GetItemInfo, IsShiftKeyDown = savedItem, savedRef, savedInfo, savedShift
+	ITEM_QUALITY_COLORS = savedColours
 	if not ok then error(err, 0) end
 end
 
 test("1.5.4 Chat tab items: a line's item link shows highlighted with the name and colour the client's item data gives it, whatever the line said; an item unknown to the client shows as sent, is asked for once, and the tab redraws when its data arrives; the history keeps the line as sent", function()
 	WithWindow(function(w)
-		WithItemData(function(known, asked)
+		WithItemData(function(known, asked, refs)
 			-- A line whose link lies about the item (a modified client): the real name and colour
 			-- show, the link's own data stays (the item the hover and the click open).
 			local lying = "|cffff0000|H" .. LINK .. "|h[Free Gold]|h|r"
@@ -203,6 +212,7 @@ test("1.5.4 Chat tab items: a line's item link shows highlighted with the name a
 				Line(T0 + 400, "Cc Dd-Realm", "take " .. lying),
 				Line(T0 + 800, "Ee Ff-Realm", "found " .. unknown),
 				Line(T0 + 1200, "Gg Hh-Realm", "cast " .. SPELL),
+				Line(T0 + 1600, "Ii Jj-Realm", "torch " .. TORCH),
 			} }
 			local f = w.CW.Open()
 			assert(f, "open")
@@ -214,6 +224,21 @@ test("1.5.4 Chat tab items: a line's item link shows highlighted with the name a
 			assert(BubbleWith(f, "[Mystery Blade]"), "an item the client has no data of: as sent, until it comes")
 			eq(#asked, 1); eq(asked[1], 77777, "asked the client for it once")
 			eq(BubbleWith(f, "cast ").body:GetText(), "cast " .. SPELL, "a spell link as sent")
+			local torch = assert(BubbleWith(f, "torch "), "Forever's named-colour link in its bubble")
+			eq(torch.body:GetText(), "torch " .. TORCH_HEX, "a renderable hex colour, the original payload and the client-known name")
+			assert(not torch.body:GetText():find("|cn", 1, true), "no named colour escape in the FontString")
+			eq(torch.hyperlinks, true); eq(torch.mouse, true)
+			local rendered = torch.body:GetText():sub(7)
+			eq(Codec.LinkAt(rendered, 1), #rendered, "still a complete WoW hyperlink")
+			local payload = rendered:match("|H([^|]+)|h")
+			torch:Fire("OnHyperlinkClick", payload, rendered, "LeftButton")
+			eq(#refs, 1); eq(refs[1].link, TORCH_DATA); eq(refs[1].text, TORCH_HEX)
+			local hovered
+			GameTooltip.SetHyperlink = function(_, link) hovered = link end
+			torch:Fire("OnHyperlinkEnter", payload, rendered)
+			eq(hovered, TORCH_DATA); eq(GameTooltip:IsShown(), true)
+			torch:Fire("OnHyperlinkLeave")
+			eq(GameTooltip:IsShown(), false)
 			-- The data arrives: the tab redraws with its name and colour.
 			known[77777] = { "Mystery Blade of the Deep", "|cff0070dd|Hitem:77777::::::::60:::::|h[Mystery Blade of the Deep]|h|r" }
 			w.event("GET_ITEM_INFO_RECEIVED", 77777, true)
@@ -223,6 +248,72 @@ test("1.5.4 Chat tab items: a line's item link shows highlighted with the name a
 			eq(#asked, 1, "asked once, for good")
 			-- The history, what moderation and the companion read, holds the lines as sent.
 			eq(ns.rdb.chat.A[2].text, "take " .. lying); eq(ns.rdb.chat.A[3].text, "found " .. unknown)
+			eq(ns.rdb.chat.A[5].text, "torch " .. TORCH, "the named-colour history stays intact")
+		end)
+	end)
+end)
+
+-- Exercise the presentation boundary through real bubbles, including incomplete client data.
+for _, case in ipairs({
+	{ label = "quality zero", quality = 0, colours = { [0] = { r = 0.5, g = 0.5, b = 0.5 } }, hex = "|cff808080" },
+	{ label = "client quality, not the colour name", quality = 42, colours = { [42] = { r = 1, g = 0, b = 1 } }, hex = "|cffff00ff" },
+	{ label = "finite RGB clamped and rounded", quality = 3, colours = { [3] = { r = -1, g = 0.5, b = 2 } }, hex = "|cff0080ff" },
+	{ label = "missing quality", colours = { [3] = { r = 0, g = 0.44, b = 0.87 } } },
+	{ label = "string quality", quality = "3", colours = { ["3"] = { r = 1, g = 0, b = 0 } } },
+	{ label = "fractional quality", quality = 3.5, colours = { [3.5] = { r = 1, g = 0, b = 0 } } },
+	{ label = "negative quality", quality = -1, colours = { [-1] = { r = 1, g = 0, b = 0 } } },
+	{ label = "infinite quality", quality = math.huge, colours = { [math.huge] = { r = 1, g = 0, b = 0 } } },
+	{ label = "NaN quality", quality = 0 / 0, colours = {} },
+	{ label = "missing colour table", quality = 3 },
+	{ label = "invalid colour table", quality = 3, colours = false },
+	{ label = "missing quality entry", quality = 3, colours = {} },
+	{ label = "invalid quality entry", quality = 3, colours = { [3] = "|cnIQ3:" } },
+	{ label = "incomplete RGB", quality = 3, colours = { [3] = { r = 0, g = 0.44, hex = "|cnIQ3:" } } },
+	{ label = "non-numeric RGB", quality = 3, colours = { [3] = { r = "0", g = 0.44, b = 0.87 } } },
+	{ label = "NaN RGB", quality = 3, colours = { [3] = { r = 0, g = 0 / 0, b = 0.87 } } },
+	{ label = "infinite RGB", quality = 3, colours = { [3] = { r = 0, g = 0.44, b = math.huge } } },
+	{ label = "negative infinite RGB", quality = 3, colours = { [3] = { r = -math.huge, g = 0.44, b = 0.87 } } },
+	{ label = "sender hex fallback", quality = 3, sent = "|cff123456|H" .. TORCH_DATA .. "|h[Sender Name]|h|r", hex = "|cff123456" },
+	{ label = "legacy GetItemInfo", quality = 3, colours = { [3] = { r = 0, g = 112 / 255, b = 221 / 255 } }, hex = "|cff0070dd", legacy = true },
+}) do
+	test("1.5.4 Chat tab item colours: " .. case.label, function()
+		WithWindow(function(w)
+			WithItemData(function(known, asked)
+				known[1172][3] = case.quality
+				ITEM_QUALITY_COLORS = case.colours
+				if case.legacy then GetItemInfo, C_Item = C_Item.GetItemInfo, nil end
+				local sent = case.sent or TORCH
+				ns.rdb.chat = { A = { Line(T0, "Aa Bb-Realm", sent) } }
+				local f = w.CW.Open()
+				local body = assert(BubbleWith(f, "[Grayson's Torch]"), "client name retained").body:GetText()
+				local expected = "|H" .. TORCH_DATA .. "|h[Grayson's Torch]|h"
+				if case.hex then expected = case.hex .. expected .. "|r" end
+				eq(body, expected, case.label)
+				eq(Codec.LinkAt(body, 1), #body, "complete renderable item hyperlink")
+				eq(ns.rdb.chat.A[1].text, sent, "history unchanged")
+				eq(#asked, 0, "the item is already known")
+			end)
+		end)
+	end)
+end
+
+test("1.5.4 Chat tab item colours: unknown named item keeps its payload and name without an unsupported colour, requests once, and redraws on arrival", function()
+	WithWindow(function(w)
+		WithItemData(function(known, asked)
+			known[1172] = nil
+			ns.rdb.chat = { A = { Line(T0, "Aa Bb-Realm", TORCH) } }
+			local f = w.CW.Open()
+			local b = assert(BubbleWith(f, "[Graysons Torch]"))
+			eq(b.body:GetText(), "|H" .. TORCH_DATA .. "|h[Graysons Torch]|h", "unknown name and payload, no named colour")
+			eq(b.hyperlinks, true)
+			w.CW.Changed(); w.CW.Render()
+			eq(#asked, 1); eq(asked[1], 1172)
+			known[1172] = { "Grayson's Torch", TORCH, 3 }
+			w.event("GET_ITEM_INFO_RECEIVED", 1172, true)
+			f:Fire("OnUpdate", 0.3)
+			eq(BubbleWith(f, "[Grayson's Torch]").body:GetText(), TORCH_HEX)
+			eq(#asked, 1, "still asked only once")
+			eq(ns.rdb.chat.A[1].text, TORCH)
 		end)
 	end)
 end)

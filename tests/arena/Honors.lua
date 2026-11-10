@@ -597,8 +597,10 @@ test("1.2.0 honours: the release wears the all-time donors' frames alone (1.2.3:
 	local families = {}
 	for family in pairs(SHIPPED or {}) do families[#families + 1] = family end
 	table.sort(families)
-	eq(table.concat(families, ","), "apostle,bones,donor-month,donor-top,guild,level-20,level-40,level-60,missionary,wanted-slayer",
-		"Honors.lua ships the donors', the owl's, the Church's, the Bones', the slayers' and (1.4.0) the comets' frames alone")
+	-- (1.5.5, the owner's call: the level race is off; bronze and silver comets retired, the gold one the
+	-- Olympus Speedrunner's.)
+	eq(table.concat(families, ","), "apostle,bones,donor-month,donor-top,guild,level-60,missionary,wanted-slayer",
+		"Honors.lua ships the donors', the owl's, the Church's, the Bones', the slayers' and (1.5.5) the gold comet's frames alone")
 	Honors.FRAMES_SHIPPED = SHIPPED
 	local ok, err = pcall(function()
 		local inputs = Everything()
@@ -648,10 +650,11 @@ test("honours: a player's holdings, each with its frame, mark and title, in ORDE
 	eq(Find(held, "guild-top-leader").art, "owl-gold") eq(Find(held, "guild-top-leader").shape, "winged")
 	eq(Find(held, "donor-top-1").art, "cornucopia-gold") eq(Find(held, "donor-month-1").art, "koi-gold")
 	eq(Find(held, "arena-class-mage").art, "mage-gold") eq(Find(held, "arena-race-nightelf").art, "nightsaber-gold")
-	-- Brenna: first to 20 and 40, 2nd of all time and of September; nothing else.
+	-- Brenna: first to 20 and 40, 2nd of all time and of September; nothing else. (1.5.5, the owner's
+	-- call: the bronze and silver comets are retired: her book places award nothing.)
 	local brenna = Honors.Holdings({ name = "Brenna", guid = "Player-1-B" }, Everything())
-	eq(Keys(brenna), "donor-top-2,level-race-40,level-race-20,donor-month-2")
-	eq(Find(brenna, "level-race-20").art, "comet-bronze") eq(Find(brenna, "level-race-40").art, "comet-silver")
+	eq(Keys(brenna), "donor-top-2,donor-month-2")
+	eq(Find(brenna, "level-race-20"), nil) eq(Find(brenna, "level-race-40"), nil)
 	eq(Find(brenna, "donor-top-2").art, "cornucopia-silver")
 end)
 
@@ -731,6 +734,8 @@ test("honours: every honour's art is the design's beast in its metal (gold, silv
 	end
 	local preview = {}
 	for _, key in ipairs(Honors.PREVIEWS) do preview[(Honors.ArtOf(key))] = true end
+	-- (1.5.5, the owner's call) The retired comets' art (bronze, silver) stays shipped, held by nobody.
+	for m in pairs(Honors.RETIRED_LEVELS) do preview[(Honors.ArtOf(("level-race-%d"):format(m)))] = true end
 	for _, f in ipairs(files) do
 		if preview[f] then eq(got[f], nil, "a preview, held by nobody: " .. f) else eq(got[f], true, "held: " .. f) end
 	end
@@ -1416,12 +1421,13 @@ test("honours: ORDER: belts, their podium, the guild's plaque, donors of all tim
 		podium = { { cat = "CMA", place = 3, guid = "Player-1-A" }, { cat = "A", place = 2, guid = "Player-1-A" } },
 		tiers = { ["Player-1-A"] = "silver" },
 		donors = donors,
-		levels = Honors.LevelRace({}, { Up("Aldric", "Player-1-A", 20, 100, true, 19) }, 100000),
+		-- (1.5.5: the first to 60, the gold comet: bronze and silver are retired.)
+		levels = Honors.LevelRace({}, { Up("Aldric", "Player-1-A", 60, 100, true, 59) }, 100000),
 		oracle = { month = { { name = "Aldric", place = 2 } }, monthNo = donors.monthNo },
 		guild = { guild = "Olympus Aurora", leader = "Maelis" },
 	}
 	local held = Honors.Holdings({ name = "Aldric", guid = "Player-1-A", guild = "Olympus Aurora" }, inputs)
-	eq(Keys(held), "arena-race-nightelf,arena-champion-2,arena-class-mage-3,donor-top-1,level-race-20,oracle-2,"
+	eq(Keys(held), "arena-race-nightelf,arena-champion-2,arena-class-mage-3,donor-top-1,level-race-60,oracle-2,"
 		.. "donor-month-1,arena-tier-silver")
 	-- All earned at once on a new profile: the first frame and the first title by ORDER.
 	local p = Honors.Update(nil, held, true)
@@ -1794,9 +1800,15 @@ test("1.2.3 honours: a pick 1.2.2 left on a frame not released (1.2.4: the raven
 		eq(Honors.Update({ frame = "donor-top-1", seen = seen }, {}, nil).frame, "donor-top-1")
 		eq(Honors.Update({ frame = "missionary-2", seen = seen }, cornucopia, true).frame, "missionary-2", "a crook not held, not seen: as it is")
 		-- (1.2.4) The owl's and the koi's are released frames now: not held and never seen, as they are.
-		-- (1.4.0) The comet's too.
-		for _, key in ipairs({ "guild-top-leader", "donor-month-1", "donor-month-3", "level-race-60", "level-race-20" }) do
+		-- (1.4.0) The comet's too. (1.5.5: the gold one alone; the retired bronze and silver ones are mended
+		-- as a frame not released, below.)
+		for _, key in ipairs({ "guild-top-leader", "donor-month-1", "donor-month-3", "level-race-60" }) do
 			eq(Honors.Update({ frame = key, seen = seen }, cornucopia, true).frame, key, key .. ", released: as it is")
+		end
+		for _, key in ipairs({ "level-race-20", "level-race-40" }) do
+			eq(Honors.Update({ frame = key, seen = seen }, cornucopia, true).frame, "donor-top-1", key .. ", retired: the cornucopia held")
+			eq(Honors.Update({ frame = key, seen = seen, locked = true }, cornucopia, true).frame, "donor-top-1", key .. ", retired, locked: the same")
+			eq(Honors.Update({ frame = key, seen = {} }, {}, true).frame, "rank", key .. ", retired, nothing held: his rank's")
 		end
 		-- Rank, none and a key no honour has stay.
 		for _, key in ipairs({ "rank", "none", "comet-gold" }) do

@@ -143,11 +143,11 @@ test("1.5.4 modified builds version: a release form (x.y.z, x.y.z.w) and the aut
 		eq(B.Quarantined("Ida Green-Realm"), false, "a stranger's word about a check never marks")
 		-- The lock is reversible: a release announced clears it, the sighting stays with the release noted.
 		w.clock = w.clock + 600
-		B.Hello("Ann Dark-Realm", "1.5.4", w.clock)
+		B.Hello("Ann Dark-Realm", ns.VERSION, w.clock)
 		eq(B.Quarantined("Ann Dark-Realm"), false, "a release clears the lock")
 		local kept = B.Modified("Ann Dark-Realm")
-		eq(kept.version, "1.5.1-onn.12", "the sighting stays"); eq(kept.locked, false); eq(kept.release, "1.5.4"); eq(kept.releaseAt, w.clock)
-		w.hellos["Ann Dark"] = "1.5.4"
+		eq(kept.version, "1.5.1-onn.12", "the sighting stays"); eq(kept.locked, false); eq(kept.release, ns.VERSION); eq(kept.releaseAt, w.clock)
+		w.hellos["Ann Dark"] = ns.VERSION
 		eq((V.Status("Ann Dark-Realm")), "current", "the menu follows the hello again")
 		-- Seen again on a modified build: locked again.
 		B.Hello("Ann Dark-Realm", "1.5.1-onn.13", w.clock)

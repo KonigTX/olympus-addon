@@ -126,7 +126,6 @@ What's new in version 1.4.0, for the march:
 - {church} The Church's top three and the donors now reach everyone, not only whoever was online at the right moment, and the frames follow.
 - {news} Every office receives a letter from the King, and every guild master a checklist of what to name.
 - {crown} Every guild master has 48 hours to verify with the High Council.
-- {gold} The level race is on: the first to reach 20, 40 and 60 earns the comet frame, for good.
 - {star} Olympus now finds groups: list yours, apply to one, see who is looking.
 - {team} Olympus now speaks English, Portuguese, Spanish, German, French, Italian and Russian.
 - {watch} An addon older than 1.4.0 no longer finds the army's channel. If a friend sees an empty census, tell them to update.
@@ -236,6 +235,31 @@ What version 1.5.4 changes:
 Please close and reopen the game after updating. Thank you to everyone who measured and reported the problems on GitHub, CurseForge and Discord.
 
 Long live the King. Long live Olympus.]==]
+-- 1.5.5 (the dev, 2026-11-10: "se avisa que eu separei ... e falta outro, que está saindo em breve ... para
+-- que esse primeiro pudesse sair antes da live, para que as pessoas pudessem baixar"): the update split in
+-- two, this first part before the King's stream and 1.5.6 soon after; then what 1.5.5 changes.
+L.LETTER_1_5_5_TITLE, L.LETTER_1_5_5_HEAD, L.LETTER_1_5_5_SIGNED, L.LETTER_1_5_5_LINK = "The first of two parts", "The first of two parts", L.LETTER_1_5_4_SIGNED, L.LETTER_1_5_4_LINK
+L.LETTER_1_5_5 = [==[Your Majesty. Soldiers of Olympus.
+
+I split this update in two. This first part improves chat and census delivery. The second part, 1.5.6, will build on how relays share census data.
+
+What version 1.5.5 changes:
+
+- {guild} Census snapshots that cross the relays in many pieces now arrive whole.
+- {team} Every Olympus chat line reaches every member, and only once. Guildmates on other servers are no longer dropped.
+- {news} Item links in the Olympus chat show in their quality colours.
+- {watch} Chat and relay values the game keeps secret in dungeons and raids no longer cause errors.
+- {watch} /oly bug has a debug section, and Olympus tells you when it is installed in the wrong game folder.
+- {star} The level race is paused. Existing race records are kept.
+- {wanted} The Wanted page says which realm group its list is from.
+- {watch} Verifiers see every guild waiting to be verified.
+- {guild} Guild bank snapshots from officers on other servers are now accepted.
+- {crown} The King's Agenda, its signup sheets, the gates and a treasury keeper's donations off now arrive.
+- {news} The Companion Bridge says which realm group and ruleset its Wanted data is from.
+
+Close and reopen the game after the update.
+
+Long live the King. Long live Olympus.]==]
 L.LETTER_1_3_3_TITLE = "Your guild on the website"
 L.LETTER_1_3_3 = [==[Version 1.3.3.
 
@@ -290,7 +314,6 @@ O que há de novo na versão 1.4.0, para a marcha:
 - {church} O top três da Igreja e os doadores agora chegam a todos, não só a quem estava online na hora certa, e as molduras acompanham.
 - {news} Cada cargo recebe uma carta do Rei, e cada mestre de guilda uma lista do que nomear.
 - {crown} Todo mestre de guilda tem 48 horas para se verificar com o Alto Conselho.
-- {gold} A corrida de level está valendo: o primeiro a chegar ao 20, ao 40 e ao 60 ganha a moldura do cometa, para sempre.
 - {star} O Olympus agora encontra grupos: anuncie o seu, candidate-se a um, veja quem está procurando.
 - {team} Olympus agora fala inglês, português, espanhol, alemão, francês, italiano e russo.
 - {watch} Um addon anterior à 1.4.0 não encontra mais o canal do exército. Se um amigo vir o censo vazio, diga para ele atualizar.
@@ -382,6 +405,28 @@ O que muda na versão 1.5.4:
 - {team} Quando nenhum relay responde, o censo espera por um em vez de tentar o canal que o jogo bloqueia.
 
 Feche e abra o jogo de novo depois de atualizar. Obrigado a todos que mediram e relataram os problemas no GitHub, no CurseForge e no Discord.
+
+Vida longa ao Rei. Vida longa ao Olympus.]==]
+	L.LETTER_1_5_5_TITLE, L.LETTER_1_5_5_HEAD, L.LETTER_1_5_5_SIGNED, L.LETTER_1_5_5_LINK = "A primeira de duas partes", "A primeira de duas partes", L.LETTER_1_5_4_SIGNED, L.LETTER_1_5_4_LINK
+	L.LETTER_1_5_5 = [==[Vossa Majestade. Soldados do Olympus.
+
+Separei esta atualização em duas partes. Esta primeira melhora a entrega do chat e do censo. A segunda, a 1.5.6, vai melhorar como os relays compartilham os dados do censo.
+
+O que muda na versão 1.5.5:
+
+- {guild} Os snapshots do censo que passam pelos relays em muitos pedaços agora chegam inteiros.
+- {team} Toda linha do chat do Olympus chega a todos os membros, e uma vez só. Colegas de guilda em outros servidores não são mais descartados.
+- {news} Os links de itens no chat do Olympus aparecem na cor da qualidade do item.
+- {watch} Os valores do chat e dos relays que o jogo esconde em masmorras e raides não causam mais erros.
+- {watch} O /oly bug ganhou uma seção de debug, e o Olympus avisa quando está instalado na pasta errada do jogo.
+- {star} A corrida de level está pausada. Os registros já coletados ficam guardados.
+- {wanted} A página de Wanted diz de qual grupo de reinos é a lista.
+- {watch} Os verificadores veem todas as guildas que esperam verificação.
+- {guild} Os snapshots do banco da guilda enviados por oficiais em outros servidores agora são aceitos.
+- {crown} A agenda do Rei, as listas de inscrição, os portões e o fim das doações de um guardião do tesouro agora chegam.
+- {news} O Companion Bridge diz de qual grupo de reinos e de qual tipo de reino são os dados de Wanted.
+
+Feche e abra o jogo de novo depois da atualização.
 
 Vida longa ao Rei. Vida longa ao Olympus.]==]
 	L.LETTER_1_3_3_TITLE = "Sua guilda no site"
@@ -629,7 +674,8 @@ L.INACTIVE_LINE = "Inactive: %d for 7+ days, %d for 30+ days"
 L.AVG_LEVEL = "Average level"
 L.VACANCIES = "Free slots"
 L.CLICK_EXPAND = "Click to open / close"
-L.LEVEL_RACE = "Level race"
+-- (1.5.5: the level race is off; the Realm page's census list of the highest levels stays, by this name.)
+L.LEVEL_RACE = "Top levels"
 L.LEVEL_N = "level %d"
 L.RECRUITING = "Recruiting - guilds with room"
 L.ALL_FULL = "Every guild is full."
@@ -1797,6 +1843,12 @@ L.REBUILDING_TIP = "Each login starts from what this client saved, and the beta 
 L.BEHIND_LINE = "Update Olympus: %s is out, you have %s."
 L.BEHIND_TIP = "The addon's author announced on the Olympus channel that this version is out. Update from the CurseForge app, WowUp or the CurseForge page, then restart the game. An older version drops what newer ones send, and its guild can look broken to the others."
 L.BEHIND_CHAT = "Olympus %s is out and you have %s: update from CurseForge or your addon app, then restart the game."
+-- (1.5.5) An install that does not fit this game (Diagnostics.lua, ns.InstallWarnings).
+L.INSTALL_TOC = "This copy of Olympus (%s) was not made for this game's version (interface %s): update it for the game you play."
+L.INSTALL_MIXED = "Olympus's files are of two versions (%s and %s): delete the Olympus folders in Interface\\AddOns and install it again, all its folders together."
+L.INSTALL_FLAVOR = "If Olympus does not update: in the CurseForge app, pick the installation of the game you play (WoW: Forever, not Classic or Classic Era), then update and restart the game."
+L.INSTALL_FLAVOR_ERA = "If Olympus does not update: in the CurseForge app, pick the installation of the game you play (Classic Era, the _classic_era_ folder, not Classic or WoW: Forever), then update and restart the game."
+L.INSTALL_FLAVOR_ANNIVERSARY = "If Olympus does not update: in the CurseForge app, pick the installation of the game you play (TBC Anniversary, the _anniversary_ folder, not Classic or Classic Era), then update and restart the game."
 L.RELEASED_DONE = "Marked %s as released: addons behind it are told to update (your presence says so on the Olympus channel now, and every 5 minutes)."
 L.RELEASED_USAGE = "/oly released [version]: marks the version CurseForge lists as released (yours, %s, when none is given; never a newer one)."
 L.RELEASED_ONLY_AUTHOR = "Only the addon's author marks a version as released."
@@ -3084,7 +3136,7 @@ if GetLocale and GetLocale() == "ptBR" then
 	L.AVG_LEVEL = "Nível médio"
 	L.VACANCIES = "Vagas"
 	L.CLICK_EXPAND = "Clique para abrir / fechar"
-	L.LEVEL_RACE = "Corrida de nível"
+	L.LEVEL_RACE = "Níveis mais altos"
 	L.LEVEL_N = "nível %d"
 	L.RECRUITING = "Recrutamento - guildas com vaga"
 	L.ALL_FULL = "Todas as guildas estão cheias."
@@ -4235,6 +4287,11 @@ if GetLocale and GetLocale() == "ptBR" then
 	L.BEHIND_LINE = "Atualize o Olympus: a %s já saiu, você tem a %s."
 	L.BEHIND_TIP = "O autor do addon anunciou no canal de Olympus que essa versão já saiu. Atualize pelo app do CurseForge, pelo WowUp ou pela página do CurseForge e reinicie o jogo. Uma versão antiga descarta o que as novas mandam, e a guilda dela pode parecer quebrada para as outras."
 	L.BEHIND_CHAT = "O Olympus %s já saiu e você tem o %s: atualize pelo CurseForge ou pelo seu app de addons e reinicie o jogo."
+	L.INSTALL_TOC = "Esta cópia do Olympus (%s) não foi feita para esta versão do jogo (interface %s): atualize-a para o jogo que você joga."
+	L.INSTALL_MIXED = "Os arquivos do Olympus são de duas versões (%s e %s): apague as pastas do Olympus em Interface\\AddOns e instale de novo, todas as pastas juntas."
+	L.INSTALL_FLAVOR = "Se o Olympus não atualizar: no app do CurseForge, escolha a instalação do jogo que você joga (WoW: Forever, não Classic nem Classic Era), atualize e reinicie o jogo."
+	L.INSTALL_FLAVOR_ERA = "Se o Olympus não atualizar: no app do CurseForge, escolha a instalação do jogo que você joga (Classic Era, a pasta _classic_era_, não Classic nem WoW: Forever), atualize e reinicie o jogo."
+	L.INSTALL_FLAVOR_ANNIVERSARY = "Se o Olympus não atualizar: no app do CurseForge, escolha a instalação do jogo que você joga (TBC Anniversary, a pasta _anniversary_, não Classic nem Classic Era), atualize e reinicie o jogo."
 	L.RELEASED_DONE = "%s marcada como lançada: os addons atrás dela são avisados para atualizar (a sua presença diz isso no canal de Olympus agora e a cada 5 minutos)."
 	L.RELEASED_USAGE = "/oly released [versão]: marca como lançada a versão que o CurseForge lista (a sua, %s, se nenhuma for dada; nunca uma mais nova)."
 	L.RELEASED_ONLY_AUTHOR = "Só o autor do addon marca uma versão como lançada."
@@ -4494,6 +4551,14 @@ end
 L.TAB_WANTED = "Wanted"
 L.WANTED_TITLE = "Horde Most Wanted"
 L.WANTED_ABOUT = "A Horde player who kills an Olympus member appears here by himself: from that member's own death recap, shared at once with every Olympus client. Nobody lists him and no name is typed. The King, a High Councillor or the author can take an abusive entry off. A death adds the victim's office and level to his bounty (the same member killed again within 10 minutes counts once); whoever kills him earns one base point for every 10 levels, rounded up, and his whole bounty. A member's own killing blow counts for the Slayers on any Horde player, but one who killed none of us is not wanted."
+-- 1.5.5 (the dev: "cada servidor ... os dados de Wanted do seu servidor"): the page names its realm group
+-- (Wanted.GroupLabel: Data.GroupInfo's kind), and on a PvE (or RP) group whose kills its list holds.
+L.WANTED_GROUP_PVE = "Forever PvE"
+L.WANTED_GROUP_PVP = "Forever PvP"
+L.WANTED_GROUP_RP = "Forever RP"
+L.WANTED_GROUP_RPPVP = "Forever RP-PvP"
+L.WANTED_GROUP_HARDCORE = "Forever Hardcore"
+L.WANTED_PVE_LINE = "Kills between players flagged for PvP on the PvE realms."
 L.WANTED_UNKNOWN = "Unknown"
 L.WANTED_BOUNTY = "Current bounty: %d points"
 L.WANTED_LIFETIME = "Confirmed Olympus kills: %d"
@@ -4665,6 +4730,12 @@ if GetLocale and GetLocale() == "ptBR" then
 	L.TAB_WANTED = "Wanted"
 	L.WANTED_TITLE = "Mais Procurados da Horda"
 	L.WANTED_ABOUT = "Um jogador da Horda que mata um membro do Olympus aparece aqui sozinho: pelo recap da própria morte desse membro, compartilhado na hora com todos os clientes do Olympus. Ninguém o lista e nenhum nome é digitado. O Rei, um Alto Conselheiro ou o autor pode tirar uma entrada abusiva. Uma morte soma o cargo e o nível da vítima à recompensa dele (o mesmo membro morto de novo em até 10 minutos conta uma vez só); quem o mata ganha um ponto-base a cada 10 níveis, arredondado para cima, e toda a recompensa. O golpe final de um membro conta para os Slayers em qualquer jogador da Horda, mas quem não matou nenhum de nós não é procurado."
+	L.WANTED_GROUP_PVE = "Forever PvE"
+	L.WANTED_GROUP_PVP = "Forever PvP"
+	L.WANTED_GROUP_RP = "Forever RP"
+	L.WANTED_GROUP_RPPVP = "Forever RP-PvP"
+	L.WANTED_GROUP_HARDCORE = "Forever Hardcore"
+	L.WANTED_PVE_LINE = "Mortes entre jogadores marcados para JxJ nos reinos PvE."
 	L.WANTED_UNKNOWN = "Desconhecido"
 	L.WANTED_BOUNTY = "Recompensa atual: %d pontos"
 	L.WANTED_LIFETIME = "Olympians mortos e confirmados: %d"
