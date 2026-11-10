@@ -5915,3 +5915,64 @@ test("wanted 1.4.0 rows: a kill made while no reviewer is online reaches the Kin
 		eq(world:As(late, late.W.Rankings).all[1].name, alpha.name, "a later login gets it from the King's catch-up")
 	end)
 end)
+
+-- 1.5.5 (the dev, 11-10: "cada servidor ... os dados de Wanted do seu servidor"). Each realm group
+-- keeps its own list, and a PvE character's list (kills between players flagged for PvP) had the PvP
+-- list's title, so it read as PvP data on PvE. The page names its group by Data.GroupInfo's kind, a
+-- PvE (or RP) group's page says whose kills its list holds, /oly wanted status names the group too,
+-- and the list stays its own group's: another group's store is never shown. Before: the bare title.
+test("wanted (1.5.5): the page and /oly wanted status name the realm group (Forever PvE, Forever PvP); a PvE group's says its kills are between players flagged for PvP; each group shows its own list alone", function()
+	WithWanted(function(w, W, c)
+		c.Data.GroupInfo = ns.Data.GroupInfo -- (the real one: a Forever family's ruleset is its name)
+		local L = ns.L
+		local function Page()
+			local lines, title, about = W.Build()
+			local texts = {}
+			for _, l in ipairs(lines) do texts[#texts + 1] = tostring(l.text or "") end
+			return title, about, table.concat(texts, "\n")
+		end
+		-- A PvP character's list: one Horde player on it.
+		c.group = "ForeverPvP"
+		assert(w.add("Grom-Realm"))
+		eq(#W.Targets(), 1)
+		local title, about = Page()
+		eq(title, L.WANTED_TITLE .. " · " .. L.WANTED_GROUP_PVP, "the PvP group's title")
+		eq(W.GroupLabel(), L.WANTED_GROUP_PVP)
+		assert(not about:find(L.WANTED_PVE_LINE, 1, true), "no flagged-kills line on a PvP group")
+		assert(about:find(L.WANTED_AUTHORITY_OFF, 1, true), "the page's own text stays")
+		local status = W.StatusText()
+		eq(status:match("^[^\n]+"), L.WANTED_TITLE .. " · " .. L.WANTED_GROUP_PVP, "/oly wanted status names the group first")
+		assert(not status:find(L.WANTED_PVE_LINE, 1, true))
+		-- The same account on a PvE character: its own group's list alone, never the PvP one.
+		c.group = "ForeverPvE"
+		eq(#W.Targets(), 0, "the PvP list is not shown on PvE")
+		local page
+		title, about, page = Page()
+		eq(title, L.WANTED_TITLE .. " · " .. L.WANTED_GROUP_PVE, "the PvE group's title")
+		eq(about:match("^[^\n]+"), L.WANTED_PVE_LINE, "a PvE group's page says whose kills it holds, first")
+		assert(page:find(L.WANTED_EMPTY, 1, true), "nobody on the PvE list yet")
+		assert(not page:find("Grom", 1, true), "the PvP list's player is not on the PvE page")
+		status = W.StatusText()
+		eq(status:match("^[^\n]+"), L.WANTED_TITLE .. " · " .. L.WANTED_GROUP_PVE)
+		assert(status:find("\n" .. L.WANTED_PVE_LINE .. "\n", 1, true), status)
+		-- Reading the PvE page took nothing from the PvP group's list.
+		c.group = "ForeverPvP"
+		eq(#W.Targets(), 1, "the PvP list is still whole")
+		-- The other Forever rulesets: RP is no PvP ruleset (the line too), RP-PvP is.
+		c.group = "ForeverRP"
+		title, about = Page()
+		eq(title, L.WANTED_TITLE .. " · " .. L.WANTED_GROUP_RP); eq(about:match("^[^\n]+"), L.WANTED_PVE_LINE)
+		c.group = "ForeverRPPvP"
+		title, about = Page()
+		eq(title, L.WANTED_TITLE .. " · " .. L.WANTED_GROUP_RPPVP); assert(not about:find(L.WANTED_PVE_LINE, 1, true))
+		-- A group whose kind nothing names: the title alone, as before.
+		c.group = "RealmGroup"
+		title, about = Page()
+		eq(title, L.WANTED_TITLE); assert(not about:find(L.WANTED_PVE_LINE, 1, true))
+		eq(W.GroupLabel(), nil)
+		-- A failing lookup leaves the title alone, no error.
+		c.group = "ForeverPvE"
+		c.Data.GroupInfo = function() error("boom") end
+		eq((Page()), L.WANTED_TITLE)
+	end)
+end)

@@ -2783,23 +2783,51 @@ local function FramesLines()
 	return lines
 end
 
+-- (1.5.5, the dev: "cada servidor ... os dados de Wanted do seu servidor") Each realm group keeps its
+-- own list (Store: ns.group and ns.faction; every word carries Scope()), and a PvE character's list,
+-- the kills between players flagged for PvP there, read as PvP data under the same title. The page
+-- names its group now: its label ("Forever PvE", "Forever PvP", ...) by Data.GroupInfo's kind, and
+-- that kind; nil, nil while the kind is unknown (no Forever family, no signed realm table naming it).
+-- It names the group alone: no other group's list is shown or merged here.
+Wanted.FLAGGED_KINDS = { pve = true, rp = true } -- (no PvP ruleset: a kill there is between players flagged for PvP)
+function Wanted.GroupLabel()
+	local D = ns.Data
+	if type(D) ~= "table" or type(D.GroupInfo) ~= "function" then return nil, nil end
+	local ok, kind = pcall(D.GroupInfo, ns.group or ns.realm)
+	if not ok or type(kind) ~= "string" then return nil, nil end
+	local label = rawget(L, "WANTED_GROUP_" .. kind:upper())
+	if type(label) ~= "string" then return nil, nil end
+	return label, kind
+end
+-- The page's title and its text, with the group (above): on a PvE (or RP) group, one line first saying
+-- whose kills its list holds.
+function Wanted.Title()
+	local label = Wanted.GroupLabel()
+	return label and (L.WANTED_TITLE .. " · " .. label) or L.WANTED_TITLE
+end
+local function About(text)
+	local _, kind = Wanted.GroupLabel()
+	if kind and Wanted.FLAGGED_KINDS[kind] then return L.WANTED_PVE_LINE .. "\n" .. text end
+	return text
+end
+
 function Wanted.Build()
 	if mode == "rules" then
 		local lines = Wanted.Rules and Wanted.Rules.Lines("wanted-slayers", Wanted.CloseRules)
-		if lines then return lines, L.WANTED_TITLE, L.WANTED_ABOUT end
+		if lines then return lines, Wanted.Title(), About(L.WANTED_ABOUT) end
 		Wanted.rulesReturn = nil
 		mode, opened = "list", nil
-		return {}, L.WANTED_TITLE, L.WANTED_ABOUT
+		return {}, Wanted.Title(), About(L.WANTED_ABOUT)
 	end
 	if mode == "review" then
 		local lines = FramesLines()
 		if mode == "review" then return lines, L.WANTED_REVIEW_TITLE, L.WANTED_REVIEW_ABOUT end
-		return lines, L.WANTED_TITLE, L.WANTED_ABOUT
+		return lines, Wanted.Title(), About(L.WANTED_ABOUT)
 	end
 	local lines = mode == "target" and TargetLines() or ListLines()
 	local g = Wanted.GlobalSnapshot()
 	local note = g and L.WANTED_SIGNED_HELD:format(IssuerName(g.issuer), DaysLeft(g.expires)) or L.WANTED_AUTHORITY_OFF
-	return lines, L.WANTED_TITLE, L.WANTED_ABOUT .. "\n" .. Grey(note)
+	return lines, Wanted.Title(), About(L.WANTED_ABOUT .. "\n" .. Grey(note))
 end
 
 -- The entry open now, while it is on the list (a reviewer's Remove).
@@ -6483,6 +6511,11 @@ function Wanted.StatusText()
 		if not e.void then rows = rows + 1 end
 		if e.own then mine = mine + 1 if not e.shared then unsent = unsent + 1 end end
 	end
+	-- (1.5.5) Which realm group's list this is, as the page's title names it, and on a PvE group
+	-- whose kills it holds.
+	Add(Wanted.Title())
+	local _, kind = Wanted.GroupLabel()
+	if kind and Wanted.FLAGGED_KINDS[kind] then Add(L.WANTED_PVE_LINE) end
 	Add(L.WANTED_STATUS_STORE:format(tostring(ns.group or ns.realm or "?"), tostring(ns.faction or "?"), active, held, off, rows,
 		Count(s and s.slayers or {}), s and L.WANTED_STATUS_YES or L.WANTED_STATUS_NO))
 	local C = ns.Comm
