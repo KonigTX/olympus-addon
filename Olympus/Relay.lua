@@ -1773,15 +1773,15 @@ local function Across(flag, origin, body, set)
 				DripBatches(name, "across " .. from .. " " .. (kind or ("#" .. id)), batches, nil, true)
 				stats.across = (stats.across or 0) + #set
 			else
-			pieces = pieces or Envelope("RX", "RX~" .. flag .. "~" .. origin .. "~" .. body)
-			stats.across = (stats.across or 0) + 1
-			if flag == "L" then
-				ChatTo(name, pieces, body, origin, nil, key) -- (1.5.5: the chat lane)
-			else
-				Quiet(name)
-				local key = "across " .. name .. " " .. from .. " " .. (presence and "T1~o" or QueueWord(body))
-				if #pieces == 1 then ns.Comm.Whisper(name, pieces[1], key, presence, false)
-				else ns.Comm.SendBatch("WHISPER", pieces, key, name, presence) end
+				pieces = pieces or Envelope("RX", "RX~" .. flag .. "~" .. origin .. "~" .. body)
+				stats.across = (stats.across or 0) + 1
+				if flag == "L" then
+					ChatTo(name, pieces, body, origin, nil, key) -- (1.5.5: the chat lane)
+				else
+					Quiet(name)
+					local key = "across " .. name .. " " .. from .. " " .. (presence and "T1~o" or QueueWord(body))
+					if #pieces == 1 then ns.Comm.Whisper(name, pieces[1], key, presence, false)
+					else ns.Comm.SendBatch("WHISPER", pieces, key, name, presence) end
 				end
 			end
 		end

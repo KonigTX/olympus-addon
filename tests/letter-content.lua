@@ -80,27 +80,20 @@ test("1.2.5 letter content: both languages describe only the shipped reply, offi
 	end
 end)
 
--- 1.5.5 (the dev, 2026-11-10: "se avisa que eu separei ... e falta outro, que está saindo em breve ... para
--- que esse primeiro pudesse sair antes da live"): the letter tells of the split first, this part out before
--- the King's stream so everyone can download it and 1.5.6 (the relays sharing everything) soon, then what
--- 1.5.5 changes as bullets, the level race paused with nothing lost, and the restart; in his plain voice,
--- inside the 1.5.4 letter's frame, with no dash of the typesetter's. In his two languages word for word,
--- in the other five as the same letter: the same frame as their 1.5.4 letter, the same marks.
+-- The localized letter describes the work shipped in this part and introduces the next one.
 local LETTER_1_5_5 = {
 	enUS = {
-		"I split this update in two.", "before the stream, so everyone can download it", "it already fixes a lot",
-		"The second part, 1.5.6, is coming soon", "every guild sees every other guild",
+		"I split this update in two.", "This first part improves chat and census delivery.",
+		"The second part, 1.5.6, will build on how relays share census data.",
 		"\n\nWhat version 1.5.5 changes:\n\n- {guild} ",
-		"\n- {star} The level race is paused.", "nothing is lost", "the next update will try to sort out who really got there first",
-		"\n- {dice} Bones: the first game with the innkeeper opens on the first click.",
+		"\n- {star} The level race is paused. Existing race records are kept.",
 		"\n\nClose and reopen the game after the update.\n\n",
 	},
 	ptBR = {
-		"Separei esta atualização em duas partes.", "antes da live, para todo mundo poder baixar", "já resolve um monte de coisa",
-		"A segunda, a 1.5.6, sai em breve", "toda guilda vê todas as outras",
+		"Separei esta atualização em duas partes.", "Esta primeira melhora a entrega do chat e do censo.",
+		"A segunda, a 1.5.6, vai melhorar como os relays compartilham os dados do censo.",
 		"\n\nO que muda na versão 1.5.5:\n\n- {guild} ",
-		"\n- {star} A corrida de level está pausada.", "nada se perde", "a próxima atualização vai tentar resolver quem chegou primeiro de verdade",
-		"\n- {dice} Bones: a primeira partida com o taverneiro abre no primeiro clique.",
+		"\n- {star} A corrida de level está pausada. Os registros já coletados ficam guardados.",
 		"\n\nFeche e abra o jogo de novo depois da atualização.\n\n",
 	},
 }
@@ -110,7 +103,7 @@ local function Marks(text)
 	return table.concat(out, ",")
 end
 
-test("1.5.5 letter content: in every language the split comes first (this part before the stream, 1.5.6 soon), then twelve bullets with the same marks, then the restart, in that language's 1.5.4 frame, under its own title and the dev's signature in that language, no typeset dash; English and Portuguese word for word", function()
+test("1.5.5 letter content: in every language the split comes first, then eleven bullets with the same marks, then the restart, in that language's 1.5.4 frame, under its own title and the dev's signature in that language, no typeset dash; English and Portuguese word for word", function()
 	local english, order
 	for _, run in ipairs({ { "enUS" }, { "ptBR" }, { "deDE", "deDE" }, { "esES", "esES" }, { "esMX", "esES" },
 		{ "frFR", "frFR" }, { "itIT", "itIT" }, { "ruRU", "ruRU" } }) do
@@ -140,7 +133,7 @@ test("1.5.5 letter content: in every language the split comes first (this part b
 			previous = at
 		end
 		local _, bullets = raw:gsub("\n%- {%a+} ", "")
-		eq(bullets, 12, locale .. ": what 1.5.5 changes, a bullet each")
+		eq(bullets, 11, locale .. ": what 1.5.5 changes, a bullet each")
 		if order then eq(Marks(raw), order, locale .. ": the same marks in the same order") else order = Marks(raw) end
 		assert(not body:find("{%a+}"), locale .. ": every mark drawn or in words")
 		for _, dash in ipairs({ "\226\128\148", "\226\128\147", " -- " }) do

@@ -241,7 +241,7 @@ Long live the King. Long live Olympus.]==]
 L.LETTER_1_5_5_TITLE, L.LETTER_1_5_5_HEAD, L.LETTER_1_5_5_SIGNED, L.LETTER_1_5_5_LINK = "The first of two parts", "The first of two parts", L.LETTER_1_5_4_SIGNED, L.LETTER_1_5_4_LINK
 L.LETTER_1_5_5 = [==[Your Majesty. Soldiers of Olympus.
 
-I split this update in two. This first part goes out now, before the stream, so everyone can download it, and it already fixes a lot. The second part, 1.5.6, is coming soon: it makes the relays share everything with each other, so every guild sees every other guild.
+I split this update in two. This first part improves chat and census delivery. The second part, 1.5.6, will build on how relays share census data.
 
 What version 1.5.5 changes:
 
@@ -250,8 +250,7 @@ What version 1.5.5 changes:
 - {news} Item links in the Olympus chat show in their quality colours.
 - {watch} Chat and relay values the game keeps secret in dungeons and raids no longer cause errors.
 - {watch} /oly bug has a debug section, and Olympus tells you when it is installed in the wrong game folder.
-- {star} The level race is paused. Nothing is calculated for now, but nothing is lost: everything keeps being recorded, and the next update will try to sort out who really got there first. If you saw a comet, a short apology letter is waiting for you.
-- {dice} Bones: the first game with the innkeeper opens on the first click.
+- {star} The level race is paused. Existing race records are kept.
 - {wanted} The Wanted page says which realm group its list is from.
 - {watch} Verifiers see every guild waiting to be verified.
 - {guild} Guild bank snapshots from officers on other servers are now accepted.
@@ -411,7 +410,7 @@ Vida longa ao Rei. Vida longa ao Olympus.]==]
 	L.LETTER_1_5_5_TITLE, L.LETTER_1_5_5_HEAD, L.LETTER_1_5_5_SIGNED, L.LETTER_1_5_5_LINK = "A primeira de duas partes", "A primeira de duas partes", L.LETTER_1_5_4_SIGNED, L.LETTER_1_5_4_LINK
 	L.LETTER_1_5_5 = [==[Vossa Majestade. Soldados do Olympus.
 
-Separei esta atualização em duas partes. Esta primeira sai agora, antes da live, para todo mundo poder baixar, e já resolve um monte de coisa. A segunda, a 1.5.6, sai em breve: com ela os relays compartilham tudo entre si, e toda guilda vê todas as outras.
+Separei esta atualização em duas partes. Esta primeira melhora a entrega do chat e do censo. A segunda, a 1.5.6, vai melhorar como os relays compartilham os dados do censo.
 
 O que muda na versão 1.5.5:
 
@@ -420,8 +419,7 @@ O que muda na versão 1.5.5:
 - {news} Os links de itens no chat do Olympus aparecem na cor da qualidade do item.
 - {watch} Os valores do chat e dos relays que o jogo esconde em masmorras e raides não causam mais erros.
 - {watch} O /oly bug ganhou uma seção de debug, e o Olympus avisa quando está instalado na pasta errada do jogo.
-- {star} A corrida de level está pausada. Nada é calculado por enquanto, mas nada se perde: tudo continua sendo registrado, e a próxima atualização vai tentar resolver quem chegou primeiro de verdade. Se você viu um cometa, tem uma carta curta de desculpas esperando por você.
-- {dice} Bones: a primeira partida com o taverneiro abre no primeiro clique.
+- {star} A corrida de level está pausada. Os registros já coletados ficam guardados.
 - {wanted} A página de Wanted diz de qual grupo de reinos é a lista.
 - {watch} Os verificadores veem todas as guildas que esperam verificação.
 - {guild} Os snapshots do banco da guilda enviados por oficiais em outros servidores agora são aceitos.
