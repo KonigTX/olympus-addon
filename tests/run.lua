@@ -38241,12 +38241,23 @@ test("1.5.5 a relay's queue holds one of each of a setter's timed repeats a repo
 			AsKing()
 			local R, _, sent = Harness.RelayWorld("Relay Keeper-CAMWOWUS2Realm1PvE", "Olympus")
 			R.rdb.council.names = { ["relay keeper"] = "Relay Keeper" } -- (a signed councillor's client: a relay)
+			local timers = {}
+			R.After = function(delay, _, run)
+				timers[#timers + 1] = { at = R.clock + delay, run = run }
+			end
 			local function Drain()
 				for _ = 1, 200 do
-					if R.Comm.QueueSize() == 0 then return end
+					if R.Comm.QueueSize() == 0 and R.Relay.ChatWaiting() == 0 then return end
+					R.clock = R.clock + 1.2
 					R.Comm.Pump()
+					local queued = timers
+					timers = {}
+					for _, timer in ipairs(queued) do
+						if timer.at <= R.clock then timer.run()
+						else timers[#timers + 1] = timer end
+					end
 				end
-				error("the relay's queue never drained: " .. R.Comm.QueueSize())
+				error("the relay's outbound queues never drained")
 			end
 			local REPORTERS = 12
 			for i = 1, REPORTERS do
