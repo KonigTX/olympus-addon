@@ -2166,18 +2166,60 @@ function ns.Fire(name, ...)
 	for i = 1, #l do ns.SafeCall("callback " .. name, l[i], ...) end
 end
 
+-- Whether any of the values is a secret one (Forever's client hands an addon chat text, names and
+-- GUIDs as secrets where its chat is locked down: an instance, an encounter). A secret may be
+-- passed on and nothing else: no length, no compare, no index. A check that fails counts as secret.
+function ns.IsSecret(...)
+	if type(issecretvalue) ~= "function" then return false end
+	for i = 1, select("#", ...) do
+		local ok, secret = pcall(issecretvalue, (select(i, ...)))
+		if not ok or secret then return true end
+	end
+	return false
+end
+
 local eventFrame = CreateFrame("Frame")
 local handlers = {}
+local chatEvent = {} -- event -> true for the game's chat events (CHAT_MSG_*)
 function ns.RegisterEvent(event, fn)
 	if not handlers[event] then
 		handlers[event] = {}
+		chatEvent[event] = type(event) == "string" and event:find("^CHAT_MSG_") ~= nil
 		eventFrame:RegisterEvent(event)
 	end
 	table.insert(handlers[event], fn)
 end
+-- (1.5.5, the players' /oly bug reports of 2026-11-08: "attempt to get length of local 'text' (a
+-- secret string value, while execution tainted by 'Olympus')", 3 at ChatHall.lua and 33 at
+-- Relay.lua in one session, 96 in another.) A chat event whose text or sender is secret reaches no
+-- handler of ours: nothing in it can be read. Any other field of it that is secret (a GUID, a
+-- channel's name) reaches them as nil. One guard here for every chat handler, present and future.
+ns.secretChatSkipped = 0
 eventFrame:SetScript("OnEvent", function(_, event, ...)
 	local h = handlers[event]
 	if not h then return end
+	if chatEvent[event] and type(issecretvalue) == "function" then
+		local n, clean = select("#", ...), true
+		for i = 1, n do
+			if ns.IsSecret((select(i, ...))) then
+				if i <= 2 then
+					ns.secretChatSkipped = ns.secretChatSkipped + 1
+					return
+				end
+				clean = false
+			end
+		end
+		if not clean then
+			-- (Only the fields that can be read are kept: no secret is stored anywhere.)
+			local args = {}
+			for i = 1, n do
+				local v = select(i, ...)
+				if not ns.IsSecret(v) then args[i] = v end
+			end
+			for i = 1, #h do ns.SafeCall("event " .. event, h[i], unpack(args, 1, n)) end
+			return
+		end
+	end
 	for i = 1, #h do ns.SafeCall("event " .. event, h[i], ...) end
 end)
 

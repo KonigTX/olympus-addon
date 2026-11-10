@@ -7001,6 +7001,8 @@ assert(loadfile(ROOT .. "tests/relay-presentation.lua"))(ns, test, eq, { RelayWo
 -- 1.5.4: the presentation, the relay's admission and the relay rules (tests/relay-admit.lua).
 assert(loadfile(ROOT .. "tests/relay-admit.lua"))(ns, test, eq, { RelayWorld = RelayWorld, FreshComm = FreshComm, ROOT = ROOT })
 assert(loadfile(ROOT .. "tests/roster-subrealm.lua"))(ns, test, eq)
+-- 1.5.5: every chat line reaches every member once (tests/chat-delivery.lua).
+assert(loadfile(ROOT .. "tests/chat-delivery.lua"))(ns, test, eq, { RelayWorld = RelayWorld })
 assert(loadfile(ROOT .. "tests/king-crown-relay.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
 -- 1.5.4: the King's presence where he leads no guild named Olympus (tests/king-online.lua).
 assert(loadfile(ROOT .. "tests/king-online.lua"))(ns, test, eq, { RelayWorld = RelayWorld, ADDON_DIR = ADDON_DIR })
