@@ -33585,6 +33585,27 @@ test("1.5.5 the level race off in every language: Top levels, the Olympus Speedr
 	eq(english.HONOR_LETTER.apology:lower():find("contact", 1, true), nil, "no contact line")
 end)
 
+-- (1.5.5, the independent check) A kept bronze or silver race letter showed the gold comet's words with
+-- its raw key for a title. Retired comets' letters have words of their own in every language: plain (no
+-- title to name, no format code), no em dash, translated; and a name for their line in the lists.
+test("1.5.5 retired comets' letters in every language: plain words of their own and a name, translated", function()
+	local files = { enUS = {}, ptBR = {}, deDE = { "deDE" }, esES = { "esES" }, frFR = { "frFR" }, itIT = { "itIT" }, ruRU = { "ruRU" } }
+	local english = LoadLocale("enUS").L
+	for code, list in pairs(files) do
+		local L2 = LoadLocale(code, list).L
+		local words, name = L2.HONOR_LETTER["level-retired"], rawget(L2, "HONOR_RETIRED_TITLE")
+		assert(type(words) == "string" and words ~= "", code .. ": the retired letter's words")
+		assert(type(name) == "string" and name ~= "", code .. ": its name")
+		if code ~= "enUS" then
+			assert(words ~= english.HONOR_LETTER["level-retired"], code .. ": translated (the list taken whole)")
+			assert(name ~= english.HONOR_RETIRED_TITLE, code .. ": its name translated")
+		end
+		eq(words:find("%", 1, true), nil, code .. ": no format code")
+		for _, text in ipairs({ words, name }) do eq(text:find("\226\128\148", 1, true), nil, code .. ": no em dash") end
+		eq(words:find("http", 1, true), nil, code .. ": no link")
+	end
+end)
+
 test("1.1 languages: the Spanish, French and German files (1.4.0: and Italian and Russian): every line an English one, its codes the English line's, all taken; each language's own lines on the screens", function()
 	local files = { deDE = "deDE", esES = "esES", esMX = "esES", frFR = "frFR", itIT = "itIT", ruRU = "ruRU" }
 	local english = LoadLocale("enUS").L

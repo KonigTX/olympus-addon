@@ -49,8 +49,10 @@ L.HONOR_LETTER_WEAR = "Wear it"
 -- (1.2.4: Most Wanted's Slayer letter, its first button: the Wanted tab.)
 L.HONOR_LETTER_SLAYERS = "Slayers"
 L.HONOR_LETTER_LATER = "Later"
--- (1.5.5: the level race's apology, its name in the lists of letters.)
+-- (1.5.5: the level race's apology, its name in the lists of letters; and a retired comet's letter's, a
+-- bronze or silver one kept from the race.)
 L.HONOR_APOLOGY_TITLE = "The level race"
+L.HONOR_RETIRED_TITLE = "A retired comet"
 L.HONOR_LETTER_PREVIEW_HEAD = "Preview: the King's letters"
 L.HONOR_LETTER_PREVIEW_ONLY = "Preview only"
 L.HONOR_LETTER_PREVIEW_NOTE = "Choose a letter to inspect its existing parchment, frame and text. These are fictional examples: no honour is awarded, worn, saved or sent, and real waiting letters are not consumed."
@@ -65,7 +67,9 @@ L.HONOR_LETTER = {
 	-- was told of a comet, saw one or wore one: no honour named, nothing to wear.)
 	level = "Okay, listen.\n\nYou hit 60 before anybody else in Olympus. Fastest of all of us. So now you're %s, and the gold comet is yours.\n\nNobody can take that one from you. Respect.",
 	apology = "Hey,\n\nAbout the level race. We had problems in its first days, and not everyone could be witnessed. The comet you saw came from a bug.\n\nSo the race is off. Sorry about that.\n\nNew things are coming.",
-	guild = "Listen,\n\nYour guild has the highest levels in all of Olympus. Top of the list. You're %s, and the owl sits on your banner while your guild stays first.\n\nKeep your people climbing, because the others are coming.",
+	-- (1.5.5: a bronze or silver comet's letter kept from the race, read again: plain, no title to name.)
+	["level-retired"] = "Hey,\n\nThis comet came from the level race, and the race is off. It is retired now: nobody wears it anymore.",
+	guild ="Listen,\n\nYour guild has the highest levels in all of Olympus. Top of the list. You're %s, and the owl sits on your banner while your guild stays first.\n\nKeep your people climbing, because the others are coming.",
 	oracle = "Okay,\n\nLast month you called the arena better than anyone. Fight after fight, you just knew. You're %s, and the raven is yours this month.\n\nEverybody's gonna copy your picks now. Can't blame them.",
 	missionary = "Hey,\n\nIn the last thirty days you brought more people into our guilds than almost anyone. That's how Olympus grows. You're %s, and the shepherd's crook is yours while you stay in the top three.\n\nKeep bringing them in.",
 	-- (1.2.4)
@@ -278,6 +282,7 @@ if GetLocale and GetLocale() == "ptBR" then
 	L.HONOR_LETTER_SLAYERS = "Slayers"
 	L.HONOR_LETTER_LATER = "Depois"
 	L.HONOR_APOLOGY_TITLE = "A corrida de level"
+	L.HONOR_RETIRED_TITLE = "Um cometa aposentado"
 	L.HONOR_LETTER_PREVIEW_HEAD = "Prévia: cartas do Rei"
 	L.HONOR_LETTER_PREVIEW_ONLY = "Só prévia"
 	L.HONOR_LETTER_PREVIEW_NOTE = "Escolha uma carta para conferir seu pergaminho, moldura e texto existentes. São exemplos fictícios: nenhuma honraria é concedida, usada, salva ou enviada, e cartas reais pendentes não são consumidas."
@@ -290,6 +295,7 @@ if GetLocale and GetLocale() == "ptBR" then
 		["donor-month"] = "E aí,\n\nNo mês passado o seu ouro manteve as luzes do Olympus acesas. Sério, obrigado. Você é %s, e o koi é seu este mês.\n\nContinua com essa mão aberta.",
 		level = "Ok, escuta.\n\nVocê chegou ao 60 antes de qualquer um no Olympus. O mais rápido de todos nós. Então agora você é %s, e o cometa de ouro é seu.\n\nEsse ninguém tira de você. Respeito.",
 		apology = "Ei,\n\nSobre a corrida de level. Tivemos problemas nos primeiros dias, e nem todo mundo pôde ser testemunhado. O cometa que você viu veio de um bug.\n\nPor isso a corrida foi cancelada. Desculpa.\n\nCoisas novas vêm aí.",
+		["level-retired"] = "Ei,\n\nEste cometa veio da corrida de level, e a corrida foi cancelada. Agora ele está aposentado: ninguém mais usa.",
 		guild = "Escuta,\n\nA sua guilda tem os níveis mais altos de todo o Olympus. Topo da lista. Você é %s, e a coruja fica no seu estandarte enquanto a sua guilda for a primeira.\n\nMantém o seu pessoal subindo, porque os outros estão vindo.",
 		oracle = "Olha,\n\nNo mês passado você leu a arena melhor que qualquer um. Luta após luta, você simplesmente sabia. Você é %s, e o corvo é seu este mês.\n\nAgora todo mundo vai copiar os seus palpites. Não dá pra culpar.",
 		missionary = "E aí,\n\nNos últimos trinta dias você trouxe mais gente pras nossas guildas do que quase todo mundo. É assim que o Olympus cresce. Você é %s, e o cajado é seu enquanto estiver entre os três primeiros.\n\nContinua trazendo.",

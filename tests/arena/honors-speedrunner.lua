@@ -400,3 +400,43 @@ test("1.5.5 the Olympus Speedrunner named after the race's apology went out to h
 	eq(Count(plain, "level-race-60"), 1, "his letter")
 	W3.NoErrors(w)
 end)
+
+-- (1.5.5, the independent check) A bronze or silver race letter kept in a list (a character the apology
+-- has not reached: before his list, a non-member, the Speedrunner himself) showed the gold comet's words
+-- with its raw key in place of a title. A retired comet's letter reads as retired, in words of its own.
+test("1.5.5 a kept bronze or silver race letter reads as retired: plain words and a name of its own, never the gold comet's words nor a raw key; shown with Close and his rank's frame, wearing nothing", function()
+	local w = World.New({ compliance = "shipped" })
+	local c = w:Client("Brisa Vale")
+	Kept(w, c)
+	local net, L = c.ns.HonorsNet, c.ns.L
+	local words, name = L.HONOR_LETTER["level-retired"], L.HONOR_RETIRED_TITLE
+	assert(type(words) == "string" and words ~= "", "the retired letter's words")
+	assert(type(name) == "string" and name ~= "", "its name")
+	for _, key in ipairs({ "level-race-20", "level-race-40" }) do
+		local text, title = w:As(c, net.LetterText, key)
+		eq(text, words, key .. ": the retired words"); eq(title, name, key .. ": its name")
+		eq(net.TitleText(key), name, key .. ": its line's name in the lists")
+		eq(text:find("level-race", 1, true), nil, key .. ": no raw key")
+		eq(text:find(L.HONOR_TITLES["level-race-60"], 1, true), nil, key .. ": not the Speedrunner's")
+	end
+	-- The gold comet's own letter keeps the Speedrunner's words.
+	assert(net.LetterText("level-race-60"):find(L.HONOR_TITLES["level-race-60"], 1, true), "the gold letter")
+	-- Opened from his list: the retired words, Close, his rank's frame round the portrait; nothing worn.
+	local m = w:As(c, c.ns.ArenaProfile.Mine, true)
+	m.letters = { { key = "level-race-40", t = w.clock - 3600, read = true } }
+	local pick = c.ns.ArenaProfile.Pick()
+	local dressed, Dress = {}, net.DressPortrait
+	net.DressPortrait = function(rig, key) dressed[#dressed + 1] = key return Dress(rig, key) end
+	local ok, err = pcall(function()
+		eq(w:As(c, net.ShowLetter, "level-race-40"), true)
+		local f = net.LetterFrame()
+		eq(f:IsShown(), true); eq(f.body:GetText(), words)
+		eq(f.wear:GetText(), L.LETTERS_CLOSE, "nothing to wear: Close")
+		eq(dressed[#dressed], "rank", "his rank's frame")
+		eq(w:As(c, net.CloseLetter, true), true)
+	end)
+	net.DressPortrait = Dress
+	if not ok then error(err, 0) end
+	eq(c.ns.ArenaProfile.Pick().frame, pick.frame, "nothing worn"); eq(c.ns.ArenaProfile.Pick().title, pick.title)
+	W3.NoErrors(w)
+end)

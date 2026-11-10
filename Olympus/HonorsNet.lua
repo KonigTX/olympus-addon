@@ -538,10 +538,22 @@ end
 local CLASS_FILE = { warrior = "WARRIOR", paladin = "PALADIN", hunter = "HUNTER", rogue = "ROGUE", priest = "PRIEST", shaman = "SHAMAN",
 	mage = "MAGE", warlock = "WARLOCK", druid = "DRUID" }
 local RACE_ID = { human = 1, orc = 2, dwarf = 3, nightelf = 4, undead = 5, tauren = 6, gnome = 7, troll = 8 }
+-- (1.5.5, the independent check) A retired comet of the level race (bronze and silver:
+-- Honors.RETIRED_LEVELS). A letter of one kept from the race (a character the apology has not reached
+-- yet, a non-member, the Speedrunner himself) showed the gold comet's words with its raw key for a
+-- title: it reads as retired, in words of its own (L.HONOR_LETTER["level-retired"],
+-- L.HONOR_RETIRED_TITLE), with nothing to wear.
+local function RetiredKey(key)
+	local m = type(key) == "string" and tonumber(key:match("^level%-race%-(%d+)$")) or nil
+	local R = type(ns.Honors) == "table" and ns.Honors.RETIRED_LEVELS or nil
+	return m ~= nil and type(R) == "table" and R[m] == true
+end
+H.RetiredKey = RetiredKey
 function H.TitleText(key)
 	if type(key) ~= "string" then return nil end
-	-- (1.5.5: the level race's apology names no honour: its line's name in the lists.)
+	-- (1.5.5: the level race's apology names no honour: its line's name in the lists; so a retired comet's.)
 	if key == H.APOLOGY_KEY then return L.HONOR_APOLOGY_TITLE end
+	if RetiredKey(key) then return L.HONOR_RETIRED_TITLE end
 	-- (1.2.4: the Most Wanted Slayer letter's family, "wanted@": its title is Wanted.lua's, read
 	-- from its key alone, Wanted.LetterTitle.)
 	if key:find("^wanted@") then
@@ -1998,6 +2010,8 @@ function H.LetterFamily(key)
 	if key:find("^arena%-race%-") then return "race" end
 	if key:find("^donor%-top%-") then return "donor-top" end
 	if key:find("^donor%-month%-") then return "donor-month" end
+	-- (1.5.5: a retired comet's letter, its words of its own: RetiredKey.)
+	if RetiredKey(key) then return "level-retired" end
 	if key:find("^level%-race%-") then return "level" end
 	if key:find("^oracle%-") then return "oracle" end
 	if key == "guild-top-leader" then return "guild" end
@@ -2220,9 +2234,9 @@ function H.ShowLetter(key, prompted)
 	-- (1.2.4 repair: a Slayer letter has no honour to wear: its first button opens the Slayers, the
 	-- Wanted tab, and his portrait wears his rank's frame, as his own does.)
 	local slayer = H.LetterFamily(nextLetter.key) == "wanted"
-	-- (1.5.5: the level race's apology has nothing to wear either: its first button closes it, and his
-	-- portrait wears his rank's frame.)
-	local apology = nextLetter.key == H.APOLOGY_KEY
+	-- (1.5.5: the level race's apology has nothing to wear either, nor a retired comet's letter
+	-- (RetiredKey): its first button closes it, and his portrait wears his rank's frame.)
+	local apology = nextLetter.key == H.APOLOGY_KEY or RetiredKey(nextLetter.key)
 	frame.wear:SetText(slayer and L.HONOR_LETTER_SLAYERS or apology and L.LETTERS_CLOSE or L.HONOR_LETTER_WEAR)
 	H.DressPortrait(frame.rig, (slayer or apology) and "rank" or nextLetter.key)
 	frame:Show()
