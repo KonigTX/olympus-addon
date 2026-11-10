@@ -98,7 +98,15 @@ test("1.2.4 pre-launch level race (1.4.0: a realm the launch list does not name)
 	w:Fire(c, "PLAYER_LEVEL_UP", 20)
 	w:Run(3700)
 	eq(s.levels[60][1], place); eq(s.claims.old, claim); eq(s.vouchRule, 1)
-	eq(next(s.struck or {}), nil); eq(#net.QueuedLetters(), 0); eq(#net.Letters(), 0)
+	-- (1.5.5, the owner's call: he wore the race's gold title, so the race's apology is his one letter,
+	-- once; no award letter.)
+	local function OnlyApology()
+		for _, list in ipairs({ net.QueuedLetters(), net.Letters() }) do
+			for _, x in ipairs(list) do eq(x.key, "apology@level-race", "no award letter") end
+		end
+		eq(#net.Letters(), 1, "the apology, once")
+	end
+	eq(next(s.struck or {}), nil); OnlyApology()
 	eq(#w:Sent{ from = c, type = "IL" }, 0)
 	w:Logout(c); w:Login(c)
 	net = Net(w, c)
@@ -110,7 +118,7 @@ test("1.2.4 pre-launch level race (1.4.0: a realm the launch list does not name)
 	eq(net.Levels(), kept.levels, "raw history remains readable")
 	NoLevel(net.Holdings(c.name, c.guid)); eq(net.Verified(c.name, c.guid).title, nil)
 	eq(net.LevelRaceActive(), false); eq(w:Events(c, true).PLAYER_LEVEL_UP, nil)
-	eq(#net.QueuedLetters(), 0); eq(#net.Letters(), 0)
+	OnlyApology()
 	W3.NoErrors(w)
 end)
 
@@ -126,7 +134,9 @@ test("1.4.0 the launch's realms: a shipped client on a realm the signed list nam
 	local launch = W3.LevelRaceWorld({ compliance = "shipped", clock = 2000000000 })
 	local f = launch:Client("Corin Ash", { level = 19 })
 	local net = Net(launch, f)
-	eq(net.LEVEL_RACE_LAUNCHED, true, "the release's switch")
+	-- (1.5.5: the release ships it off again; W3.LevelRaceWorld turns it on for the dormant race's own
+	-- tests. The shipped switch: tests/arena/honors-speedrunner.lua.)
+	eq(net.LEVEL_RACE_LAUNCHED, true, "the test world's switch")
 	eq(net.LevelRaceActive(), true, "a launch realm")
 	eq(launch:Events(f, true).PLAYER_LEVEL_UP, true, "its level-ups watched")
 	W3.Rules(launch, f)

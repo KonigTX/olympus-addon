@@ -1490,13 +1490,14 @@ test("layer sample is stable and about 1 in 8", function()
 	assert(hits > 50 and hits < 150, "sample size " .. hits)
 end)
 
-test("realm view lists king, lords, captains and level race", function()
+-- (1.5.5: the level race is off; the census list of the highest levels stays, renamed Top levels.)
+test("realm view lists king, lords, captains and top levels", function()
 	ns.rdb.guilds = SampleGuilds()
 	local lines = ns.Views.RealmLines()
 	assert(lines[1].text:find("Asmon Layer", 1, true), "the King is online: his layer line comes first")
 	assert(lines[2].text:find("King") and lines[2].text:find("Asmongold"), lines[2].text)
 	local sawRace = false
-	for _, l in ipairs(lines) do if l.text == "Level race" then sawRace = true end end
+	for _, l in ipairs(lines) do if l.text == "Top levels" then sawRace = true end end
 	assert(sawRace)
 	ns.rdb.guilds = {}
 end)
@@ -33508,7 +33509,8 @@ end)
 -- (1.4.0, the author's ask before the launch: the letter Asmon reads on stream, in every language) Its
 -- own name, an icon on every news line (the three launch lines too), the King's word for the chat and
 -- the dev's own signature and no P.S. (the author's call); drawn, no {mark} is left as a code.
-test("1.4.0 the launch letter in every language: its own name, an icon on each of its eleven news lines, the dev's signature and no P.S.; drawn, no {mark} left as written", function()
+-- (1.5.5, the owner's call: its level race line left, the race being off: ten news lines.)
+test("1.4.0 the launch letter in every language: its own name, an icon on each of its ten news lines, the dev's signature and no P.S.; drawn, no {mark} left as written", function()
 	local files = { enUS = {}, ptBR = {}, deDE = { "deDE" }, esES = { "esES" }, frFR = { "frFR" }, itIT = { "itIT" }, ruRU = { "ruRU" } }
 	local english = LoadLocale("enUS").L
 	for code, list in pairs(files) do
@@ -33527,7 +33529,8 @@ test("1.4.0 the launch letter in every language: its own name, an icon on each o
 				assert(line:find("^%- {%a+} "), code .. ": an icon on " .. line)
 			end
 		end
-		eq(n, 11, code .. ": the news lines")
+		eq(n, 10, code .. ": the news lines")
+		eq(body:find("{gold}", 1, true), nil, code .. ": no level race line")
 		eq(body:find("P.S.", 1, true) or body:find("P.D.", 1, true), nil, code .. ": no P.S. (the author's call)")
 		local signed = lns.L.LETTER_1_4_0_SIGNED
 		assert(type(signed) == "string" and signed ~= "" and signed ~= lns.L.HONOR_LETTER_SIGN, code .. ": the dev's own signature, not the King's")
@@ -33535,6 +33538,43 @@ test("1.4.0 the launch letter in every language: its own name, an icon on each o
 		assert(loadfile(ADDON_DIR .. "Letters.lua"))("Olympus", ln)
 		eq(ln.Letters.DrawMarks(body):find("{%a+}"), nil, code .. ": every mark drawn")
 	end
+end)
+
+-- (1.5.5, the owner's call: the level race is off) In every language: the Realm page's census list is
+-- Top levels; the gold comet's title is the Olympus Speedrunner's and its letter says so; the race's
+-- apology is short and plain: no em dash, no format code, no proof or contact line; bronze and silver
+-- have no title left; the 1.4.0 letter no longer announces the race.
+test("1.5.5 the level race off in every language: Top levels, the Olympus Speedrunner's title and letter, the apology's words", function()
+	local files = { enUS = {}, ptBR = {}, deDE = { "deDE" }, esES = { "esES" }, frFR = { "frFR" }, itIT = { "itIT" }, ruRU = { "ruRU" } }
+	local TOP = { enUS = "Top levels", ptBR = "Níveis mais altos", esES = "Niveles más altos", deDE = "Höchste Stufen",
+		frFR = "Plus hauts niveaux", itIT = "Livelli più alti", ruRU = "Высшие уровни" }
+	local SPEED = { enUS = "The Olympus Speedrunner", ptBR = "O Speedrunner do Olympus", esES = "El Speedrunner de Olympus",
+		deDE = "Der Speedrunner von Olympus", frFR = "Le Speedrunner d'Olympus", itIT = "Lo Speedrunner di Olympus", ruRU = "Спидраннер Olympus" }
+	local english = LoadLocale("enUS").L
+	for code, list in pairs(files) do
+		local L2 = LoadLocale(code, list).L
+		eq(L2.LEVEL_RACE, TOP[code], code .. ": the census list's heading")
+		eq(L2.HONOR_TITLES["level-race-60"], SPEED[code], code .. ": the gold comet's title")
+		eq(L2.HONOR_TITLES["level-race-20"], nil, code .. ": no bronze title"); eq(L2.HONOR_TITLES["level-race-40"], nil, code .. ": no silver title")
+		local level, sorry = L2.HONOR_LETTER.level, L2.HONOR_LETTER.apology
+		assert(type(sorry) == "string" and sorry ~= "", code .. ": the apology")
+		if code ~= "enUS" then
+			assert(sorry ~= english.HONOR_LETTER.apology, code .. ": the apology translated (the list taken whole)")
+			assert(L2.HONOR_APOLOGY_TITLE ~= english.HONOR_APOLOGY_TITLE, code .. ": its name translated")
+		end
+		eq(select(2, level:gsub("%%s", "")), 1, code .. ": the gold comet's letter names its title once")
+		eq(sorry:find("%", 1, true), nil, code .. ": no format code in the apology")
+		for _, text in ipairs({ sorry, level, L2.HONOR_APOLOGY_TITLE }) do
+			eq(text:find("\226\128\148", 1, true), nil, code .. ": no em dash")
+		end
+		eq(sorry:find("http", 1, true), nil, code .. ": no link"); eq(sorry:find("@", 1, true), nil, code .. ": no contact")
+		eq(L2.LETTER_1_4_0:find("{gold}", 1, true), nil, code .. ": the 1.4.0 letter no longer announces the race")
+		eq(rawget(L2, "ARENA_TITLE_FIRST_TO"), nil, code .. ": the design's fallback title gone")
+	end
+	eq(english.HONOR_LETTER.apology:lower():find("bug", 1, true) ~= nil, true, "the comet came from a bug")
+	eq(english.HONOR_LETTER.apology:lower():find("sorry", 1, true) ~= nil, true)
+	eq(english.HONOR_LETTER.apology:lower():find("proof", 1, true), nil, "no proof line")
+	eq(english.HONOR_LETTER.apology:lower():find("contact", 1, true), nil, "no contact line")
 end)
 
 test("1.1 languages: the Spanish, French and German files (1.4.0: and Italian and Russian): every line an English one, its codes the English line's, all taken; each language's own lines on the screens", function()

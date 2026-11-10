@@ -21,7 +21,8 @@ L.HONOR_TITLES = {
 	["arena-champion"] = "Arena Champion", ["arena-champion-2"] = "Arena Contender", ["arena-champion-3"] = "Arena Challenger",
 	["donor-top-1"] = "Patron of Olympus", ["donor-top-2"] = "Benefactor of Olympus", ["donor-top-3"] = "Friend of the Treasury",
 	["donor-month-1"] = "Golden Hand", ["donor-month-2"] = "Silver Hand", ["donor-month-3"] = "Bronze Hand",
-	["level-race-20"] = "First to 20", ["level-race-40"] = "First to 40", ["level-race-60"] = "First to 60",
+	-- (1.5.5: the level race is off; its gold comet is the Olympus Speedrunner's alone, bronze and silver retired.)
+	["level-race-60"] = "The Olympus Speedrunner",
 	["guild-top-leader"] = "Wisest of Olympus",
 	["oracle-1"] = "Oracle", ["oracle-2"] = "Seer", ["oracle-3"] = "Soothsayer",
 	["missionary-1"] = "Good Shepherd", ["missionary-2"] = "Faithful Shepherd", ["missionary-3"] = "Shepherd",
@@ -48,6 +49,8 @@ L.HONOR_LETTER_WEAR = "Wear it"
 -- (1.2.4: Most Wanted's Slayer letter, its first button: the Wanted tab.)
 L.HONOR_LETTER_SLAYERS = "Slayers"
 L.HONOR_LETTER_LATER = "Later"
+-- (1.5.5: the level race's apology, its name in the lists of letters.)
+L.HONOR_APOLOGY_TITLE = "The level race"
 L.HONOR_LETTER_PREVIEW_HEAD = "Preview: the King's letters"
 L.HONOR_LETTER_PREVIEW_ONLY = "Preview only"
 L.HONOR_LETTER_PREVIEW_NOTE = "Choose a letter to inspect its existing parchment, frame and text. These are fictional examples: no honour is awarded, worn, saved or sent, and real waiting letters are not consumed."
@@ -58,7 +61,10 @@ L.HONOR_LETTER = {
 	race = "Hey,\n\nYour whole race just got a new name to brag about, and it's yours. You're %s now.\n\nGo show your people how it's done.",
 	["donor-top"] = "Dude,\n\nYou've put more gold into Olympus than almost anyone. That's not a little, that's insane. You're %s, and the cornucopia stays yours as long as you stay in the top three.\n\nI see it, and so does everybody else. Thank you.",
 	["donor-month"] = "Hey,\n\nLast month your gold kept the lights on in Olympus. Genuinely, thank you. You're %s, and the koi is yours for the month.\n\nKeep that hand open.",
-	level = "Holy.\n\nYou got there before anybody else in Olympus. First. Nobody can ever take that from you. The comet is yours, and so is the name %s.\n\nNow go touch some grass. Or don't. Respect either way.",
+	-- (1.5.5: the Olympus Speedrunner's letter, the gold comet; and the level race's apology, once, to whoever
+	-- was told of a comet, saw one or wore one: no honour named, nothing to wear.)
+	level = "Okay, listen.\n\nYou hit 60 before anybody else in Olympus. Fastest of all of us. So now you're %s, and the gold comet is yours.\n\nNobody can take that one from you. Respect.",
+	apology = "Hey,\n\nAbout the level race. We had problems in its first days, and not everyone could be witnessed. The comet you saw came from a bug.\n\nSo the race is off. Sorry about that.\n\nNew things are coming.",
 	guild = "Listen,\n\nYour guild has the highest levels in all of Olympus. Top of the list. You're %s, and the owl sits on your banner while your guild stays first.\n\nKeep your people climbing, because the others are coming.",
 	oracle = "Okay,\n\nLast month you called the arena better than anyone. Fight after fight, you just knew. You're %s, and the raven is yours this month.\n\nEverybody's gonna copy your picks now. Can't blame them.",
 	missionary = "Hey,\n\nIn the last thirty days you brought more people into our guilds than almost anyone. That's how Olympus grows. You're %s, and the shepherd's crook is yours while you stay in the top three.\n\nKeep bringing them in.",
@@ -142,7 +148,7 @@ L.PROFILE_TITLE_NONE = "No title"
 L.PROFILE_LOCK = "Keep my pick"
 L.PROFILE_LOCKED = "Pick kept"
 L.PROFILE_HONOURS = "Your honours"
-L.PROFILE_NO_HONOURS = "None yet: belts, podiums, donations, the level race, the Oracle, the best guild."
+L.PROFILE_NO_HONOURS = "None yet: belts, podiums, donations, the Oracle, the best guild."
 L.PROFILE_ICON_REFUSED = "That icon can't be used here: pick one of your honours' marks (or, for your emblem, one of the game's icons)."
 L.HONOR_LETTER_WAITING = "A letter from the King awaits you: open the Olympus window (or My profile, in it) to read it."
 L.MYPROFILE_TITLE = "My profile"
@@ -250,7 +256,7 @@ if GetLocale and GetLocale() == "ptBR" then
 		["arena-champion"] = "Campeão da Arena", ["arena-champion-2"] = "Desafiante da Arena", ["arena-champion-3"] = "Pretendente da Arena",
 		["donor-top-1"] = "Patrono do Olympus", ["donor-top-2"] = "Benfeitor do Olympus", ["donor-top-3"] = "Amigo do Tesouro",
 		["donor-month-1"] = "Mão de Ouro", ["donor-month-2"] = "Mão de Prata", ["donor-month-3"] = "Mão de Bronze",
-		["level-race-20"] = "Primeiro ao 20", ["level-race-40"] = "Primeiro ao 40", ["level-race-60"] = "Primeiro ao 60",
+		["level-race-60"] = "O Speedrunner do Olympus",
 		["guild-top-leader"] = "O Mais Sábio do Olympus",
 		["oracle-1"] = "Oráculo", ["oracle-2"] = "Vidente", ["oracle-3"] = "Adivinho",
 		["missionary-1"] = "Bom Pastor", ["missionary-2"] = "Pastor Fiel", ["missionary-3"] = "Pastor",
@@ -271,6 +277,7 @@ if GetLocale and GetLocale() == "ptBR" then
 	L.HONOR_LETTER_WEAR = "Usar"
 	L.HONOR_LETTER_SLAYERS = "Slayers"
 	L.HONOR_LETTER_LATER = "Depois"
+	L.HONOR_APOLOGY_TITLE = "A corrida de level"
 	L.HONOR_LETTER_PREVIEW_HEAD = "Prévia: cartas do Rei"
 	L.HONOR_LETTER_PREVIEW_ONLY = "Só prévia"
 	L.HONOR_LETTER_PREVIEW_NOTE = "Escolha uma carta para conferir seu pergaminho, moldura e texto existentes. São exemplos fictícios: nenhuma honraria é concedida, usada, salva ou enviada, e cartas reais pendentes não são consumidas."
@@ -281,7 +288,8 @@ if GetLocale and GetLocale() == "ptBR" then
 		race = "E aí,\n\nA sua raça inteira ganhou um nome novo pra se gabar, e é o seu. Agora você é %s.\n\nVai lá mostrar pro seu povo como se faz.",
 		["donor-top"] = "Cara,\n\nVocê colocou mais ouro no Olympus do que quase todo mundo. Isso não é pouca coisa, é insano. Você é %s, e a cornucópia fica com você enquanto estiver entre os três primeiros.\n\nEu vejo, e todo mundo vê também. Valeu mesmo.",
 		["donor-month"] = "E aí,\n\nNo mês passado o seu ouro manteve as luzes do Olympus acesas. Sério, obrigado. Você é %s, e o koi é seu este mês.\n\nContinua com essa mão aberta.",
-		level = "Caramba.\n\nVocê chegou lá antes de qualquer um no Olympus. Primeiro. Isso ninguém tira de você nunca mais. O cometa é seu, e o nome %s também.\n\nAgora vai tocar grama. Ou não. Respeito de qualquer jeito.",
+		level = "Ok, escuta.\n\nVocê chegou ao 60 antes de qualquer um no Olympus. O mais rápido de todos nós. Então agora você é %s, e o cometa de ouro é seu.\n\nEsse ninguém tira de você. Respeito.",
+		apology = "Ei,\n\nSobre a corrida de level. Tivemos problemas nos primeiros dias, e nem todo mundo pôde ser testemunhado. O cometa que você viu veio de um bug.\n\nPor isso a corrida foi cancelada. Desculpa.\n\nCoisas novas vêm aí.",
 		guild = "Escuta,\n\nA sua guilda tem os níveis mais altos de todo o Olympus. Topo da lista. Você é %s, e a coruja fica no seu estandarte enquanto a sua guilda for a primeira.\n\nMantém o seu pessoal subindo, porque os outros estão vindo.",
 		oracle = "Olha,\n\nNo mês passado você leu a arena melhor que qualquer um. Luta após luta, você simplesmente sabia. Você é %s, e o corvo é seu este mês.\n\nAgora todo mundo vai copiar os seus palpites. Não dá pra culpar.",
 		missionary = "E aí,\n\nNos últimos trinta dias você trouxe mais gente pras nossas guildas do que quase todo mundo. É assim que o Olympus cresce. Você é %s, e o cajado é seu enquanto estiver entre os três primeiros.\n\nContinua trazendo.",
@@ -348,7 +356,7 @@ if GetLocale and GetLocale() == "ptBR" then
 	L.PROFILE_LOCK = "Manter a escolha"
 	L.PROFILE_LOCKED = "Escolha mantida"
 	L.PROFILE_HONOURS = "As suas honrarias"
-	L.PROFILE_NO_HONOURS = "Nenhuma ainda: cinturões, pódios, doações, a corrida de níveis, o Oráculo, a melhor guilda."
+	L.PROFILE_NO_HONOURS = "Nenhuma ainda: cinturões, pódios, doações, o Oráculo, a melhor guilda."
 	L.MYPROFILE_TITLE = "Meu perfil"
 	L.MYPROFILE_LINK = "Meu perfil"
 	L.MYPROFILE_NAV_LOOK = "Visual"
