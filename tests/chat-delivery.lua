@@ -237,3 +237,36 @@ test("chat delivery (1.5.5): /oly status names the chat windows open beside the 
 	ChatFrame3, GetChatWindowInfo, ns.db.chatWindows = saved.frame, saved.info, saved.windows
 	if not ok then error(err, 0) end
 end)
+
+test("chat delivery (1.5.5, Forever): another guild's officer and master speak in [Captains] and [Lords] under any sub-realm stamp; their reporters' stamps give one census picture; a plain member of theirs, or another family's namesake, is still no Captain", function()
+	ForeverGuild(function()
+		local saved, savedInfo, savedMute = ns.rdb.guilds, GetGuildInfo, ns.db.chatMute
+		local ok, err = pcall(function()
+			ns.rdb.guilds = {}
+			GetGuildInfo = function() return "OLYMPUS GODS", "Master", 0 end -- (we read every channel)
+			ns.db.chatMute = { A = true, C = true, L = true }
+			local function Rep() return { guild = "Olympus Dawn", total = 40, online = 9, zones = {}, leader = "Dawn Master",
+				officers = { { name = "Dawn Officer", online = true, days = 0 } } } end
+			-- Its reports reach us stamped with their senders' sub-realms (the relay's copies).
+			ns.Data.Receive(Rep(), "Dawn Reporter-CAMWOWUS2Realm3PvE")
+			ns.Data.Receive(Rep(), "Dawn Witness-CAMWOWUS1Realm5PvE")
+			eq(ns.rdb.guilds["Olympus Dawn"].conflict, nil, "one picture, whatever its senders' stamps")
+			eq(ns.Data.KnownRank("Dawn Officer-CAMWOWUS2Realm7PvE", "Olympus Dawn"), 1, "his officer under a third stamp")
+			eq(ns.Data.KnownRank("Dawn Master-CAMWOWUS1Realm7PvE", "Olympus Dawn"), 0, "his master too")
+			eq(ns.Data.KnownRank("Dawn Officer-CAMWOWUS1Realm8PvP", "Olympus Dawn"), nil, "another family's namesake is nobody there")
+			eq(ns.Data.KnownRank("Dawn Member-CAMWOWUS2Realm7PvE", "Olympus Dawn"), nil)
+			local C, Codec = ns.Channels, ns.Codec
+			local function Line(tier, id, text) return Codec.EncodeChat(tier, "Olympus Dawn", id, "WA", text) end
+			local _, why = C.Receive("CHANNEL", "Dawn Officer-CAMWOWUS2Realm7PvE", Line("C", 4201, "captains, to me"), 8000)
+			eq(why, "muted", "his [Captains] line taken")
+			_, why = C.Receive("CHANNEL", "Dawn Master-CAMWOWUS1Realm7PvE", Line("L", 4202, "lords, to me"), 8010)
+			eq(why, "muted", "his master's [Lords] line taken")
+			_, why = C.Receive("CHANNEL", "Dawn Member-CAMWOWUS2Realm7PvE", Line("C", 4203, "let me in"), 8020)
+			eq(why, "unverified", "a member the census names no officer: not in [Captains]")
+			_, why = C.Receive("CHANNEL", "Dawn Officer-CAMWOWUS1Realm8PvP", Line("C", 4204, "me too"), 8030)
+			eq(why, "unverified", "another family's namesake: not in [Captains]")
+		end)
+		ns.rdb.guilds, GetGuildInfo, ns.db.chatMute = saved, savedInfo, savedMute
+		if not ok then error(err, 0) end
+	end)
+end)
