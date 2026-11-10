@@ -1074,9 +1074,9 @@ end
 local function LedgerRelay(name)
 	return ns.Church ~= nil and ns.Church.IsLedgerRelay ~= nil and ns.Church.IsLedgerRelay(name) == true
 end
-function Data.CensusTrusted(name) return LedgerRelay(name) or AuthorIdentity(name) end
+local function TrustedCensusOrigin(name) return LedgerRelay(name) or AuthorIdentity(name) end
 local function GlobalTrusted(name)
-	if not Data.CensusTrusted(name) then return false end
+	if not TrustedCensusOrigin(name) then return false end
 	if name == ns.me then return true end
 	if Hop() == "O" then return false end
 	return OwnWord(name) or RelayAsk("HopTrusted") ~= false
