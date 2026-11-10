@@ -48208,14 +48208,44 @@ test("1.1 taking donations (the Treasurer's idea): a keeper's switch, a line on 
 			T.HandleDonations("CHANNEL", "Asmongold Asmongler-Realm", ("TD~Olympus~1~%d~"):format(w.clock))
 			assert(Texts(T.DonationLines()):find(ns.L.DONATIONS_LINE:format("Asmon"), 1, true), Texts(T.DonationLines()))
 			-- He logs out while on: his addon says off as it leaves; next session it starts off.
+			-- (1.5.5, changed on purpose: on Forever, where the relay carries the channel's words, Relay.On,
+			-- the off went raw on the channel, which delivers nothing there. Now it goes to his own guild over
+			-- GUILD, as the relay's hand-over from himself, RG, and nothing goes on the channel. The harness
+			-- loads no Relay.lua into its namespace: Relay.On's answer stands in for Forever's. Off Forever,
+			-- the channel as before: below.)
 			AsTreasurer()
 			T.SetDonations(true)
-			local said
-			C_ChatInfo = { SendAddonMessage = function(prefix, msg, dist, target) said = { prefix, msg, dist, target } end }
+			local said, says = nil, {}
+			local function Said() return { SendAddonMessage = function(prefix, msg, dist, target)
+				said = { prefix, msg, dist, target }
+				says[#says + 1] = said
+			end } end
+			C_ChatInfo = Said()
 			GetChannelName = function() return 7 end
 			ns.Comm.ChannelName = function() return "OlympusNet" end
+			local relay = ns.Relay
+			ns.Relay = { On = function() return true end }
+			local done, why = pcall(T.DonationsLogout)
+			ns.Relay = relay
+			assert(done, why)
+			eq(#says, 1, "one word")
+			eq(said[1], ns.PREFIX); eq(said[2], "RG~P~Pyralis Ashandar~TD~Olympus~0~0~"); eq(said[3], "GUILD"); eq(said[4], nil)
+			eq(T.TakingDonations(), false)
+			-- A guildmate's client takes it as his word: hop 3 (the real Relay.lua) hands it to the TD handler.
+			AsSoldier()
+			local function Listed() return Texts(T.DonationLines()):find("Pyralis Ashandar", 1, true) ~= nil end
+			T.HandleDonations("CHANNEL", TREASURER, ("TD~Olympus~1~%d~"):format(w.clock))
+			eq(Listed(), true, "his line")
+			local R = Harness.RelayWorld("Soldier-Realm", "Olympus II")
+			R.Comm.Handle("TD", function(...) T.HandleDonations(...) end)
+			eq(R.Relay.HandleGuild("GUILD", "Guildmate-Realm", says[1][2]), true)
+			eq(Listed(), false, "his off over GUILD takes the line down")
+			-- Off Forever (no relay): the channel, as before.
+			C_ChatInfo = Said()
+			AsTreasurer()
+			T.SetDonations(true)
 			T.DonationsLogout()
-			eq(said and said[2], "TD~Olympus~0~0~"); eq(said[3], "CHANNEL"); eq(said[4], 7)
+			eq(#says, 2); eq(said[2], "TD~Olympus~0~0~"); eq(said[3], "CHANNEL"); eq(said[4], 7)
 			eq(T.TakingDonations(), false)
 			-- A 1.0 client's addon leaves it unread.
 			C_ChatInfo = saved.cci
@@ -48230,6 +48260,33 @@ test("1.1 taking donations (the Treasurer's idea): a keeper's switch, a line on 
 		DEFAULT_CHAT_FRAME, C_Map.GetBestMapForUnit, ns.db.shareLocation, ns.db.chatMute = saved.chat, saved.best, saved.share, saved.mute
 		C_ChatInfo, GetChannelName, ns.Comm.ChannelName, ns.splitNames = saved.cci, saved.chan, saved.name, saved.split
 		ns.rdb.treasuryFlags = nil
+		if not ok then error(err, 0) end
+	end)
+end)
+
+-- 1.5.5 (the audit of 11-10). On Forever a keeper's "on" reaches the other guilds through a relay,
+-- stamped with his own sub-realm ("Name-CAMWOWUS2Realm7PvE"), while his "off" at logout reaches his
+-- guild over GUILD naming him plain (Treasury.DonationsLogout, RG), which each guildmate's client
+-- files under its own sub-realm. Forever's names are one across a family: the off takes his line
+-- down whichever stamp the on had; a namesake in another family is nobody's keeper. Before: the line
+-- stayed until DONATIONS_FRESH.
+test("1.5.5 taking donations on Forever: a keeper's off takes his line down whichever sub-realm of his family his on was stamped with; another family's namesake never", function()
+	WithThrone(function()
+		local T = ns.Treasury
+		local saved = { split = ns.splitNames, realm = ns.realm, group = ns.group, keepers = ns.rdb.treasuryKeepers }
+		local ok, err = pcall(function()
+			ns.splitNames, ns.realm, ns.group = true, "CAMWOWUS2Realm5PvE", "ForeverPvE"
+			ns.rdb.treasuryKeepers = { at = 1, names = { "Keeper Person-CAMWOWUS2Realm7PvE" } }
+			AsSoldier()
+			local function Listed() return Texts(T.DonationLines()):find("Keeper Person", 1, true) ~= nil end
+			T.HandleDonations("CHANNEL", "Keeper Person-CAMWOWUS2Realm7PvE", ("TD~Olympus Zeus~1~%d~"):format(ns.Now()))
+			eq(Listed(), true, "his on, through a relay")
+			T.HandleDonations("CHANNEL", "Keeper Person-CAMWOWUS2Realm5PvP", "TD~Olympus Zeus~0~0~")
+			eq(Listed(), true, "another family's namesake takes nothing down")
+			T.HandleDonations("CHANNEL", "Keeper Person", "TD~Olympus Zeus~0~0~")
+			eq(Listed(), false, "his off over GUILD, named plain: the same character")
+		end)
+		ns.splitNames, ns.realm, ns.group, ns.rdb.treasuryKeepers = saved.split, saved.realm, saved.group, saved.keepers
 		if not ok then error(err, 0) end
 	end)
 end)

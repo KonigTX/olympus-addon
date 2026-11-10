@@ -3605,6 +3605,19 @@ function Treasury.DonationsLogout()
 	donating = nil
 	-- (Quiet presence: nothing at logout either; the others' line had lapsed or lapses.)
 	if ns.QuietPresence and ns.QuietPresence() then return end
+	-- (1.5.5) On WoW: Forever (Relay.On) the channel delivers nothing, and the relay's whispers wait in
+	-- the send queue, which no longer runs at logout: the off goes to his own guild alone, over GUILD,
+	-- as the relay's hand-over from himself (RG, Relay.lua's OwnGuild), which every guildmate takes as
+	-- this word. The other guilds' line lapses (DONATIONS_FRESH). Nothing goes on the channel.
+	local R = ns.Relay
+	if type(R) == "table" and not R.missing and type(R.On) == "function" and R.On() then
+		local me = ns.ShortName(ns.me or "") or ""
+		local wrapped = "RG~P~" .. me .. "~" .. DonationMessage(false)
+		if me ~= "" and #wrapped <= 255 and IsInGuild() and C_ChatInfo and C_ChatInfo.SendAddonMessage then
+			pcall(C_ChatInfo.SendAddonMessage, ns.PREFIX, wrapped, "GUILD")
+		end
+		return
+	end
 	local name = ns.Comm.ChannelName and ns.Comm.ChannelName()
 	local id = name and GetChannelName and GetChannelName(name) or 0
 	if id and id > 0 and C_ChatInfo and C_ChatInfo.SendAddonMessage then
@@ -3621,8 +3634,15 @@ function Treasury.HandleDonations(dist, sender, text)
 	sender = ns.FullName(sender)
 	local now = ns.Now()
 	if on == "0" then
-		if donors[sender] then
-			donors[sender] = nil
+		-- (1.5.5) On Forever his off at logout comes over GUILD naming him plain (DonationsLogout), while
+		-- his on came through a relay stamped with his own sub-realm: one character, one line, gone.
+		local gone = false
+		for name in pairs(donors) do
+			if name == sender or (ns.splitNames and SameChar(name, sender)) then
+				donors[name], gone = nil, true
+			end
+		end
+		if gone then
 			ns.Fire("TREASURY_CHANGED")
 			ns.Fire("DATA_CHANGED")
 		end
