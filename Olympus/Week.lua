@@ -356,18 +356,22 @@ function Week.Restore(now)
 	Save()
 end
 
--- (1.5.5) An entry, its cancel and the setter's sheet go logged, as a decree does (D1, Decree.lua):
--- a setter's own words, kept on the server's log, which the relays pass on to every guild's reporter
--- whole, outside the trickle that other clients' words share (Relay.lua). A Steward or a Hand is no
--- relay: his entries, unlogged, reached about one guild in a hundred a send (the audit of 11-10).
--- Logged, his own guild also has them at once, over GUILD (Relay.Out).
+-- (1.5.5) An entry's first send, its cancel and a sheet sent on a change go logged, as a decree does
+-- (D1, Decree.lua): a setter's own words, kept on the server's log, which the relays pass on to every
+-- guild's reporter whole, outside the trickle that other clients' words share (Relay.lua). A Steward
+-- or a Hand is no relay: his entries, unlogged, reached about one guild in a hundred a send (the audit
+-- of 11-10). Logged, his own guild also has them at once, over GUILD (Relay.Out). Their timed repeats
+-- (Week.Tick, the sheet's own pace) stay unlogged (the audit's review): a relay sends a logged word to
+-- every reporter, unkeyed, so each repeat of each setter's entries would wait as a new whisper per
+-- reporter, a backlog without end; unlogged, a newer repeat takes the waiting one's place (Comm's keyed
+-- jobs) within the trickle, as before.
 local function Send(e, fresh)
 	if not Week.MayEdit(e) or not Week.Visible(e) then return false end
 	local left = math.floor(e.at - ns.Now())
 	if left < 30 then return end
 	e.sentAt = ns.Now()
 	ns.Comm.Send(e.guildOnly and "GUILD" or "CHANNEL", ("T1~D~%d~%s~%d~%d~%s~%s"):format(e.id, e.setterGuild or GetGuildInfo("player") or "", left, fresh and 1 or 0, e.zone or "", e.title),
-		"week" .. e.id, nil, true, nil, { owner = Week, guard = function() return entries[e.id] == e and Week.MayEdit(e) and Week.Visible(e) end })
+		"week" .. e.id, nil, fresh == true, nil, { owner = Week, guard = function() return entries[e.id] == e and Week.MayEdit(e) and Week.Visible(e) end })
 end
 
 -- The King, his Steward or a Hand puts an entry on the week (Asmon's view: on his screen alone).
@@ -979,7 +983,8 @@ end
 -- The setter's sheet: the counts of every entry of his still to come, in one message (several
 -- when long: SheetMessages), and when the next comes: every SHEET_EVERY while one of them has
 -- signups or is within SHEET_NEAR, every SHEET_IDLE otherwise. `soon`: a change's, sent whatever
--- the time since the last one. Logged, as an entry is (Send, above).
+-- the time since the last one. (1.5.5) A change's goes logged, as an entry's first send does (Send,
+-- above); the sheet's timed repeats unlogged, as an entry's are.
 function Week.SendSheet(soon)
 	local K = ns.King
 	if K.Preview() then return false end
@@ -1008,7 +1013,7 @@ function Week.SendSheet(soon)
 			local dist = guildOnly and "GUILD" or "CHANNEL"
 			local options = { owner = Week, guard = function() return K.AgendaAuthorized(ns.me, guild, guildOnly) end }
 			for i, msg in ipairs(Week.SheetMessages(guild, parts[scope], every / 60)) do
-				ns.Comm.Send(dist, msg, "sheet:" .. scope .. (i > 1 and (":" .. i) or ""), nil, true, nil, options)
+				ns.Comm.Send(dist, msg, "sheet:" .. scope .. (i > 1 and (":" .. i) or ""), nil, soon == true, nil, options)
 			end
 		end
 	end

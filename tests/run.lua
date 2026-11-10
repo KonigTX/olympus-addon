@@ -38058,9 +38058,14 @@ end)
 -- go logged, as a decree does (D1): the setter's own words, which a relay passes on to every guild's
 -- reporter whole, outside the trickle other clients' words share. A Steward or a Hand is no relay, and
 -- his, unlogged, reached about one guild in a hundred a send. A sheet too long for one message goes as
--- several logged sheets of one piece each, never Codec's pieces (unlogged, and over GUILD no client put
--- T1 pieces together). Before: every one unlogged, a long sheet in pieces.
-test("1.5.5 the King's week and the gates go logged: an entry, its repeat and its cancel, the sheet (a long one as several logged sheets, never pieces), the gates opened and closed", function()
+-- several sheets of one piece each, never Codec's pieces (unlogged, and over GUILD no client put T1
+-- pieces together). Before: every one unlogged, a long sheet in pieces. (Changed on purpose, the audit's
+-- review: the lane's first draft sent every one logged, the timed repeats too, an entry's every RESEND,
+-- the sheet at its own pace and the gates' every GATES_RESEND. A relay sends a logged word to every
+-- reporter unkeyed, outside the trickle: each repeat waited there as a new whisper a reporter, a backlog
+-- without end (the next test). Logged now: an entry's first send, its cancel, a sheet sent on a change,
+-- the gates' opening and closing; the timed repeats unlogged, as before.)
+test("1.5.5 the King's week and the gates: an entry's first send and its cancel, a sheet on a change (a long one as several sheets, never pieces), the gates opened and closed go logged; their timed repeats unlogged", function()
 	WithWeek(function(w, W, K)
 		local sends, chunked = {}, 0
 		local savedChunked = ns.Comm.SendChunked
@@ -38078,33 +38083,49 @@ test("1.5.5 the King's week and the gates go logged: an entry, its repeat and it
 			eq(K.SetAgenda("Sat 20:00 Raid night"), true)
 			local entry = Last("T1~D~")
 			assert(entry and entry.msg:find("~1~~Raid night$"), "the new entry")
-			eq(entry.logged, true, "an entry goes logged")
+			eq(entry.logged, true, "an entry's first send goes logged")
 			local id = W.Entries()[1].id
-			-- Its repeats for late logins, and the sheet (the counts, an empty one at once).
+			-- Its repeat for late logins, and the sheet (the counts, an empty one at once: a new entry's,
+			-- a change).
 			sends = {}
 			w.clock = w.clock + W.RESEND_FAR
 			W.Tick()
 			local again = Last("T1~D~")
 			assert(again and again.msg:find("^T1~D~" .. id .. "~Olympus~%d+~0~"), "a repeat")
-			eq(again.logged, true, "a repeat goes logged")
+			eq(again.logged, false, "a timed repeat goes unlogged")
 			local sheet = Last("T1~R~")
-			assert(sheet, "the sheet"); eq(sheet.logged, true, "the sheet goes logged"); eq(sheet.key, "sheet:army")
+			assert(sheet, "the sheet"); eq(sheet.logged, true, "a new entry's first sheet goes logged"); eq(sheet.key, "sheet:army")
+			-- The sheet again at its own pace (nobody signed, the entry days away: SHEET_IDLE): unlogged.
+			sends = {}
+			w.clock = w.clock + W.SHEET_IDLE
+			W.Tick()
+			eq(Last("T1~D~"), nil, "no repeat of the entry yet")
+			sheet = Last("T1~R~")
+			assert(sheet, "the sheet at its pace"); eq(sheet.logged, false, "a timed sheet goes unlogged"); eq(sheet.key, "sheet:army")
+			-- A signup changes it: the sheet at once (SHEET_SOON), logged.
+			sends = {}
+			W.HandleSignup("WHISPER", "Zed-Realm", ("Y2~%d~T~Olympus Zeus"):format(id))
+			sheet = Last("T1~R~")
+			assert(sheet and sheet.msg:find("~" .. id .. ":", 1, true), "the changed sheet"); eq(sheet.logged, true, "a change's sheet goes logged")
 			-- Taken off: the cancel too.
 			eq(W.Cancel(id), true)
 			local cancel = Last("T1~D~")
 			eq(cancel.msg, ("T1~D~%d~Olympus~0~0~~"):format(id)); eq(cancel.logged, true, "a cancel goes logged")
 			-- A long sheet (40 entries' counts, 20 the army's and 20 his guild's): several sheets of one
-			-- message each, every one logged, each entry once, never Codec's pieces.
-			local entries, mayEdit, counts = W.Entries, W.MayEdit, W.Counts
+			-- message each, each entry once, never Codec's pieces; logged on a change, unlogged at its pace.
 			local list = {}
 			for i = 1, 40 do list[i] = { id = 90000 + i, mine = true, at = ns.Now() + 3600, guildOnly = i > 20 or nil } end
-			W.Entries = function() return list end
-			W.MayEdit = function() return true end
-			W.Counts = function() return { T = 123, H = 45, D = 67, A = 8 } end
-			sends = {}
-			local sent, why = pcall(W.SendSheet, true)
-			W.Entries, W.MayEdit, W.Counts = entries, mayEdit, counts
-			assert(sent, why)
+			local function LongSheet(soon)
+				local entries, mayEdit, counts = W.Entries, W.MayEdit, W.Counts
+				W.Entries = function() return list end
+				W.MayEdit = function() return true end
+				W.Counts = function() return { T = 123, H = 45, D = 67, A = 8 } end
+				sends = {}
+				local sent, why = pcall(W.SendSheet, soon)
+				W.Entries, W.MayEdit, W.Counts = entries, mayEdit, counts
+				assert(sent, why)
+			end
+			LongSheet(true)
 			eq(chunked, 0, "never in pieces")
 			local seen, keys, army, guild = {}, {}, 0, 0
 			for _, x in ipairs(sends) do
@@ -38124,14 +38145,31 @@ test("1.5.5 the King's week and the gates go logged: an entry, its repeat and it
 			assert(army >= 2 and guild >= 2, ("several sheets each: %d to the army, %d to the guild"):format(army, guild))
 			for i = 1, 40 do eq(seen[90000 + i], i > 20 and "GUILD" or "CHANNEL", "entry " .. i .. " once, to its audience") end
 			assert(keys["sheet:army"] and keys["sheet:army:2"] and keys["sheet:guild"] and keys["sheet:guild:2"], "the first keeps its key")
-			-- Open the Gates, and close them: logged too.
+			-- The same long sheet at its own pace (SHEET_EVERY later): as many sheets, each unlogged, never pieces.
+			w.clock = w.clock + W.SHEET_EVERY
+			LongSheet(false)
+			eq(chunked, 0, "never in pieces")
+			eq(#sends, army + guild, "as many sheets as on the change")
+			for _, x in ipairs(sends) do
+				assert(x.msg:find("^T1~R~%d+~Olympus~"), x.msg)
+				eq(x.logged, false, "each one unlogged at its pace")
+			end
+			-- Open the Gates: logged; said again for late logins every GATES_RESEND, unlogged; closed: logged.
 			sends = {}
 			ns.Acts.OpenGates("Olympus Zeus")
 			local open = Last("T1~G~")
-			assert(open and open.msg:find("~Olympus Zeus$"), "the gates"); eq(open.logged, true, "the gates go logged")
+			assert(open and open.msg:find("~Olympus Zeus$"), "the gates"); eq(open.logged, true, "their opening goes logged")
+			sends = {}
+			eq(ns.Acts.TickGates(), false)
+			eq(Last("T1~G~"), nil, "not again before GATES_RESEND")
+			w.clock = w.clock + ns.Acts.GATES_RESEND
+			eq(ns.Acts.TickGates(), false)
+			local gatesAgain = Last("T1~G~")
+			assert(gatesAgain and gatesAgain.msg:find("~Olympus Zeus$"), "said again")
+			eq(gatesAgain.logged, false, "a timed repeat goes unlogged")
 			ns.Acts.CloseGates()
 			local closed = Last("T1~G~")
-			assert(closed.msg:find("~0~$"), closed.msg); eq(closed.logged, true, "their closing too")
+			assert(closed.msg:find("~0~$"), closed.msg); eq(closed.logged, true, "their closing goes logged")
 		end)
 		ns.Comm.SendChunked = savedChunked
 		if not ok then error(err, 0) end
@@ -38183,6 +38221,85 @@ test("1.5.5 a relay passes a Hand's logged week entry on to every reporter it ho
 	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild = saved.channel, saved.member, saved.guild, saved.inGuild
 	C_ChatInfo = nil
 	if not ok then error(err, 0) end
+end)
+
+-- 1.5.5 (the audit's review): why the timed repeats stay unlogged, end to end. A setter's client that
+-- is a relay itself (the King's, a councillor's) hands its own words to every reporter it holds: a
+-- logged one unkeyed, so with the lane's first draft each repeat of his entry and of his sheet waited
+-- there as one more whisper a reporter, the queue filled (Comm's MAX_QUEUE) and the oldest words waiting
+-- were dropped to make room. Unlogged, a newer repeat takes the waiting one's place, reporter by
+-- reporter (Relay.lua's keys): one of each a reporter, however many come. The entry's first send, its
+-- first sheet and its cancel still reach every reporter, logged. (The setter's real Week.lua sends,
+-- through this relay's real Comm.lua and Relay.lua; the relay's queue drained when said.)
+test("1.5.5 a relay's queue holds one of each of a setter's timed repeats a reporter (his entry's, his sheet's), however many come; his entry's first send, its first sheet and its cancel reach every reporter logged", function()
+	WithWeek(function(w, W, K)
+		local saved = { channel = GetChannelName, member = ns.IsMember, inGuild = IsInGuild }
+		local ok, err = pcall(function()
+			GetChannelName = function() return 0 end
+			ns.IsMember = function() return true end
+			IsInGuild = function() return true end
+			AsKing()
+			local R, _, sent = Harness.RelayWorld("Relay Keeper-CAMWOWUS2Realm1PvE", "Olympus")
+			R.rdb.council.names = { ["relay keeper"] = "Relay Keeper" } -- (a signed councillor's client: a relay)
+			local function Drain()
+				for _ = 1, 200 do
+					if R.Comm.QueueSize() == 0 then return end
+					R.Comm.Pump()
+				end
+				error("the relay's queue never drained: " .. R.Comm.QueueSize())
+			end
+			local REPORTERS = 12
+			for i = 1, REPORTERS do
+				R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i))
+			end
+			Drain()
+			-- The setter's words leave through this client: its own relay (Relay.Out hands them to itself).
+			ns.Comm.Send = function(dist, msg, key, urgent, logged, done, options)
+				return R.Comm.Send(dist, msg, key, urgent, logged, done, options)
+			end
+			-- To each reporter: how many copies of each kind, logged (RM~L~) or not (RM~P~).
+			local function Count(prefix)
+				local per, n = {}, 0
+				for _, x in ipairs(sent) do
+					if x.target and x.msg:sub(1, #prefix) == prefix then
+						assert(x.target:find("^Rep Number%d+"), x.target)
+						per[x.target] = (per[x.target] or 0) + 1
+					end
+				end
+				for _, c in pairs(per) do n = n + 1; eq(c, 1, "one copy a reporter: " .. prefix) end
+				return n
+			end
+			local ORIGIN = "Relay Keeper-CAMWOWUS2Realm1PvE"
+			eq(K.SetAgenda("Sat 20:00 Raid night"), true)
+			local id = W.Entries()[1].id
+			W.Tick() -- (the new entry's first sheet: a change's)
+			Drain()
+			eq(Count(("RM~L~%s~T1~D~%d~Olympus~"):format(ORIGIN, id)), REPORTERS, "the first send, logged, to every reporter")
+			eq(Count(("RM~L~%s~T1~R~"):format(ORIGIN)), REPORTERS, "the first sheet, logged, to every reporter")
+			-- Five rounds of timed repeats (the entry every RESEND_FAR, the sheet at its idle pace), the
+			-- relay's queue never drained between them: it holds one of each a reporter, as after the first.
+			wipe(sent)
+			local sizes = {}
+			for k = 1, 5 do
+				w.clock = w.clock + W.RESEND_FAR
+				W.Tick()
+				sizes[k] = R.Comm.QueueSize()
+			end
+			eq(sizes[1], 2 * REPORTERS, "a repeat and a sheet for each reporter")
+			for k = 2, 5 do eq(sizes[k], sizes[1], "round " .. k .. ": the waiting copies replaced, nothing added") end
+			Drain()
+			eq(Count(("RM~P~%s~T1~D~%d~Olympus~"):format(ORIGIN, id)), REPORTERS, "the entry's last repeat, unlogged, once to every reporter")
+			eq(Count(("RM~P~%s~T1~R~"):format(ORIGIN)), REPORTERS, "the last sheet, unlogged, once to every reporter")
+			eq(Count("RM~L~"), 0, "none of them logged")
+			-- Taken off: the cancel, logged, to every reporter.
+			wipe(sent)
+			eq(W.Cancel(id), true)
+			Drain()
+			eq(Count(("RM~L~%s~T1~D~%d~Olympus~0~0~~"):format(ORIGIN, id)), REPORTERS, "the cancel, logged, to every reporter")
+		end)
+		GetChannelName, ns.IsMember, IsInGuild = saved.channel, saved.member, saved.inGuild
+		if not ok then error(err, 0) end
+	end)
 end)
 
 test("1.1 the King's week: clients before 1.1 leave the kind D out, no error, their Agenda untouched", function()

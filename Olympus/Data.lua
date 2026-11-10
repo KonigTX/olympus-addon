@@ -740,6 +740,19 @@ function Data.KnownRank(sender, guild, soft)
 	return rank, named
 end
 
+-- (1.5.5) Whether this client's census can rank anyone of another guild now, as Data.KnownRank asks
+-- before any rank of it: the guild on the network (one the moderators took off ranks nobody on
+-- another's client, NetOff) and a report of it heard within FRESH. Bank.lua asks it before the two
+-- ways it takes a Lord or a Captain that KnownRank alone does not (the census's name on another
+-- sub-realm, a guild master a verifier approved): the audit of 11-10 found the approval standing for
+-- a guild that was off, and for one no report had named this session. (Bank.lua names no net-off
+-- itself: the census says who it ranks; 1.1, #32 and #33.)
+function Data.CanRank(guild, now)
+	if type(guild) ~= "string" or guild == "" or NetOff(guild) then return false end
+	local g = Data.Guild(guild)
+	return type(g) == "table" and (now or ns.Now()) - (tonumber(g.t) or 0) <= Data.FRESH
+end
+
 -- 1.2.4 (Bank.lua: a guild's snapshot held until the census can judge its sender): whether a
 -- current report on `guild` (a vote of VOUCH_TTL, its sender's own among them) names `sender` at
 -- `rank` or above. It proves nothing (a report never proves its own sender's rank: KnownRank); it

@@ -1308,10 +1308,17 @@ end
 -- (1.5.5) The guild master a verifier approved (Verify.Status "verified": the King, a High Councillor
 -- or the author approved the guild with him as its master, and no other one leads it now as far as the
 -- census or our roster says). The census alone needs two reports naming a guild master (Data.KnownRank),
--- so the master of a small guild, its only reporter, was held all session and never shown.
+-- so the master of a small guild, its only reporter, was held all session and never shown. The approval
+-- stands in for that second report alone (the audit's review); the rest KnownRank asks of a guild master
+-- still holds: a census that ranks anyone of his guild now (Data.CanRank, asked first by LordOrCaptain;
+-- else "no other one leads it now" was a row kept from days ago, or none, and an approval saved across a
+-- week away stood for a master replaced since) and this login's reports in (Data.CROWN_AFTER). Meanwhile
+-- his snapshot is held (Unsettled), and Bank.Recheck takes it once both hold (the window's end, his
+-- guild's next report: DATA_CHANGED).
 local function VerifiedMaster(who, guild)
 	local V = ns.Verify
 	if type(V) ~= "table" or V.missing or type(V.Status) ~= "function" then return false end
+	if ns.Now() - (ns.Comm and ns.Comm.loginAt or 0) < ns.Data.CROWN_AFTER then return false end
 	local ok, status, info = pcall(V.Status, guild)
 	if not ok or status ~= "verified" or type(info) ~= "table" or type(info.entry) ~= "table" then return false end
 	return SameCharacter(info.entry.gm, who)
@@ -1321,6 +1328,9 @@ end
 -- for our guild and the author-signed leadership manifest for another. (1.5.5) In the legacy census,
 -- also as one of his Forever family's other sub-realms names him (CensusNames), and a guild master a
 -- verifier approved (VerifiedMaster). Never once enforcement is on: the signed manifest says who is who.
+-- Neither of these two where the census ranks nobody of the guild now (Data.CanRank, as Data.KnownRank
+-- asks before any rank; the audit's review: a verifier's approval stood where the census itself ranked
+-- nobody of the guild any more).
 function Bank.LordOrCaptain(sender, guild)
 	if type(sender) ~= "string" or type(guild) ~= "string" or guild == "" then return false end
 	local who = ns.FullName(sender)
@@ -1329,6 +1339,7 @@ function Bank.LordOrCaptain(sender, guild)
 	if ns.Authority and ns.Authority.Enforced and ns.Authority.Enforced() then return false end
 	-- (Our own guild: our roster alone says who is who, Roster.RankOf its own sub-realms included.)
 	if guild == GetGuildInfo("player") then return false end
+	if not (ns.Data.CanRank and ns.Data.CanRank(guild)) then return false end
 	for _, name in ipairs(CensusNames(who, guild)) do
 		rank = ns.Data.AuthorizedRank(name, guild)
 		if rank ~= nil and rank <= ns.CAPTAIN_RANK then return true end

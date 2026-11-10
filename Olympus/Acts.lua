@@ -383,15 +383,18 @@ function Acts.Gates()
 	return gates
 end
 
--- (1.5.5) Logged, as a decree is (D1, Decree.lua): the opener's own words, kept on the server's log,
--- which the relays pass on to every guild's reporter whole, outside the trickle other clients' words
--- share (Relay.lua). A Steward or a Hand is no relay: his gates, unlogged, reached about one guild in
--- a hundred a send (the audit of 11-10). Logged, his own guild also has them at once (Relay.Out).
-local function SendGates()
+-- (1.5.5) `logged`: their opening (and their closing, CloseGates) logged, as a decree is (D1,
+-- Decree.lua): the opener's own words, kept on the server's log, which the relays pass on to every
+-- guild's reporter whole, outside the trickle other clients' words share (Relay.lua). A Steward or a
+-- Hand is no relay: his gates, unlogged, reached about one guild in a hundred a send (the audit of
+-- 11-10). Logged, his own guild also has them at once (Relay.Out). Their repeats every GATES_RESEND
+-- (Acts.TickGates) stay unlogged, as the week's are (Week.lua's Send): logged, each would wait at a
+-- relay as a new whisper per reporter, never taking a waiting one's place.
+local function SendGates(logged)
 	if not gates or not gates.mine or gates.preview then return end
 	gates.sentAt = ns.Now()
 	ns.Comm.Send("CHANNEL", ("T1~G~%d~%s~%d~%s"):format(gates.id, GetGuildInfo("player") or "",
-		math.max(0, math.floor(gates.at - ns.Now())), gates.guild), "gates", nil, true)
+		math.max(0, math.floor(gates.at - ns.Now())), gates.guild), "gates", nil, logged == true)
 end
 
 function Acts.OpenGates(guild)
@@ -407,7 +410,7 @@ function Acts.OpenGates(guild)
 		-- 1.1 (#12): our own act never comes back to us: in our log as we send it.
 		ns.Chronicle.Add("gates", ns.me, L.ACTS_GATES_OPEN:format(guild), { key = "gates", value = gates.id .. ":" .. guild })
 	end
-	SendGates()
+	SendGates(true)
 	ns.Print(L.GATES_OPENED:format(guild))
 	ns.Fire("DATA_CHANGED")
 end
@@ -608,6 +611,21 @@ StaticPopupDialogs["OLYMPUS_PARDON"] = {
 	preferredIndex = 3,
 }
 
+-- Every minute (LOGIN, below): the gates gone once their time is over (true then), or ours said
+-- again for late logins every GATES_RESEND, unlogged (SendGates says why).
+function Acts.TickGates()
+	local g = gates
+	if g and ns.Now() > g.at then
+		gates = nil
+		if g.mine then ns.rdb.gates = nil end
+		ns.Fire("DATA_CHANGED")
+		return true
+	end
+	-- Only while we may still command (a Hand no longer named stops repeating them).
+	if g and g.mine and ns.King.CanCommand() and ns.Now() - (g.sentAt or 0) >= Acts.GATES_RESEND then SendGates() end
+	return false
+end
+
 ns.On("LOGIN", function()
 	-- Our own gates from before a /reload, while they last.
 	local kept = ns.rdb and ns.rdb.gates
@@ -621,14 +639,7 @@ ns.On("LOGIN", function()
 	ns.After(Acts.WRIT_ASK_AFTER, "writs ask", function() Acts.AskWrits() end)
 	ns.Every(Acts.WRIT_REPEAT, "writs repeat", function() Acts.RepeatWrits() end)
 	ns.Every(60, "gates", function()
-		local g = gates
-		if g and ns.Now() > g.at then
-			gates = nil
-			if g.mine then ns.rdb.gates = nil end
-			return ns.Fire("DATA_CHANGED")
-		end
-		-- Only while we may still command (a Hand no longer named stops repeating them).
-		if g and g.mine and ns.King.CanCommand() and ns.Now() - (g.sentAt or 0) >= Acts.GATES_RESEND then SendGates() end
+		if Acts.TickGates() then return end
 		if ns.Now() - lastPardons >= Acts.PARDON_RESEND then
 			lastPardons = ns.Now()
 			SendPardons()

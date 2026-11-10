@@ -288,8 +288,11 @@ local ns, test, eq, extra = ...
 	-- was nobody, his snapshot dropped without a word (not even held). And a guild master named by his
 	-- own report alone (a small guild's only reporter) was held all session, never shown. Now the census's
 	-- name on another sub-realm of his Forever family counts by the census's own rules, and so does the
-	-- guild master a verifier approved; nobody else, and neither once enforcement is on.
-	test("authority: 1.5.5 a guild's Lord or Captain for its bank snapshot: the census's name on another sub-realm of his Forever family, and the guild master a verifier approved; another family, another name, our own guild or enforcement never", function()
+	-- guild master a verifier approved; nobody else, and neither once enforcement is on. (The audit's
+	-- review: neither for a guild the moderators took off the network, which the approval got around; and
+	-- the approval stands in for the census's second report alone, so a verified master also waits for a
+	-- fresh census row of his guild and the login's window, as any guild master does, held meanwhile.)
+	test("authority: 1.5.5 a guild's Lord or Captain for its bank snapshot: the census's name on another sub-realm of his Forever family, and the guild master a verifier approved (his guild's census fresh, the login's window over: held till then); another family, another name, our own guild, a guild off the network or enforcement never", function()
 		WithState(function()
 			local B = ns.Bank
 			local saved = { split = ns.splitNames, verify = ns.Verify, store = ns.rdb.verify, council = ns.rdb.council,
@@ -343,6 +346,44 @@ local ns, test, eq, extra = ...
 				eq(B.LordOrCaptain("Tin Master-" .. HOME, "Olympus Tiny"), false, "no longer its master")
 				Report("Olympus Tiny", "Tin Master", {}, { "Tin Master" })
 				eq(B.LordOrCaptain("Tin Master-" .. HOME, "Olympus Tiny"), true, "leading it again: it stands again")
+				-- (The audit's review.) A guild the moderators took off the network (net-off) ranks nobody on
+				-- another's client (Data.KnownRank; Data.CanRank, which the bank asks, as Bank.lua names no
+				-- net-off): the approval stood for it, and must not; nor does another sub-realm's name. Another
+				-- guild is untouched, and the guild back on stands again.
+				local moderation, off = ns.Moderation, {}
+				ns.Moderation = setmetatable({ Guild = function(g) return off[g] end }, { __index = moderation })
+				off["Olympus Tiny"] = { by = "Mod One" }
+				eq(c.Verify.Status("Olympus Tiny"), "verified", "its approval still stands")
+				eq(B.LordOrCaptain("Tin Master-" .. HOME, "Olympus Tiny"), false, "net-off: not the guild master a verifier approved")
+				eq(B.LordOrCaptain("Tin Master-CAMWOWUS2Realm5PvE", "Olympus Tiny"), false)
+				eq(B.LordOrCaptain("Zed Master-CAMWOWUS2Realm5PvE", "Olympus Zeus"), true, "another guild untouched")
+				off["Olympus Zeus"] = { by = "Mod One" }
+				eq(B.LordOrCaptain("Zed Master-" .. HOME, "Olympus Zeus"), false, "net-off: not as the census names him")
+				eq(B.LordOrCaptain("Zed Master-CAMWOWUS2Realm5PvE", "Olympus Zeus"), false, "nor by another sub-realm's name")
+				eq(B.LordOrCaptain("Cap Keeper-CAMWOWUS1Realm1PvE", "Olympus Zeus"), false)
+				off = {}
+				eq(B.LordOrCaptain("Tin Master-" .. HOME, "Olympus Tiny"), true, "back on the network: he stands again")
+				eq(B.LordOrCaptain("Zed Master-CAMWOWUS2Realm5PvE", "Olympus Zeus"), true)
+				ns.Moderation = moderation
+				-- (The audit's review.) The approval stands in for the census's second report alone: as any guild
+				-- master (Data.KnownRank), his guild's census row heard within Data.FRESH, and this login's
+				-- reports in (Data.CROWN_AFTER). Meanwhile his snapshot is held, never dropped (Unsettled), and
+				-- taken once both hold (Bank.Recheck: the window's end, his guild's next report).
+				ns.Comm.loginAt = T0 - 10
+				eq(B.LordOrCaptain("Tin Master-" .. HOME, "Olympus Tiny"), false, "inside the login's window")
+				eq(B.Unsettled("Tin Master-" .. HOME, "Olympus Tiny"), true, "held meanwhile")
+				ns.Comm.loginAt = T0 - D.CROWN_AFTER - 1
+				eq(B.LordOrCaptain("Tin Master-" .. HOME, "Olympus Tiny"), true, "the window over")
+				ns.rdb.guilds["Olympus Tiny"].t = T0 - D.FRESH - 1
+				eq(c.Verify.Status("Olympus Tiny"), "verified", "the approval alone still says so")
+				eq(B.LordOrCaptain("Tin Master-" .. HOME, "Olympus Tiny"), false, "his guild's census row older than Data.FRESH")
+				eq(B.Unsettled("Tin Master-" .. HOME, "Olympus Tiny"), true, "held till its next report")
+				ns.rdb.guilds["Olympus Tiny"] = nil
+				eq(c.Verify.Status("Olympus Tiny"), "verified")
+				eq(B.LordOrCaptain("Tin Master-CAMWOWUS2Realm5PvE", "Olympus Tiny"), false, "no census row of his guild at all (a week away)")
+				eq(B.Unsettled("Tin Master-CAMWOWUS2Realm5PvE", "Olympus Tiny"), true, "held")
+				Report("Olympus Tiny", "Tin Master", {}, { "Tin Master" })
+				eq(B.LordOrCaptain("Tin Master-CAMWOWUS2Realm5PvE", "Olympus Tiny"), true, "his guild's report heard: he stands")
 				-- Our own guild: our roster alone (Roster.RankOf), never these.
 				GetGuildInfo = function() return "Olympus Tiny", "Member", 3 end
 				eq(B.LordOrCaptain("Tin Master-" .. HOME, "Olympus Tiny"), false, "not on our roster")
