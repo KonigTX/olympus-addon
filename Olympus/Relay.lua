@@ -74,14 +74,16 @@ Relay.MAX_REPORTERS = 400   -- (1.5.4) guilds a relay keeps a reporter for
 -- rarely). From the deadline on, a relay serves only a client that presented itself with a published
 -- version; until then everyone. The deadline, its switch and the published versions are the relay
 -- rules (RU, Relay.Rules): until a word of rules arrives, these constants are the rules.
--- PRESENT_REQUIRED_AT is set at release to the publish time plus seven days (this one:
--- 2026-11-16 00:00 UTC, seven days after 2026-11-09).
-Relay.PRESENT_REQUIRED_AT = 1794787200
+-- PRESENT_REQUIRED_AT is set at release to the publish time plus seven days (this one, 1.5.5's:
+-- 2026-11-17 21:00 UTC, seven days after its publish on 2026-11-10 21:00 UTC). Each release names
+-- itself in PUBLISHED below (tests/relay-admit.lua checks it): a relay that holds no word of rules
+-- goes by that list, and from the deadline on would refuse a release left off it.
+Relay.PRESENT_REQUIRED_AT = 1794949200
 Relay.PRESENT_FOR = 1800     -- a presentation is kept this long past its last word (a client pings its relay every DEAD_FOR)
 Relay.PRESENT_GAP = 60       -- a client presents itself to one relay once this long at most
 Relay.MAX_PRESENTED = 4000   -- characters a relay keeps a presentation for: every client that may whisper it, not only reporters
 Relay.MAX_REFUSED = 200      -- refusals a relay notes for /oly relay admitted
-Relay.PUBLISHED = { "1.4.0", "1.4.1", "1.4.3", "1.4.4", "1.4.5", "1.4.6", "1.5.0", "1.5.1", "1.5.2", "1.5.3", "1.5.4" }
+Relay.PUBLISHED = { "1.4.0", "1.4.1", "1.4.3", "1.4.4", "1.4.5", "1.4.6", "1.5.0", "1.5.1", "1.5.2", "1.5.3", "1.5.4", "1.5.5" }
 Relay.RULES_EVERY = 1800     -- a relay asks the others for the rules this often; the author's client hands them out this often
 Relay.MAX_RULE_VERSIONS = 40 -- versions one word of rules may name
 Relay.VERIFY_ASK_EVERY = 180 -- one recovery ask across the signed relays, never per reporter
