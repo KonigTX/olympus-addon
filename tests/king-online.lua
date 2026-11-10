@@ -226,7 +226,8 @@ if h.RelayWorld then
 			local R, deliver, sent, _, pump, sentOf = h.RelayWorld("Hildryn Payne-Realm", "Olympus II")
 			R.KingCharacter = function() return "Asmongold Thereal" end
 			R.IsKingCharacter = function(name) return type(name) == "string" and R.ShortName(name) == "Asmongold Thereal" end
-			deliver("WHISPER", "Max Ran-Realm", "RY~") -- (another relay that answered: the word crosses to it)
+			deliver("WHISPER", "Max Ran-Realm", "RY~") -- (another relay that answered...)
+			deliver("WHISPER", "Max Ran-Realm", "RJ~1~0~0") -- (...and joined the mesh, 1.5.5)
 			for i = 1, 6 do deliver("WHISPER", ("Rep Orter%d-Realm"):format(i), "RL~P~RR~Olympus G" .. i) end
 			-- This minute's trickle spent on other guilds' reports.
 			for i = 1, 4 do deliver("WHISPER", ("Guild Rep%d-Realm"):format(i), "RL~P~C" .. i .. "~report " .. i) end
@@ -247,14 +248,18 @@ if h.RelayWorld then
 			local reached = {}
 			for _, x in ipairs(sentOf("RM~P~" .. king .. "~T1~o~5~")) do reached[x.target] = (reached[x.target] or 0) + 1 end
 			for i = 1, 6 do eq(reached["Rep Orter" .. i], 1, "reporter " .. i .. " has his presence once") end
-			eq(#sentOf("RX~P~" .. king .. "~T1~o~5~"), 1, "and the other relay")
+			-- (1.5.5) Not across: the King's client whispers his presence to every relay itself
+			-- (CrownToRelays), and only a closed set crosses (tests/relay-mesh.lua).
+			eq(#sentOf("RX~P~" .. king .. "~T1~o~5~"), 0, "not across to the other relay")
 			eq(#sentOf("RM~P~Some One-Realm~T1~o~"), 0, "anyone else's T1~o: within the trickle (spent)")
 			-- (With the crown's own 1.5.4 path, tests/king-crown-relay.lua: past the trickle on the relay's
 			-- crown bucket, so each reporter has it too; this test was written before that path.)
 			eq(#sentOf("RM~P~" .. king .. "~T1~P~"), 6, "his crown: past the trickle on its own bucket")
 			deliver("WHISPER", king, "RL~P~T1~O~2~OLYMPUS PRIME~1800000000~1~g~600~200")
 			pump(200)
-			eq(#sentOf("RM~P~" .. king .. "~T1~O~"), 0, "the Arena's settings (T1~O): within the trickle, as before")
+			-- (1.5.5) The King's own words but his crown and presence are staff words (Relay.CROSS_KINDS):
+			-- from a signed relay's character, past the trickle at every relay (tests/relay-mesh.lua).
+			eq(#sentOf("RM~P~" .. king .. "~T1~O~"), 6, "the Arena's settings (T1~O): to every reporter, a staff word")
 			-- Twice before the queue drains: each reporter is sent the latest alone.
 			deliver("WHISPER", king, "RL~P~T1~o~7~OLYMPUS PRIME")
 			deliver("WHISPER", king, "RL~P~T1~o~8~OLYMPUS PRIME")

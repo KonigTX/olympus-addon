@@ -6994,6 +6994,8 @@ end
 Harness.RelayWorld = RelayWorld -- (1.5.4: the Chat tab's link tests, tests/chat-item-links.lua)
 
 assert(loadfile(ROOT .. "tests/census-relay.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
+-- 1.5.5: the mesh between the signed relays (tests/relay-mesh.lua).
+assert(loadfile(ROOT .. "tests/relay-mesh.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR })
 assert(loadfile(ROOT .. "tests/hop-forever.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR, fixtures = ROOT .. "tests/fixtures/" })
 assert(loadfile(ROOT .. "tests/relay-fanout.lua"))(ns, test, eq, { RelayWorld = RelayWorld })
 -- 1.5.5: the census snapshot to the registrants as a tree, one snapshot per registrant (tests/relay-tree.lua).
@@ -7402,27 +7404,33 @@ test("1.4.5 the relay: where the relay carries the channel, a reporter never hea
 end)
 
 -- 1.4.6 (the dev's cousin, 2026-11-05: with two live relays each guild saw the other relay's
--- island). Fails before: a relay sends nothing to the other relays.
-test("1.4.6 the relay: a word heard by one relay goes across to every other relay that answered it lately (RX), each handing it to its own reporters once and never across again; from a stranger, or a word already taken, nothing", function()
+-- island). Fails before: a relay sends nothing to the other relays. (1.5.5) Only a closed set crosses,
+-- to a mesh peer alone (tests/relay-mesh.lua): of another client's words, a chat line.
+test("1.4.6 the relay: a chat line heard by one relay goes across to every mesh peer (RX), each handing it to its own reporters once and never across again; another client's ordinary word stays on its island; from a stranger, or a word already taken, nothing", function()
 	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild }
 	local ok, err = pcall(function()
 		GetChannelName = function() return 0 end
 		ns.IsMember = function() return true end
 		IsInGuild = function() return true end
 		GetGuildInfo = function() return "Olympus II", "Member", 3 end
-		-- Relay 1, Hildryn: Max answered its ping lately; a reporter of Olympus Zeus registered.
+		-- Relay 1, Hildryn: Max answered its ping lately and joined the mesh (RJ); a reporter of
+		-- Olympus Zeus registered.
 		local R, rdeliver, rsent, rheard, rpump, rsentOf = RelayWorld("Hildryn Payne-Realm", "Olympus II")
 		rdeliver("WHISPER", "Max Ran-Realm", "RY~")
+		rdeliver("WHISPER", "Max Ran-Realm", "RJ~1~0~0")
 		rdeliver("WHISPER", "Zed Far-Realm", "RL~P~RR~Olympus Zeus")
-		rdeliver("WHISPER", "Orig Inal-Realm", "RL~P~X1~hello")
+		rdeliver("WHISPER", "Orig Inal-Realm", "RL~L~M1~hello")
 		rpump()
 		eq(#rsentOf("RM~"), 1, "to its reporter"); eq(rsentOf("RM~")[1].target, "Zed Far")
 		local rx = rsentOf("RX~")
-		eq(#rx, 1, "across to the other relay once"); eq(rx[1].target, "Max Ran"); eq(rx[1].msg, "RX~P~Orig Inal-Realm~X1~hello"); eq(rx[1].dist, "WHISPER")
+		eq(#rx, 1, "across to the other relay once"); eq(rx[1].target, "Max Ran"); eq(rx[1].msg, "RX~L~Orig Inal-Realm~M1~hello"); eq(rx[1].dist, "WHISPER")
 		eq(#rheard, 1)
-		rdeliver("WHISPER", "Orig Inal-Realm", "RL~P~X1~hello")
+		rdeliver("WHISPER", "Orig Inal-Realm", "RL~L~M1~hello")
 		rpump()
 		eq(#rsentOf("RX~"), 1, "the same word again: not across again")
+		rdeliver("WHISPER", "Orig Inal-Realm", "RL~P~X1~hello")
+		rpump()
+		eq(#rsentOf("RM~P~Orig Inal-Realm~X1~"), 1, "an ordinary word to its reporter"); eq(#rsentOf("RX~"), 1, "and not across")
 		-- Relay 2, Max: a reporter of Olympus Far registered; the word across from Hildryn.
 		local M, mdeliver, msent, mheard, mpump, msentOf = RelayWorld("Max Ran-Realm", "Olympus II")
 		mdeliver("WHISPER", "Hildryn Payne-Realm", "RY~")
@@ -7440,7 +7448,7 @@ test("1.4.6 the relay: a word heard by one relay goes across to every other rela
 		eq(#msentOf("RM~"), 1, "a stranger's RX is dropped"); eq(M.Relay.Stats().dropped, 1)
 		-- The origin a relay itself: its own word is not sent back to it.
 		wipe(rsent)
-		rdeliver("WHISPER", "Max Ran-Realm", "RL~P~X1~from max")
+		rdeliver("WHISPER", "Max Ran-Realm", "RL~L~M1~from max")
 		rpump()
 		eq(#rsentOf("RX~"), 0, "not back to its origin")
 	end)
@@ -7452,7 +7460,7 @@ end)
 -- Identical periodic inventories must circulate again after the transport dedupe window,
 -- even when fewer than SEEN_MAX distinct words have ever arrived. These use the actual
 -- Comm receive path and Relay envelopes; the payload handler only counts delivered words.
-test("1.5.2 the relay expiry: an unchanged RD crosses to another relay again at SEEN_FOR; recent copies do not extend the window and local-only asks never cross", function()
+test("1.5.2 the relay expiry: an unchanged RD is taken again at SEEN_FOR, and an unchanged chat line crosses to a mesh peer again then (1.5.5: a client's RD stays on its island); recent copies do not extend the window and local-only asks never cross", function()
 	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild }
 	local ok, err = pcall(function()
 		GetChannelName = function() return 0 end
@@ -7465,16 +7473,20 @@ test("1.5.2 the relay expiry: an unchanged RD crosses to another relay again at 
 			eq(dist, "CHANNEL"); eq(sender, origin); eq(text, body); heard = heard + 1
 		end)
 		deliver("WHISPER", "Max Ran-Realm", "RY~")
+		deliver("WHISPER", "Max Ran-Realm", "RJ~1~0~0") -- (1.5.5: a mesh peer, the only relay sent RX)
 		deliver("WHISPER", "Zed Far-Realm", "RL~P~RR~Olympus Zeus")
+		local line = "M1~A~Olympus II~1~~the same line"
 		local start = R.clock
 		for _, step in ipairs({ { 0, 1 }, { 299, 1 }, { 300, 2 }, { 599, 2 }, { 600, 3 } }) do
 			R.clock = start + step[1]
 			deliver("WHISPER", origin, "RL~P~" .. body)
+			deliver("WHISPER", origin, "RL~L~" .. line)
 			deliver("WHISPER", origin, "RL~P~H3~hello")
 			pump()
-			local across = sentOf("RX~P~" .. origin .. "~RD~")
-			eq(#across, step[2], "the same inventory crosses again only when its original seen time expires, at " .. step[1])
-			eq(across[#across].target, "Max Ran"); eq(across[#across].msg, "RX~P~" .. origin .. "~" .. body)
+			eq(#sentOf("RX~P~" .. origin .. "~RD~"), 0, "(1.5.5) a client's inventory stays on its relay's island")
+			local across = sentOf("RX~L~" .. origin .. "~M1~")
+			eq(#across, step[2], "the same line crosses again only when its original seen time expires, at " .. step[1])
+			eq(across[#across].target, "Max Ran"); eq(across[#across].msg, "RX~L~" .. origin .. "~" .. line)
 			eq(heard, step[2], "local delivery uses the same expiry boundary")
 			eq(#sentOf("RX~P~" .. origin .. "~H3~"), 0, "NO_FORWARD is unchanged after expiry")
 		end
@@ -7917,7 +7929,7 @@ end)
 
 -- 1.5.0 (the dev's log: every client's channel hello, census ask, lists' ask, positions became 46
 -- whispers each). Fails before: the hello is forwarded to every reporter and across.
-test("1.5.0 the relay: a client's own-clock words (H3, Q1, HQ, P1, W4) are heard by the relay and fanned out to nobody, not across either; a census report, a chat line and the lists go on", function()
+test("1.5.0 the relay: a client's own-clock words (H3, Q1, HQ, P1, W4) are heard by the relay and fanned out to nobody, not across either; a census report, a chat line and the lists go on (1.5.5: the line alone across)", function()
 	local saved = { channel = GetChannelName, member = ns.IsMember, guild = GetGuildInfo, inGuild = IsInGuild }
 	local ok, err = pcall(function()
 		GetChannelName = function() return 0 end
@@ -7926,6 +7938,7 @@ test("1.5.0 the relay: a client's own-clock words (H3, Q1, HQ, P1, W4) are heard
 		GetGuildInfo = function() return "Olympus II", "Member", 3 end
 		local R, rdeliver, rsent, rheard, rpump, rsentOf = RelayWorld("Hildryn Payne-Realm", "Olympus II")
 		rdeliver("WHISPER", "Max Ran-Realm", "RY~")
+		rdeliver("WHISPER", "Max Ran-Realm", "RJ~1~0~0") -- (1.5.5: a mesh peer, the only relay sent RX)
 		rdeliver("WHISPER", "Zed Far-Realm", "RL~P~RR~Olympus Zeus")
 		for _, kind in ipairs({ "H3~hello", "Q1~ask", "HQ~lists", "P1~pos", "W4~wanted" }) do
 			rdeliver("WHISPER", "Some One-Realm", "RL~P~" .. kind)
@@ -7937,7 +7950,9 @@ test("1.5.0 the relay: a client's own-clock words (H3, Q1, HQ, P1, W4) are heard
 		rdeliver("WHISPER", "Some One-Realm", "RL~L~M1~A~Olympus II~1~~hi")
 		rdeliver("WHISPER", "Some One-Realm", "RL~P~HS~lists")
 		rpump()
-		eq(#rsentOf("RM~"), 3, "the report, the line and the lists to the reporter"); eq(#rsentOf("RX~"), 3, "and across")
+		eq(#rsentOf("RM~"), 3, "the report, the line and the lists to the reporter")
+		eq(#rsentOf("RX~"), 1, "(1.5.5) the line alone across: the report and the lists stay on this relay's island")
+		eq(rsentOf("RX~")[1].msg, "RX~L~Some One-Realm~M1~A~Olympus II~1~~hi")
 	end)
 	GetChannelName, ns.IsMember, GetGuildInfo, IsInGuild = saved.channel, saved.member, saved.guild, saved.inGuild
 	C_ChatInfo = nil
@@ -7955,6 +7970,7 @@ test("1.5.2 verification relay: approvals, revocations and snapshots reach guild
 		GetGuildInfo = function() return "Olympus II", "Member", 3 end
 		local R, deliver, _, _, pump, sentOf = RelayWorld("Hildryn Payne-Realm", "Olympus II")
 		deliver("WHISPER", "Max Ran-Realm", "RY~")
+		deliver("WHISPER", "Max Ran-Realm", "RJ~1~0~0") -- (1.5.5: a mesh peer, the only relay sent RX)
 		deliver("WHISPER", "Zed Far-Realm", "RL~P~RR~Olympus Zeus")
 		local origin = "Verifier Origin-Realm"
 		local words = {
@@ -7967,6 +7983,7 @@ test("1.5.2 verification relay: approvals, revocations and snapshots reach guild
 		pump()
 		local forwarded = sentOf("RM~L~" .. origin .. "~GV~1~")
 		eq(#forwarded, 3, "the guild reporter receives each decision and recovery snapshot")
+		-- (1.5.5: to a mesh peer, as every logged word, the chat lines' way; tests/relay-mesh.lua.)
 		eq(#sentOf("RX~L~" .. origin .. "~GV~1~"), 3, "other signed relays receive them too")
 		eq(#sentOf("RM~P~" .. origin .. "~GV~1~Q~"), 0, "periodic asks stay off guild reporters")
 		-- (1.5.4) The ask crosses as RW, to every relay not left out: RX went only to relays that had

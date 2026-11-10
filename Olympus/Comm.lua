@@ -1229,8 +1229,12 @@ function Comm.ChannelSpec()
 end
 -- To lane n (TakeLane: a higher one a guild officer's hello names) or the next one (NextLane): the
 -- old channel is left and the new one joined (JoinChannel), the census asked there 10 s on.
+-- (1.5.5) Never while the relays carry the channel (Relay.On: Forever, where no channel delivers):
+-- a lane moved only up, and each move split the guilds that had not moved yet from those that had.
 local function MoveLane(n, why)
 	if not ns.rdb then return false end
+	local R = ns.Relay
+	if type(R) == "table" and type(R.On) == "function" and R.On() == true then return false end
 	n = tonumber(n)
 	if not n or n ~= n or n <= Lane() or n > Comm.LANE_MAX then return false end
 	local was = Lane()
@@ -2026,6 +2030,10 @@ end
 -- the second one: asked ASK_AGAIN later unless a report came.
 function Comm.AskCensus(force)
 	if not ns.IsMember() then return end
+	-- (1.5.5) Not while the relays carry the channel (Relay.On): a relay keeps the ask to itself (Q1 is
+	-- never fanned out), and every guild's report reaches its relay on the reporter's own clock.
+	local R = ns.Relay
+	if type(R) == "table" and type(R.On) == "function" and R.On() == true then return end
 	if not Comm.ChannelReady() then
 		askTries = askTries + 1
 		if askTries < 3 then ns.After(20, "census request", Comm.AskCensus) end
