@@ -615,10 +615,14 @@ end
 
 -- The signed lists held here, by kind and age (no names: ns.PinsStatus says signed, code or none).
 local function SignedLine()
-	local t = ns.rdb and ns.rdb.councilTitles
+	local t = type(ns.CouncilTitles) == "function" and Try(ns.CouncilTitles) or (ns.rdb and ns.rdb.councilTitles)
 	local titles = "none"
 	if type(t) == "table" and type(t.blob) == "string" then
-		titles = ("v%s %s"):format(t.blob:match("^HT1~(%d+)~") or "?", t.at and Age(t.at) or "?")
+		local Ch = ns.Church
+		local apostles = type(Ch) == "table" and type(Ch.SignedApostles) == "function" and Try(Ch.SignedApostles) or nil
+		local arbiters = type(ns.SignedArbiters) == "function" and Try(ns.SignedArbiters) or nil
+		titles = ("v%s %s (apostles %s, arbiters %s)"):format(t.blob:match("^HT1~(%d+)~") or "?", t.at and Age(t.at) or "?",
+			type(apostles) == "table" and tostring(#apostles) or "?", type(arbiters) == "table" and tostring(#arbiters) or "?")
 	end
 	local R = ns.Relay
 	local rules = type(R) == "table" and type(R.Rules) == "function" and Try(R.Rules) or nil
