@@ -81,14 +81,14 @@ local function WithRooms(fn)
 			Ask = function(key) w.asked[#w.asked + 1] = key end,
 		}
 
-		local function Queue(dist, msg, target, logged, done, options)
+		local function Queue(dist, msg, target, logged, done, options, urgent)
 			w.attempts = w.attempts + 1
 			if w.rejectAt == w.attempts then
 				if done then done(false, "full") end
 				return false
 			end
 			w.jobs[#w.jobs + 1] = { dist = dist, msg = msg, target = target, logged = logged,
-				done = done, options = options }
+				done = done, options = options, urgent = urgent == true }
 			return true
 		end
 		c.Comm = {
@@ -97,8 +97,8 @@ local function WithRooms(fn)
 			ChannelReady = function() return w.channel ~= nil end,
 			ChannelName = function() return w.channel end,
 			DeliveredLogged = function() return w.logged end,
-			Send = function(dist, msg, _, _, logged, done, options) return Queue(dist, msg, nil, logged, done, options) end,
-			Whisper = function(target, msg, _, _, logged, done, options) return Queue("WHISPER", msg, target, logged, done, options) end,
+			Send = function(dist, msg, _, urgent, logged, done, options) return Queue(dist, msg, nil, logged, done, options, urgent) end,
+			Whisper = function(target, msg, _, urgent, logged, done, options) return Queue("WHISPER", msg, target, logged, done, options, urgent) end,
 			Cancel = function(owner)
 				local kept = {}
 				for _, job in ipairs(w.jobs) do
@@ -716,5 +716,24 @@ test("chat rooms: the Companion's chat record: each room line kept and shown, th
 		eq(w.nativeEvents.CHAT_MSG_GUILD("rooms off", "Guildmate-Realm"), false)
 		eq(R.Receive("WHISPER", "Brother a-Realm", RoomMessage("church", 9, "rooms off"), 1009), false)
 		eq(#rec, 5)
+	end)
+end)
+
+-- 1.5.5 (the dev: "only half the chat messages arrive"): a room's line is one whisper to each member
+-- online, up to FANOUT, from the sender's own queue of MAX_QUEUE; ordinary there, the words queued
+-- after it (the census, the lists) pushed its last whispers out once the queue filled, and those
+-- members never saw the line. Each goes as an urgent whisper, which Comm never pushes out.
+test("chat rooms (1.5.5): a restricted room's line goes to each member as an urgent whisper, which the queue never pushes out", function()
+	WithRooms(function(w, R, c)
+		local me = c.me:lower()
+		w.council[me] = true
+		w.council["alpha-realm"], w.council["beta-realm"] = true, true
+		c.rdb.council.names = { [me] = "Member", alpha = "Alpha", beta = "Beta" }
+		c.Roster.members = { { name = "Alpha", online = true }, { name = "Beta", online = true } }
+		assert(R.Send("council", "every member must read this"))
+		assert(#w.jobs >= 2, "one whisper per member online")
+		for _, job in ipairs(w.jobs) do
+			eq(job.dist, "WHISPER"); eq(job.urgent, true, "to " .. tostring(job.target)); eq(job.logged, true)
+		end
 	end)
 end)

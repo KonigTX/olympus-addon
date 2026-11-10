@@ -344,14 +344,41 @@ local function Ranks(g)
 	return out
 end
 
+-- (1.5.5) Where names split (Forever) a name is one across its realm family, and a report reaches us
+-- stamped with its sender's sub-realm, so its bare names are keyed with that one: the same officer is
+-- "Name-<one sub-realm>" in one reporter's vote, "Name-<another>" in the next one's, and his own chat
+-- line comes under a third stamp. A name's family key ("Name-ForeverPvE") is the same in all of them;
+-- anywhere else, or for a realm of no Forever family, the name as it is.
+local function FamilyKey(name)
+	if not ns.splitNames or type(name) ~= "string" then return name end
+	local base, realm = name:match("^(.+)%-([^%-]+)$")
+	local family = realm and ns.ForeverFamily and ns.ForeverFamily(realm)
+	return family and (base .. "-" .. family) or name
+end
+-- A vote's rank for `who`: under his name as written, else (Forever) under the same name stamped with
+-- another sub-realm of his family (the lowest rank, as the names' order is none). Without this an
+-- officer's [Captains] line and a guild master's [Lords] line were "unverified" whenever his stamp
+-- was not his guild's reporter's, and the census's ranks of other guilds held for nobody there.
+local function RankIn(ranks, who)
+	local k = ranks[who]
+	if k ~= nil or not ns.splitNames then return k end
+	local key = FamilyKey(who)
+	if key == who then return nil end
+	for name, rank in pairs(ranks) do
+		if FamilyKey(name) == key and (k == nil or rank < k) then k = rank end
+	end
+	return k
+end
+
 -- The guild as a report pictures it: leader and officers, names in "Name-Realm" form so the
--- same people match whatever realm each reporter plays on. A list cut at MAX_OFFICERS is
+-- same people match whatever realm each reporter plays on (1.5.5: their family's key where names
+-- split, FamilyKey: two reporters on two sub-realms give one picture). A list cut at MAX_OFFICERS is
 -- pictured by its leader only (two cut lists need not hold the same officers).
 local function Signature(r, ranks)
 	local cut = #(r.officers or {}) >= ns.Codec.MAX_OFFICERS
 	local parts = {}
 	for name, rank in pairs(ranks) do
-		if rank == 0 or not cut then parts[#parts + 1] = name .. "=" .. rank end
+		if rank == 0 or not cut then parts[#parts + 1] = FamilyKey(name) .. "=" .. rank end
 	end
 	table.sort(parts)
 	return table.concat(parts, ",") .. (cut and ",+" or "")
@@ -683,7 +710,7 @@ function Data.KnownRank(sender, guild, soft)
 	for src, v in pairs(votes) do
 		if tops[v.sig] then
 			if ns.ShortName(src) ~= self then total = total + 1 end
-			local k = v.ranks[who]
+			local k = RankIn(v.ranks, who)
 			if bySig[v.sig] == nil then bySig[v.sig] = k or false end
 			if k then
 				named = named + 1
@@ -722,7 +749,7 @@ function Data.Names(sender, guild, rank)
 	if type(g) ~= "table" or type(sender) ~= "string" then return false end
 	local who = ns.FullName(sender)
 	for _, v in pairs(Votes(g.vouch, ns.Now())) do
-		local k = v.ranks[who]
+		local k = RankIn(v.ranks, who)
 		if k and k <= rank then return true end
 	end
 	return false

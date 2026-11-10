@@ -399,10 +399,11 @@ local function RelayLine()
 	local s = R.Stats()
 	local v = type(V) == "table" and type(V.Stats) == "function" and V.Stats() or {}
 	local function N(x) return tonumber(x) or 0 end
-	return ("%s  |  out %d  forwarded %d  delivered %d  dropped %d  dead %d  kept %d  trickled %d  reporters %d  pending %d  |  verify across %d  direct %d  asked %d  answered %d  unsent %d  untrusted %d  bad %d"):format(
+	-- (1.5.5) The relay's chat lane (Relay.lua): chat whispers waiting, and lost (past its bound or its time).
+	return ("%s  |  out %d  forwarded %d  delivered %d  dropped %d  dead %d  kept %d  trickled %d  reporters %d  pending %d  |  verify across %d  direct %d  asked %d  answered %d  unsent %d  untrusted %d  bad %d  |  chat lane %d waiting, %d lost"):format(
 		not s.on and "off" or (tostring(s.relay or "none") .. (s.sure and "" or " (unanswered)")),
 		N(s.out), N(s.forwarded), N(s.delivered), N(s.dropped), N(s.dead), N(s.kept), N(s.trickled), N(s.reporters), N(s.pending),
-		N(s.verifyAcross), N(s.direct), N(v.asked), N(v.answered), N(v.unsent), N(v.refused), N(v.bad))
+		N(s.verifyAcross), N(s.direct), N(v.asked), N(v.answered), N(v.unsent), N(v.refused), N(v.bad), N(s.chatWaiting), N(s.chatLost))
 end
 
 ---------------------------------------------------------------------------
@@ -720,10 +721,19 @@ function ns.StatusText()
 		local ch = ns.Channels and ns.Channels.Stats()
 		if ch then
 			-- (moved, 1.1.1: lines not sent because the channel changed before they left, GitHub #34.)
-			add("chat: sent=%d shown=%d hidden=%d lane=%d moved=%d muted=%s drops bad=%d dup=%d rate=%d flood=%d forged=%d unverified=%d rank=%d",
+			-- (secret, 1.5.5: chat events whose text or sender came as a secret value, skipped unread, Core.lua.)
+			add("chat: sent=%d shown=%d hidden=%d lane=%d moved=%d muted=%s drops bad=%d dup=%d rate=%d flood=%d forged=%d unverified=%d rank=%d secret=%d",
 				ch.sent, ch.shown, ch.hidden, c.chatQueue or 0, ch.moved or 0, #ch.muted > 0 and table.concat(ch.muted, ",") or "none",
-				ch.bad, ch.dup, ch.rate, ch.flood, ch.forged, ch.unverified, ch.rank)
-			if ns.Channels.WindowStatus then add("chat windows: %s", ns.Channels.WindowStatus()) end
+				ch.bad, ch.dup, ch.rate, ch.flood, ch.forged, ch.unverified, ch.rank, tonumber(ns.secretChatSkipped) or 0)
+			if ns.Channels.WindowStatus then
+				-- (1.5.5: a player's /oly bug said "gone: main window for now" for all three channels, and
+				-- nothing said which chat windows his game had open: they are listed now, by name.)
+				local open = {}
+				if ns.Channels.OpenWindows then
+					for _, w in ipairs(ns.Channels.OpenWindows()) do open[#open + 1] = '"' .. tostring(w.name):gsub("|", "||") .. '"' end
+				end
+				add("chat windows: %s  |  open: %s", ns.Channels.WindowStatus(), #open > 0 and table.concat(open, ", ") or "the main one alone")
+			end
 			-- (1.1) The pinned line this client holds: whose, of what rank, and how long it has left.
 			if ns.Channels.PinStatus then add("pinned line: %s", ns.Channels.PinStatus()) end
 		end

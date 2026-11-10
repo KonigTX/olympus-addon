@@ -222,7 +222,9 @@ function Relay.Stats()
 		presented = shown, refused = stats.refused, unpresented = stats.unpresented, denied = stats.denied, unserved = stats.unserved,
 		rules = Relay.Rules().rev, required = Relay.Required(),
 		-- (The review of the 1.5.4 candidate: counted below, returned for /oly status, Diagnostics.lua.)
-		verifyAcross = stats.verifyAcross or 0, direct = stats.direct or 0 }
+		verifyAcross = stats.verifyAcross or 0, direct = stats.direct or 0,
+		-- (1.5.5) The chat lane: whispers waiting in it, and lost (past its bound or its time).
+		chatWaiting = Relay.ChatWaiting and Relay.ChatWaiting() or 0, chatLost = stats.chatLost or 0 }
 end
 
 local function Now() return ns.Now() end
@@ -704,12 +706,15 @@ local function Deliver(origin, text, logged)
 	return true
 end
 
--- A reporter hands a message to its guild once (hop 3).
+-- A reporter hands a message to its guild once (hop 3). (1.5.5) A chat line (flag L) goes urgent: a
+-- reporter hands its guild every word its relay sends, at one whisper every 1.2 s, and an ordinary
+-- chat line was the first a full queue pushed out, for its whole guild and for good.
 ToGuild = function(flag, origin, text)
 	if not IsInGuild() then return false end
 	local pieces = Envelope("RG", "RG~" .. flag .. "~" .. origin .. "~" .. text)
-	if #pieces == 1 then return ns.Comm.Send("GUILD", pieces[1], nil, false, false) ~= false end
-	return ns.Comm.SendBatch("GUILD", pieces, nil, nil, false) ~= false
+	local urgent = flag == "L"
+	if #pieces == 1 then return ns.Comm.Send("GUILD", pieces[1], nil, urgent, false) ~= false end
+	return ns.Comm.SendBatch("GUILD", pieces, nil, nil, urgent) ~= false
 end
 
 -- A word to every guild's reporter we hold (ours included: delivered here and handed to our
@@ -1421,6 +1426,95 @@ local function CrownToReporters(flag, origin, body, now)
 	end
 	if not heard then Deliver(origin, body, false) end
 end
+-- (1.5.5, the dev: "only half the chat messages arrive") The chat lane. A chat line is one whisper to
+-- every reporter (and every other relay), unkeyed and ordinary in Comm's queue of MAX_QUEUE: with 46
+-- reporters two lines a few seconds apart overflowed it, and the queue pushed out the oldest waiting
+-- whispers, the first line's, for good (the offline harness: 114 of 184 deliveries of four lines lost).
+-- Now a relay's chat whispers wait here, in order, and go to Comm's queue CHAT_INFLIGHT at a time as
+-- urgent ones, which nothing pushes out: a burst arrives seconds later instead of not at all. At most
+-- CHAT_PER_MIN a minute (CHAT_BURST at once), so the census, the lists and the King's words keep the
+-- rest of the relay's 200 whispers a minute. Past CHAT_LANE_MAX waiting the oldest goes, and one that
+-- waited CHAT_LANE_TTL is no longer news (both counted: Stats().chatLost).
+Relay.CHAT_INFLIGHT = 8
+Relay.CHAT_PER_MIN = 160
+Relay.CHAT_BURST = 60
+Relay.CHAT_LANE_MAX = 1500
+Relay.CHAT_LANE_TTL = 300
+local chatQ, chatFirst, chatLast, chatInflight, chatFeeding = {}, 1, 0, 0, false
+local chatWaitUntil, chatTimer = -math.huge, false
+local chatBucket = { tokens = Relay.CHAT_BURST, at = -math.huge }
+local function ChatWaiting() return chatLast - chatFirst + 1 end
+local FeedChat
+-- Fed again after `seconds` (one timer at a time); meanwhile a word that arrives feeds it once it is due.
+local function ChatLater(seconds)
+	chatWaitUntil = math.max(chatWaitUntil, Now() + seconds)
+	if chatTimer then return end
+	chatTimer = true
+	ns.After(seconds, "relay chat", function()
+		chatTimer = false
+		if Now() < chatWaitUntil then return ChatLater(chatWaitUntil - Now()) end
+		FeedChat()
+	end)
+end
+local function ChatSend(e)
+	Quiet(e.name)
+	chatInflight = chatInflight + 1
+	local settled = false
+	local function done(sent, why)
+		if settled then return end
+		settled = true
+		chatInflight = math.max(0, chatInflight - 1)
+		if not sent and why == "full" and Now() - e.t < Relay.CHAT_LANE_TTL then
+			-- (No room even for an urgent whisper: back at the front, tried again in a second.)
+			chatFirst = chatFirst - 1
+			chatQ[chatFirst] = e
+			ChatLater(1)
+			return
+		end
+		if not sent then stats.chatLost = (stats.chatLost or 0) + 1 end
+		FeedChat()
+	end
+	if #e.pieces == 1 then ns.Comm.Whisper(e.name, e.pieces[1], nil, true, false, done)
+	else ns.Comm.SendBatch("WHISPER", e.pieces, nil, e.name, true, done) end
+end
+FeedChat = function()
+	if chatFeeding then return end
+	local now = Now()
+	if now < chatWaitUntil then return end
+	chatFeeding = true
+	local b = chatBucket
+	if now > b.at then b.tokens = math.min(Relay.CHAT_BURST, b.tokens + (now - b.at) * Relay.CHAT_PER_MIN / 60) end
+	b.at = math.max(b.at, now)
+	while chatInflight < Relay.CHAT_INFLIGHT and chatFirst <= chatLast and now >= chatWaitUntil do
+		local e = chatQ[chatFirst]
+		if now - e.t >= Relay.CHAT_LANE_TTL then
+			chatQ[chatFirst] = nil
+			chatFirst = chatFirst + 1
+			stats.chatLost = (stats.chatLost or 0) + 1
+		elseif b.tokens < #e.pieces then
+			ChatLater(math.max(1, (#e.pieces - b.tokens) * 60 / Relay.CHAT_PER_MIN))
+		else
+			chatQ[chatFirst] = nil
+			chatFirst = chatFirst + 1
+			b.tokens = b.tokens - #e.pieces
+			ChatSend(e)
+		end
+	end
+	chatFeeding = false
+end
+-- A chat line's whisper to `name` (a reporter, or another relay), in the lane.
+local function ChatTo(name, pieces)
+	while ChatWaiting() >= Relay.CHAT_LANE_MAX do
+		chatQ[chatFirst] = nil
+		chatFirst = chatFirst + 1
+		stats.chatLost = (stats.chatLost or 0) + 1
+	end
+	chatLast = chatLast + 1
+	chatQ[chatLast] = { name = name, pieces = pieces, t = Now() }
+	FeedChat()
+end
+function Relay.ChatWaiting() return ChatWaiting() end -- (/oly status, tests)
+
 -- (1.5.4) The King's presence (T1~o, King.SendPresence: one piece from his signed character every
 -- King.PRESENCE_EVERY) goes to every reporter as the relay's own words do, ahead of the queue and keyed
 -- per reporter: a busy relay holds at most one per reporter, the latest. 60 reporters, every five
@@ -1556,7 +1650,11 @@ local function ToReporters(flag, origin, body, sender)
 			pieces = pieces or Envelope("RM", "RM~" .. flag .. "~" .. wire .. "~" .. body)
 			-- (1.5.0) Another client's word that is not a chat line: within the reporter's trickle
 			-- (REPORTER_RATE) or not sent to him; the relay's own words and chat lines always.
-			if flag == "L" or own or snapshot or presence or KingLayer(origin, body, r.name, now) or Afford(r.name, #pieces, now, need, wordKey, first) then
+			if flag == "L" then
+				-- (1.5.5) A chat line: by the chat lane (above), never pushed out of the queue.
+				stats.forwarded = stats.forwarded + 1
+				ChatTo(r.name, pieces)
+			elseif own or snapshot or presence or KingLayer(origin, body, r.name, now) or Afford(r.name, #pieces, now, need, wordKey, first) then
 				stats.forwarded = stats.forwarded + 1
 				Quiet(r.name) -- (a reporter gone offline since: the server's line out of the chat)
 				-- A word that is not a chat line is keyed by its origin, kind and reporter: a newer
@@ -1592,10 +1690,14 @@ local function Across(flag, origin, body)
 		if key ~= mine and key ~= from and now - (verified[key] or -math.huge) < Relay.VERIFIED_FOR then
 			pieces = pieces or Envelope("RX", "RX~" .. flag .. "~" .. origin .. "~" .. body)
 			stats.across = (stats.across or 0) + 1
-			Quiet(name)
-			local key = flag ~= "L" and ("across " .. name .. " " .. from .. " " .. (presence and "T1~o" or QueueWord(body))) or nil
-			if #pieces == 1 then ns.Comm.Whisper(name, pieces[1], key, presence, false)
-			else ns.Comm.SendBatch("WHISPER", pieces, key, name, presence) end
+			if flag == "L" then
+				ChatTo(name, pieces) -- (1.5.5: the chat lane)
+			else
+				Quiet(name)
+				local key = "across " .. name .. " " .. from .. " " .. (presence and "T1~o" or QueueWord(body))
+				if #pieces == 1 then ns.Comm.Whisper(name, pieces[1], key, presence, false)
+				else ns.Comm.SendBatch("WHISPER", pieces, key, name, presence) end
+			end
 		end
 	end
 end
@@ -2065,7 +2167,7 @@ end
 function Relay.NotFound(text)
 	-- (1.5.5) A secret line (a chat lockdown) is never read: 96 errors at Relay.lua:455 in a player's
 	-- /oly bug of 11-09, 33 at Relay.lua:619 in another's.
-	if ns.Secret("relay not found", text) then return false end
+	if type(text) ~= "string" or ns.Secret("relay not found", text) then return false end
 	local T = ns.Treasury
 	local pattern = type(T) == "table" and type(T.NotFoundPattern) == "function" and T.NotFoundPattern()
 	local who = type(pattern) == "string" and type(text) == "string" and text:match(pattern)
@@ -2090,8 +2192,9 @@ ns.Comm.RelayPieces({ RL = true, RM = true, RG = true, RX = true, RW = true, RU 
 -- reporter the relay whispered: out of the chat for good, not for a window (Accord.Quiet's ten
 -- seconds left the login's first sweep in sight). Read all the same (NotFound, the event).
 local function NotFoundName(text)
-	-- (1.5.5) The chat filter runs in the game's chat code: a secret line goes on unread.
-	if ns.Secret("relay quiet line", text) then return nil end
+	-- (1.5.5) A secret line (Forever's chat locked down) goes on unread: the chat frame calls this
+	-- filter itself, in the game's chat code, outside the event guard in Core.lua.
+	if type(text) ~= "string" or ns.Secret("relay quiet line", text) then return nil end
 	local T = ns.Treasury
 	local pattern = type(T) == "table" and type(T.NotFoundPattern) == "function" and T.NotFoundPattern()
 	local who = type(pattern) == "string" and type(text) == "string" and text:match(pattern)
@@ -2168,5 +2271,7 @@ function Relay.Reset()
 	wipe(sets); wipe(drip)
 	wipe(listOrigins); wipe(Origins()); wipe(listShares); wipe(listSets)
 	dripSince, dripping = nil, false
+	wipe(chatQ); chatFirst, chatLast, chatInflight, chatFeeding = 1, 0, 0, false -- (1.5.5: the chat lane)
+	chatWaitUntil, chatTimer, chatBucket.tokens, chatBucket.at = -math.huge, false, Relay.CHAT_BURST, -math.huge
 	for k in pairs(stats) do stats[k] = 0 end
 end
