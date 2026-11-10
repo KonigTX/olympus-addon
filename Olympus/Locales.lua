@@ -235,6 +235,32 @@ What version 1.5.4 changes:
 Please close and reopen the game after updating. Thank you to everyone who measured and reported the problems on GitHub, CurseForge and Discord.
 
 Long live the King. Long live Olympus.]==]
+-- 1.5.5 (the dev, 2026-11-10: "se avisa que eu separei ... e falta outro, que está saindo em breve ... para
+-- que esse primeiro pudesse sair antes da live, para que as pessoas pudessem baixar"): the update split in
+-- two, this first part before the King's stream and 1.5.6 soon after; then what 1.5.5 changes.
+L.LETTER_1_5_5_TITLE, L.LETTER_1_5_5_HEAD, L.LETTER_1_5_5_SIGNED, L.LETTER_1_5_5_LINK = "The first of two parts", "The first of two parts", L.LETTER_1_5_4_SIGNED, L.LETTER_1_5_4_LINK
+L.LETTER_1_5_5 = [==[Your Majesty. Soldiers of Olympus.
+
+I split this update in two. This first part goes out now, before the stream, so everyone can download it, and it already fixes a lot. The second part, 1.5.6, is coming soon: it makes the relays share everything with each other, so every guild sees every other guild.
+
+What version 1.5.5 changes:
+
+- {guild} Census snapshots that cross the relays in many pieces now arrive whole.
+- {team} Every Olympus chat line reaches every member, and only once. Guildmates on other servers are no longer dropped.
+- {news} Item links in the Olympus chat show in their quality colours.
+- {watch} Chat and relay values the game keeps secret in dungeons and raids no longer cause errors.
+- {watch} /oly bug has a debug section, and Olympus tells you when it is installed in the wrong game folder.
+- {star} The level race is paused. Nothing is calculated for now, but nothing is lost: everything keeps being recorded, and the next update will try to sort out who really got there first. If you saw a comet, a short apology letter is waiting for you.
+- {dice} Bones: the first game with the innkeeper opens on the first click.
+- {wanted} The Wanted page says which realm group its list is from.
+- {watch} Verifiers see every guild waiting to be verified.
+- {guild} Guild bank snapshots from officers on other servers are now accepted.
+- {crown} The King's Agenda, its signup sheets, the gates and a treasury keeper's donations off now arrive.
+- {news} The Companion Bridge says which realm group and ruleset its Wanted data is from.
+
+Close and reopen the game after the update.
+
+Long live the King. Long live Olympus.]==]
 L.LETTER_1_3_3_TITLE = "Your guild on the website"
 L.LETTER_1_3_3 = [==[Version 1.3.3.
 
@@ -380,6 +406,29 @@ O que muda na versão 1.5.4:
 - {team} Quando nenhum relay responde, o censo espera por um em vez de tentar o canal que o jogo bloqueia.
 
 Feche e abra o jogo de novo depois de atualizar. Obrigado a todos que mediram e relataram os problemas no GitHub, no CurseForge e no Discord.
+
+Vida longa ao Rei. Vida longa ao Olympus.]==]
+	L.LETTER_1_5_5_TITLE, L.LETTER_1_5_5_HEAD, L.LETTER_1_5_5_SIGNED, L.LETTER_1_5_5_LINK = "A primeira de duas partes", "A primeira de duas partes", L.LETTER_1_5_4_SIGNED, L.LETTER_1_5_4_LINK
+	L.LETTER_1_5_5 = [==[Vossa Majestade. Soldados do Olympus.
+
+Separei esta atualização em duas partes. Esta primeira sai agora, antes da live, para todo mundo poder baixar, e já resolve um monte de coisa. A segunda, a 1.5.6, sai em breve: com ela os relays compartilham tudo entre si, e toda guilda vê todas as outras.
+
+O que muda na versão 1.5.5:
+
+- {guild} Os snapshots do censo que passam pelos relays em muitos pedaços agora chegam inteiros.
+- {team} Toda linha do chat do Olympus chega a todos os membros, e uma vez só. Colegas de guilda em outros servidores não são mais descartados.
+- {news} Os links de itens no chat do Olympus aparecem na cor da qualidade do item.
+- {watch} Os valores do chat e dos relays que o jogo esconde em masmorras e raides não causam mais erros.
+- {watch} O /oly bug ganhou uma seção de debug, e o Olympus avisa quando está instalado na pasta errada do jogo.
+- {star} A corrida de level está pausada. Nada é calculado por enquanto, mas nada se perde: tudo continua sendo registrado, e a próxima atualização vai tentar resolver quem chegou primeiro de verdade. Se você viu um cometa, tem uma carta curta de desculpas esperando por você.
+- {dice} Bones: a primeira partida com o taverneiro abre no primeiro clique.
+- {wanted} A página de Wanted diz de qual grupo de reinos é a lista.
+- {watch} Os verificadores veem todas as guildas que esperam verificação.
+- {guild} Os snapshots do banco da guilda enviados por oficiais em outros servidores agora são aceitos.
+- {crown} A agenda do Rei, as listas de inscrição, os portões e o fim das doações de um guardião do tesouro agora chegam.
+- {news} O Companion Bridge diz de qual grupo de reinos e de qual tipo de reino são os dados de Wanted.
+
+Feche e abra o jogo de novo depois da atualização.
 
 Vida longa ao Rei. Vida longa ao Olympus.]==]
 	L.LETTER_1_3_3_TITLE = "Sua guilda no site"

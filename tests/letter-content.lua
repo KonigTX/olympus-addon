@@ -2,12 +2,14 @@ local ns, test, eq = ...
 local ROOT = debug.getinfo(1, "S").source:sub(2):match("^(.*)tests[/\\]letter%-content%.lua$") or "./"
 local MARKS = { "dice", "team", "guild", "church", "craft", "crown", "watch", "wanted", "news" }
 
-local function Language(locale)
+-- A client in `locale`: Locales.lua, then (file) that language's file as the TOC loads it, then Letters.lua.
+local function Language(locale, file)
 	local saved = GetLocale
 	local cns = setmetatable({ On = function() end, RegisterEvent = function() end }, { __index = ns })
 	GetLocale = function() return locale end
 	local ok, why = pcall(function()
 		assert(loadfile(ROOT .. "Olympus/Locales.lua"))("Olympus", cns)
+		if file then assert(loadfile(ROOT .. "Olympus/Locales/" .. file .. ".lua"))("Olympus", cns) end
 		assert(loadfile(ROOT .. "Olympus/Letters.lua"))("Olympus", cns)
 	end)
 	GetLocale = saved
@@ -74,6 +76,82 @@ test("1.2.5 letter content: both languages describe only the shipped reply, offi
 		eq(cns.Letters.Versions()[12], "1.4.0", locale .. ": the launch letter retained")
 		eq(cns.Letters.Versions()[13], "1.3.3", locale .. ": previous release retained")
 		eq(cns.Letters.Versions()[14], "1.3.2", locale .. ": the 1.3 line retained")
+	end
+end)
+
+-- 1.5.5 (the dev, 2026-11-10: "se avisa que eu separei ... e falta outro, que está saindo em breve ... para
+-- que esse primeiro pudesse sair antes da live"): the letter tells of the split first, this part out before
+-- the King's stream so everyone can download it and 1.5.6 (the relays sharing everything) soon, then what
+-- 1.5.5 changes as bullets, the level race paused with nothing lost, and the restart; in his plain voice,
+-- inside the 1.5.4 letter's frame, with no dash of the typesetter's. In his two languages word for word,
+-- in the other five as the same letter: the same frame as their 1.5.4 letter, the same marks.
+local LETTER_1_5_5 = {
+	enUS = {
+		"I split this update in two.", "before the stream, so everyone can download it", "it already fixes a lot",
+		"The second part, 1.5.6, is coming soon", "every guild sees every other guild",
+		"\n\nWhat version 1.5.5 changes:\n\n- {guild} ",
+		"\n- {star} The level race is paused.", "nothing is lost", "the next update will try to sort out who really got there first",
+		"\n- {dice} Bones: the first game with the innkeeper opens on the first click.",
+		"\n\nClose and reopen the game after the update.\n\n",
+	},
+	ptBR = {
+		"Separei esta atualização em duas partes.", "antes da live, para todo mundo poder baixar", "já resolve um monte de coisa",
+		"A segunda, a 1.5.6, sai em breve", "toda guilda vê todas as outras",
+		"\n\nO que muda na versão 1.5.5:\n\n- {guild} ",
+		"\n- {star} A corrida de level está pausada.", "nada se perde", "a próxima atualização vai tentar resolver quem chegou primeiro de verdade",
+		"\n- {dice} Bones: a primeira partida com o taverneiro abre no primeiro clique.",
+		"\n\nFeche e abra o jogo de novo depois da atualização.\n\n",
+	},
+}
+local function Marks(text)
+	local out = {}
+	for mark in text:gmatch("{(%a+)}") do out[#out + 1] = mark end
+	return table.concat(out, ",")
+end
+
+test("1.5.5 letter content: in every language the split comes first (this part before the stream, 1.5.6 soon), then twelve bullets with the same marks, then the restart, in that language's 1.5.4 frame, under its own title and the dev's signature in that language, no typeset dash; English and Portuguese word for word", function()
+	local english, order
+	for _, run in ipairs({ { "enUS" }, { "ptBR" }, { "deDE", "deDE" }, { "esES", "esES" }, { "esMX", "esES" },
+		{ "frFR", "frFR" }, { "itIT", "itIT" }, { "ruRU", "ruRU" } }) do
+		local locale = run[1]
+		local cns = Language(locale, run[2])
+		local L = cns.L
+		local raw, before = rawget(L, "LETTER_1_5_5"), rawget(L, "LETTER_1_5_4")
+		local title, body = cns.Letters.Text("1.5.5")
+		assert(type(raw) == "string" and type(title) == "string" and title ~= "" and type(body) == "string", locale .. ": the letter")
+		eq(title, rawget(L, "LETTER_1_5_5_HEAD"), locale .. ": its window names it by its title")
+		eq(rawget(L, "LETTER_1_5_5_SIGNED"), rawget(L, "LETTER_1_5_4_SIGNED"), locale .. ": the dev's signature, as 1.5.4's")
+		eq(rawget(L, "LETTER_1_5_5_LINK"), rawget(L, "LETTER_1_5_4_LINK"), locale .. ": the site's link, as 1.5.4's")
+		-- The 1.5.4 letter's frame in this language: its first line and its last.
+		local opening, closing = before:match("^[^\n]+\n\n"), before:match("\n\n[^\n]+$")
+		eq(raw:sub(1, #opening), opening, locale .. ": the frame's opening")
+		eq(raw:sub(-#closing), closing, locale .. ": the frame's close, last")
+		local restart = raw:sub(1, -#closing - 1):match("\n\n([^\n]+)$")
+		assert(restart and not restart:find("^%- "), locale .. ": the restart, a line of its own right before the close")
+		-- The split, before the first bullet: the version and the next one named there.
+		local first = raw:find("\n- ", 1, true)
+		assert(first and raw:find("1.5.5", 1, true) < first and raw:find("1.5.6", 1, true) < first, locale .. ": the split before the bullets")
+		local previous = #opening
+		for _, phrase in ipairs(LETTER_1_5_5[locale] or {}) do
+			local at = raw:find(phrase, 1, true)
+			assert(at, locale .. ": " .. phrase)
+			assert(at > previous, locale .. ": in its place: " .. phrase)
+			previous = at
+		end
+		local _, bullets = raw:gsub("\n%- {%a+} ", "")
+		eq(bullets, 12, locale .. ": what 1.5.5 changes, a bullet each")
+		if order then eq(Marks(raw), order, locale .. ": the same marks in the same order") else order = Marks(raw) end
+		assert(not body:find("{%a+}"), locale .. ": every mark drawn or in words")
+		for _, dash in ipairs({ "\226\128\148", "\226\128\147", " -- " }) do
+			eq(raw:find(dash, 1, true), nil, locale .. ": no typeset dash")
+			eq(title:find(dash, 1, true), nil, locale .. ": no typeset dash in the title")
+		end
+		if english then
+			assert(title ~= english.title and raw ~= english.raw, locale .. ": in its own language")
+			assert(rawget(L, "LETTER_1_5_5_SIGNED") ~= english.sign, locale .. ": signed in its own language")
+		else
+			english = { title = title, raw = raw, sign = rawget(L, "LETTER_1_5_5_SIGNED") }
+		end
 	end
 end)
 
