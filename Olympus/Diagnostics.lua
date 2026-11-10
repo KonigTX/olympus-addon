@@ -919,16 +919,17 @@ function ns.BuildBugReport()
 		end
 		out[#out + 1] = ""
 	end
-	-- (1.5.5) The debug section, bounded (ns.DebugLines), before the status: a report sent in game
-	-- stops at Workshop.BUG_MAX bytes, and these lines say where the messages went.
+	out[#out + 1] = ns.StatusText()
+	out[#out + 1] = ""
+	-- (1.5.5) The debug section, bounded (ns.DebugLines), after the status: a report sent in game
+	-- stops at Workshop.BUG_MAX bytes, and the status it carried before 1.5.5 still comes first,
+	-- whole (the section's DEBUG_MAX bytes before it cut as much of the status off).
 	local okD, debug = pcall(ns.DebugLines)
 	if okD and type(debug) == "table" then
 		for _, line in ipairs(debug) do out[#out + 1] = line end
 	else
 		out[#out + 1] = "debug (1.5.5): failed: " .. tostring(debug)
 	end
-	out[#out + 1] = ""
-	out[#out + 1] = ns.StatusText()
 	out[#out + 1] = ""
 	local errors = ns.db.errors
 	if #errors == 0 then

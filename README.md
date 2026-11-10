@@ -3268,7 +3268,7 @@ the exact text first, in a window of its own, and sends nothing without your **S
 Type `/oly bug` (or press **Report a bug**), copy the text and open an issue. Errors are
 also saved in `WTF/Account/<ACCOUNT>/SavedVariables/Olympus.lua`.
 
-Since 1.5.5 the report has a short debug section before the status lines. It shows which game
+Since 1.5.5 the report has a short debug section after the status lines. It shows which game
 and which Olympus files the addon runs on, and, for each kind of message that comes in pieces,
 how many arrived, were put together, were dropped incomplete or were refused, and why. It also
 shows the relay and the reporter, the census's sources per realm group with their ages, the

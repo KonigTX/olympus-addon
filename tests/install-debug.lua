@@ -1,7 +1,7 @@
 -- 1.5.5: an install that does not fit the game (a player: "an install in the wrong flavor folder
 -- changes the counts"; the CurseForge app's installation for Forever's folder left on Classic installs
--- an old Olympus) is told at login and heads /oly bug, and /oly bug carries a bounded debug section:
--- per kind of message in pieces, the relay and the reporter, the census's sources per realm group,
+-- an old Olympus) is told at login and heads /oly bug, and /oly bug carries a bounded debug section
+-- after its status: per kind of message in pieces, the relay and the reporter, the census's sources per realm group,
 -- the signed lists, the install. No other player's name or data, no BattleTag. Diagnostics.lua,
 -- Codec.lua (Codec.PieceStats). Loaded by tests/run.lua.
 local ns, test, eq, extra = ...
@@ -213,6 +213,37 @@ test("1.5.5 install: /oly bug's install lines name the problems first and each s
 		end)
 	end)
 	ns.realm, ns.group = savedRealm, savedGroup
+	if not ok then error(err, 0) end
+end)
+
+-- (The independent check: the debug section, up to DEBUG_MAX bytes, came before the status, so a
+-- report sent in game, cut at Workshop.BUG_MAX, carried that much less of the status.)
+test("1.5.5 /oly bug: the status comes first and the debug section after it, so a report sent in game carries the whole status it carried before 1.5.5", function()
+	local savedStatus, savedBlocked = ns.StatusText, ns.db.actionsBlocked
+	local ok, err = pcall(function()
+		WithInstall({ toc = 16001 }, function()
+			ns.db.actionsBlocked = {}
+			-- A status as long as a report sent in game can carry after its fence: lines with the
+			-- status's separators (sent as "!"), each line break sent as two bytes (Workshop's Pack).
+			local lines, size, budget = {}, 4, ns.Workshop.BUG_MAX - 8 - 40
+			while true do
+				local line = ("status line %02d: value %d  |  other value %d"):format(#lines + 1, #lines + 1, (#lines + 1) * 7)
+				if size + #line + 2 > budget then break end
+				lines[#lines + 1] = line
+				size = size + #line + 2
+			end
+			local status = table.concat(lines, "\n")
+			ns.StatusText = function() return status end
+			local report = ns.BuildBugReport()
+			eq(report:sub(1, 4 + #status), "```\n" .. status, "the status first")
+			local at = report:find("\ndebug (1.5.5):\ninstall: ", 1, true)
+			assert(at and at > 4 + #status, "the debug section after the status")
+			local sent = ns.Workshop.Outgoing(report)
+			assert(sent:find((status:gsub("|", "!")), 1, true), "the report sent in game carries the whole status")
+			assert(#sent < #report, "and is cut (the debug section and the rest are past BUG_MAX)")
+		end)
+	end)
+	ns.StatusText, ns.db.actionsBlocked = savedStatus, savedBlocked
 	if not ok then error(err, 0) end
 end)
 
