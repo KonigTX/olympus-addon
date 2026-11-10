@@ -2799,35 +2799,35 @@ function Wanted.GroupLabel()
 	if type(label) ~= "string" then return nil, nil end
 	return label, kind
 end
--- The page's title and its text, with the group (above): on a PvE (or RP) group, one line first saying
--- whose kills its list holds.
-function Wanted.Title()
-	local label = Wanted.GroupLabel()
-	return label and (L.WANTED_TITLE .. " · " .. label) or L.WANTED_TITLE
+-- The page's title with the group (above), and on a PvE (or RP) group the line saying whose kills its
+-- list holds (nil on any other).
+function Wanted.Heading()
+	local label, kind = Wanted.GroupLabel()
+	return label and (L.WANTED_TITLE .. " · " .. label) or L.WANTED_TITLE, kind and Wanted.FLAGGED_KINDS[kind] and L.WANTED_PVE_LINE or nil
 end
-local function About(text)
-	local _, kind = Wanted.GroupLabel()
-	if kind and Wanted.FLAGGED_KINDS[kind] then return L.WANTED_PVE_LINE .. "\n" .. text end
-	return text
+-- The title and the page's text, that line first.
+local function Header(about)
+	local title, flagged = Wanted.Heading()
+	return title, flagged and (flagged .. "\n" .. about) or about
 end
 
 function Wanted.Build()
 	if mode == "rules" then
 		local lines = Wanted.Rules and Wanted.Rules.Lines("wanted-slayers", Wanted.CloseRules)
-		if lines then return lines, Wanted.Title(), About(L.WANTED_ABOUT) end
+		if lines then return lines, Header(L.WANTED_ABOUT) end
 		Wanted.rulesReturn = nil
 		mode, opened = "list", nil
-		return {}, Wanted.Title(), About(L.WANTED_ABOUT)
+		return {}, Header(L.WANTED_ABOUT)
 	end
 	if mode == "review" then
 		local lines = FramesLines()
 		if mode == "review" then return lines, L.WANTED_REVIEW_TITLE, L.WANTED_REVIEW_ABOUT end
-		return lines, Wanted.Title(), About(L.WANTED_ABOUT)
+		return lines, Header(L.WANTED_ABOUT)
 	end
 	local lines = mode == "target" and TargetLines() or ListLines()
 	local g = Wanted.GlobalSnapshot()
 	local note = g and L.WANTED_SIGNED_HELD:format(IssuerName(g.issuer), DaysLeft(g.expires)) or L.WANTED_AUTHORITY_OFF
-	return lines, Wanted.Title(), About(L.WANTED_ABOUT .. "\n" .. Grey(note))
+	return lines, Header(L.WANTED_ABOUT .. "\n" .. Grey(note))
 end
 
 -- The entry open now, while it is on the list (a reviewer's Remove).
@@ -6513,9 +6513,9 @@ function Wanted.StatusText()
 	end
 	-- (1.5.5) Which realm group's list this is, as the page's title names it, and on a PvE group
 	-- whose kills it holds.
-	Add(Wanted.Title())
-	local _, kind = Wanted.GroupLabel()
-	if kind and Wanted.FLAGGED_KINDS[kind] then Add(L.WANTED_PVE_LINE) end
+	local title, flagged = Wanted.Heading()
+	Add(title)
+	if flagged then Add(flagged) end
 	Add(L.WANTED_STATUS_STORE:format(tostring(ns.group or ns.realm or "?"), tostring(ns.faction or "?"), active, held, off, rows,
 		Count(s and s.slayers or {}), s and L.WANTED_STATUS_YES or L.WANTED_STATUS_NO))
 	local C = ns.Comm
