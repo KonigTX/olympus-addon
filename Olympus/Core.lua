@@ -258,17 +258,31 @@ end
 -- What kind of realm each known realm is, "pvp" or "pve", by its name in "Name-Realm" form (the
 -- Companion shows a PvP realm group's Wanted list to the PvE realms' players with a line saying it
 -- comes from PvP: BridgeSections.lua's membership and wanted). Olympus reads no realm type from the
--- game, so a realm is known only when it is named here. The launch realms are not known yet (the
--- author fills them in once they are), so it ships empty: every realm is unknown (ns.RealmPvP nil)
--- and the Companion's relay falls back to its own list of PvP realm groups.
+-- game, so a realm is known only when it is named here, or by its own name on Forever (below). It
+-- ships empty; the Companion's relay falls back to its own list of PvP realm groups for a realm
+-- nothing names.
 ns.REALM_KIND = {}
 
--- Whether a realm is a PvP realm: true or false for a realm ns.REALM_KIND names, nil for any other.
+-- Whether a realm is a PvP realm: true or false for a realm ns.REALM_KIND names; else (1.5.5) by its
+-- ruleset. ns.REALM_KIND was never filled, so every Forever realm was unknown and the Companion could
+-- not keep the PvP group's Wanted list apart from the PvE group's. A Forever realm names its ruleset
+-- in its own name (ForeverFamily: "CAMWOWUS2Realm7PvP"): PvP and RP-PvP realms are PvP realms, PvE
+-- and RP realms are not. Any other realm by the author's signed realm table (ns.RealmInfo). nil for
+-- a Hardcore realm and for a realm nothing names.
+local REALM_PVP = { pvp = true, rppvp = true, pve = false, rp = false }
 function ns.RealmPvP(realm)
 	local kinds = ns.REALM_KIND
 	local kind = type(realm) == "string" and type(kinds) == "table" and kinds[realm] or nil
 	if kind == "pvp" then return true end
 	if kind == "pve" then return false end
+	if type(realm) ~= "string" or realm == "" then return nil end
+	local family = ForeverFamily(realm)
+	local rules = family and family:match("^Forever(%a+)$")
+	if rules then return REALM_PVP[rules:lower()] end
+	if type(ns.RealmInfo) == "function" then
+		local ok, info = pcall(ns.RealmInfo, realm)
+		if ok and type(info) == "table" and type(info.kind) == "string" then return REALM_PVP[info.kind] end
+	end
 	return nil
 end
 

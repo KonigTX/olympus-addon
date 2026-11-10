@@ -29178,9 +29178,11 @@ test("1.2.6 companion sections: guilds, rankings and wanted carry only public ro
 		eq(rankings.treasury, nil, "no treasury numbers while the King keeps the balance private")
 		eq(type(rankings.crafting), "table")
 		-- (1.2.6, the Companion's Rankings tab: `boards`, each public board's rows and the player's own
-		-- place, BridgeSections.lua; tests/bridge-people.lua checks what each holds.)
+		-- place, BridgeSections.lua; tests/bridge-people.lua checks what each holds. 1.5.5: and the realm
+		-- group they are of, realmGroup and pvp, which name nobody: tests/bridge-membership.lua's.)
 		for k in pairs(rankings) do
-			assert(({ slayers = true, donors = true, church = true, games = true, crafting = true, treasury = true, boards = true })[k], "ranking " .. k)
+			assert(({ slayers = true, donors = true, church = true, games = true, crafting = true, treasury = true, boards = true,
+				realmGroup = true, pvp = true })[k], "ranking " .. k)
 		end
 
 		eq(rankings.church.missionaries[1], "Pious"); eq(rankings.staff, nil, "only the public kinds")

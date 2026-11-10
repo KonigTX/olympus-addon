@@ -98,10 +98,10 @@ end
 function Kit.Same(a, b)
 	return type(a) == "string" and type(b) == "string" and a ~= "" and ns.Fold(ns.FullName(a)) == ns.Fold(ns.FullName(b))
 end
--- Realm(): this character's census realm group (ns.GroupOf of his realm, "A+B" for linked realms)
---   and whether his realm is a PvP realm (ns.RealmPvP: true or false where ns.REALM_KIND names it,
---   nil for an unknown realm, as every realm is until the launch realms are named); each nil when
---   it can't be told. Names nobody.
+-- Realm(): this character's census realm group (ns.GroupOf of his realm, "A+B" for linked realms;
+--   on Forever its family, "ForeverPvE") and whether his realm is a PvP realm (ns.RealmPvP: true or
+--   false where ns.REALM_KIND names it, or by a Forever realm's ruleset, 1.5.5; nil for a realm
+--   nothing names); each nil when it can't be told. Names nobody.
 function Kit.Realm()
 	local realm = ns.realm
 	if type(realm) ~= "string" or realm == "" then
@@ -252,13 +252,17 @@ local function DonorBoards(out, donors)
 	end
 end
 
--- The Wanted tab's Slayers boards (Wanted.Rankings): this month's and all time's.
+-- The Wanted tab's Slayers boards (Wanted.Rankings): this month's and all time's. (1.5.5) Each says
+-- whose realm group it is, realmGroup and pvp (Kit.Realm), as the "wanted" section does: every realm
+-- group keeps its own list and its own Slayers, and the Companion keeps them apart by these.
 local function WantedBoards(out)
 	local rank = Try("Wanted", "Rankings")
 	if type(rank) ~= "table" then return end
 	local guid = type(UnitGUID) == "function" and UnitGUID("player") or nil
+	local realmGroup, pvp = Kit.Realm()
 	for _, period in ipairs({ "month", "all" }) do
 		local b = Board("wanted", period, "place~points~claims~name")
+		b.realmGroup, b.pvp = realmGroup, pvp
 		for i, r in ipairs(type(rank[period]) == "table" and rank[period] or {}) do
 			if type(r) == "table" then
 				local place = Whole(r.place) > 0 and Whole(r.place) or i
@@ -292,9 +296,12 @@ end
 -- crafting ranking as the Realm's crafting page lists it, and the Treasury's spending only while
 -- the King shows the balance (numbers alone). 1.2.6 (the Companion's Rankings tab): `boards`, every
 -- board above with its rows and this character's own place (Boards); nothing before the Accord.
+-- (1.5.5) realmGroup and pvp (Kit.Realm): every ranking here is this character's realm group's own,
+-- the legacy Slayers lists too, and the Companion keeps the PvP group's apart from the PvE group's.
 OlympusBridge.RegisterSection("rankings", 1, function()
 	if not Open() then return nil end
 	local out = {}
+	out.realmGroup, out.pvp = Kit.Realm()
 	local API = ns.API
 	if type(API) == "table" and type(API.Rankings) == "function" then
 		local ok, rankings = pcall(API.Rankings)
@@ -446,7 +453,7 @@ end
 -- Membership names nobody and is therefore safe to export before the Companion disclosure is
 -- accepted. `olympus` comes only from this character's native guild membership plus Olympus's
 -- fixed/signed guild rule; a census row is never authority. `accord` controls every named export.
--- realmGroup and pvp are Kit.Realm's (pvp absent for a realm ns.REALM_KIND does not name), and
+-- realmGroup and pvp are Kit.Realm's (pvp absent for a realm nothing names: ns.RealmPvP), and
 -- faction the game's, which the Companion pairs with self's character and guild once both are
 -- given (a faction and a realm group name nobody).
 OlympusBridge.RegisterSection("membership", 1, function()
