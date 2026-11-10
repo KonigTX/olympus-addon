@@ -416,11 +416,19 @@ end
 -- (a WoW: Forever realm, ns.ForeverFamily), whether this copy's TOC lists that interface
 -- (ns.TOC_INTERFACES, the Interface line of Olympus.toc: a test keeps them one), whether its files are
 -- of one version (the TOC's, Olympus_Arena's and the site reporter's against ns.VERSION), and whether
--- a newer Olympus runs around it (the author's released version, Workshop.Behind, or INSTALL_PEERS
--- guildmates' hellos naming one newer release). Any of the last three is said at login, once a session.
+-- a newer Olympus is out (the author's released version, Workshop.Behind).
+-- Said at login, once a session, only when something is really wrong ("problems"): a game this copy
+-- was not made for (no interface of that game in its TOC), files of two versions, or the author's
+-- released version newer than ours. A patch of a game it was made for whose number its TOC does not
+-- list (Forever's next interface, 16006, before an Olympus lists it) is a note in /oly bug alone: no
+-- Olympus for it exists yet, and every player on that patch would be told to update. Guildmates'
+-- hellos are never trusted for it: they are unsigned (two testers on a test build, or two forged
+-- hellos, name any version); /oly bug shows the newest they named, marked so, and nothing else.
+-- The author's version comes only from his presence (V4) under a name pinned as his
+-- (Workshop.HandlePresence, ns.IsAuthorName).
 ---------------------------------------------------------------------------
 ns.TOC_INTERFACES = { 11509, 11510, 16001, 16002, 16003, 16004, 16005, 16010, 16100, 20506, 20507 }
-ns.INSTALL_PEERS = 2 -- guildmates on one newer release before it counts (a hello alone could be anyone's)
+ns.INSTALL_PEERS = 2 -- guildmates on one newer release before /oly bug shows it (shown only: never a problem)
 
 local function ClientOf(toc)
 	if toc >= 16000 and toc < 20000 then return "Forever" end
@@ -428,6 +436,9 @@ local function ClientOf(toc)
 	if toc >= 10000 and toc < 16000 then return "Era" end
 	return "?"
 end
+-- The CurseForge app's installation to pick, per game: the hint names the player's own game (none
+-- for a game Olympus is not made for).
+local FLAVOR = { Forever = "INSTALL_FLAVOR", Era = "INSTALL_FLAVOR_ERA", Anniversary = "INSTALL_FLAVOR_ANNIVERSARY" }
 local function Meta(addon, field)
 	local AO = C_AddOns
 	local get = type(AO) == "table" and AO.GetAddOnMetadata or nil
@@ -435,7 +446,7 @@ local function Meta(addon, field)
 	return type(v) == "string" and v ~= "" and v or nil
 end
 -- The newest release INSTALL_PEERS guildmates or more ran by their hellos (Comm.PeerVersions), and
--- how many: only one newer than ours, else nil.
+-- how many: only one newer than ours, else nil. Shown in /oly bug as unsigned; never a problem.
 local function PeersNewer()
 	local C, W = ns.Comm, ns.Workshop
 	local counts = type(C) == "table" and type(C.PeerVersions) == "function" and Try(C.PeerVersions) or nil
@@ -449,7 +460,9 @@ local function PeersNewer()
 end
 
 -- { client, toc, game, build, project, realm, family, group, version, tocVersion, arena, site,
---   declared, author, peers, peersCount, problems = { "toc" | "mixed" | "behind" ... } }
+--   declared, note ("newer" | "older" | "unlisted": a patch of this game the TOC does not list;
+--   "unread": no interface from the client),
+--   author, behind, peers, peersCount (unsigned: shown only), problems = { "toc" | "mixed" | "behind" ... } }
 function ns.Install()
 	local okB, game, build, _, toc = pcall(GetBuildInfo)
 	toc = okB and tonumber(toc) or 0
@@ -462,10 +475,20 @@ function ns.Install()
 		site = Meta("OlympusSiteAggregate", "Version"), problems = {},
 	}
 	s.declared = false
-	for _, n in ipairs(ns.TOC_INTERFACES) do if n == toc then s.declared = true break end end
+	local lowest, highest -- this game's interfaces in the TOC
+	for _, n in ipairs(ns.TOC_INTERFACES) do
+		if n == toc then s.declared = true end
+		if ClientOf(n) == s.client then lowest, highest = math.min(lowest or n, n), math.max(highest or n, n) end
+	end
 	s.author = type(W) == "table" and type(W.AuthorVersion) == "function" and Try(W.AuthorVersion) or nil
 	s.peers, s.peersCount = PeersNewer()
-	if not s.declared then s.problems[#s.problems + 1] = "toc" end
+	if not s.declared then
+		-- A patch of a game this copy is made for: a note (the game loads it as out of date). Another
+		-- game's interface: a problem. An interface the client did not give: nothing to judge, a note.
+		if toc <= 0 then s.note = "unread"
+		elseif highest then s.note = toc > highest and "newer" or (toc < lowest and "older" or "unlisted")
+		else s.problems[#s.problems + 1] = "toc" end
+	end
 	-- (Ours, or ours and a build of it: an arena test build's TOC says "1.5.5-test.3", the site
 	-- reporter's "1.5.5-site.1", scripts/package.sh; the arena module's is ours alone.)
 	local function Ours(v) return v == s.version or v:sub(1, #s.version + 1) == s.version .. "-" end
@@ -473,24 +496,32 @@ function ns.Install()
 	elseif s.arena and s.arena ~= s.version then s.odd = s.arena
 	elseif s.site and not Ours(s.site) then s.odd = s.site end
 	if s.odd then s.problems[#s.problems + 1] = "mixed" end
-	local behind = type(W) == "table" and type(W.Behind) == "function" and Try(W.Behind) or nil
-	if behind or s.peers then s.problems[#s.problems + 1] = "behind" end
-	s.behind = behind or s.peers
+	-- Behind the author's released version alone (his presence, under a name pinned as his).
+	s.behind = type(W) == "table" and type(W.Behind) == "function" and Try(W.Behind) or nil
+	if s.behind then s.problems[#s.problems + 1] = "behind" end
 	return s
 end
 
--- The install's line for /oly bug.
+-- The install's lines for /oly bug: the problems and the game (the problems first: a line cut at
+-- DEBUG_LINE keeps them), then the files and the versions heard.
 function ns.InstallLine()
 	local s = ns.Install()
-	return ("install: client %s (toc %s, game %s build %s, project %s, listed in Olympus.toc: %s)  |  realm family %s, group %s  |  Olympus %s (toc %s, arena %s, site %s)  |  newest heard: author %s, guild %s  |  problems: %s"):format(
-		s.client, tostring(s.toc), s.game, s.build, tostring(s.project or "?"), s.declared and "yes" or "NO",
-		tostring(s.family or "none"), tostring(s.group or "?"), s.version, tostring(s.tocVersion or "?"),
-		tostring(s.arena or "not installed"), tostring(s.site or "not installed"), tostring(s.author or "none"),
-		s.peers and (s.peers .. " x" .. tostring(s.peersCount)) or "none newer",
-		#s.problems > 0 and table.concat(s.problems, ", ") or "none")
+	local listed = s.declared and "yes" or (s.note == "unread" and "interface not read: a note, not told")
+		or (s.note and ("no, %s %s patch: a note, not told"):format(s.note, s.client)) or "NO"
+	return ("install: problems %s  |  client %s (toc %s, in Olympus.toc: %s; game %s build %s, project %s)  |  realm family %s, group %s"):format(
+		#s.problems > 0 and table.concat(s.problems, ", ") or "none", s.client, tostring(s.toc), listed, s.game, s.build,
+		tostring(s.project or "?"), tostring(s.family or "none"), tostring(s.group or "?"))
+end
+function ns.InstallFilesLine()
+	local s = ns.Install()
+	return ("install files: Olympus %s (toc %s, arena %s, site %s)  |  released: author %s, guild hellos %s"):format(
+		s.version, tostring(s.tocVersion or "?"), tostring(s.arena or "not installed"), tostring(s.site or "not installed"),
+		tostring(s.author or "none"), s.peers and (s.peers .. " x" .. tostring(s.peersCount) .. " (unsigned)") or "none newer")
 end
 
--- What the player is told (once a session for each problem): the lines, or an empty list.
+-- What the player is told (once a session for each problem): the lines, or an empty list. "behind"
+-- has its own line already (Workshop.HeardVersion: BEHIND_CHAT); the CurseForge app's installation
+-- for this game follows any of them.
 local installTold = {}
 function ns.InstallWarnings()
 	local s, out = ns.Install(), {}
@@ -498,16 +529,13 @@ function ns.InstallWarnings()
 		if not installTold[p] then
 			installTold[p] = true
 			if p == "toc" then out[#out + 1] = L.INSTALL_TOC:format(s.version, tostring(s.toc))
-			elseif p == "mixed" then out[#out + 1] = L.INSTALL_MIXED:format(s.version, tostring(s.odd))
-			elseif p == "behind" and s.peers and not (ns.Workshop and ns.Workshop.Behind and Try(ns.Workshop.Behind)) then
-				out[#out + 1] = L.INSTALL_BEHIND:format(s.peers, s.peersCount, s.version)
-			end
+			elseif p == "mixed" then out[#out + 1] = L.INSTALL_MIXED:format(s.version, tostring(s.odd)) end
 		end
 	end
-	-- The CurseForge app's flavor, after any of them (the author's own line says he is behind).
-	if #s.problems > 0 and not installTold.flavor then
+	local flavor = FLAVOR[s.client]
+	if #s.problems > 0 and flavor and not installTold.flavor then
 		installTold.flavor = true
-		out[#out + 1] = L.INSTALL_FLAVOR
+		out[#out + 1] = L[flavor]
 	end
 	return out
 end
@@ -637,6 +665,7 @@ function ns.DebugLines()
 	local lines = { "debug (1.5.5):" }
 	local function add(line) lines[#lines + 1] = Cap(tostring(line)) end
 	add(Try(ns.InstallLine) or "install: ?")
+	add(Try(ns.InstallFilesLine) or "install files: ?")
 	add(Try(PiecesLine) or "pieces: ?")
 	add(Try(RelayReporterLine) or "relay: ?")
 	for _, line in ipairs(Try(CensusLines) or { "census: ?" }) do add(line) end

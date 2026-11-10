@@ -60,52 +60,127 @@ test("1.5.5 install: a Forever client this copy lists, its files of one version,
 		eq(s.client, "Forever"); eq(s.declared, true); eq(#s.problems, 0, table.concat(s.problems, ","))
 		eq(#ns.InstallWarnings(), 0, "nothing said")
 		local line = ns.InstallLine()
-		assert(line:find("client Forever (toc 16001", 1, true) and line:find("problems: none", 1, true), line)
+		assert(line:find("install: problems none  |  client Forever (toc 16001, in Olympus.toc: yes", 1, true), line)
 		local report = ns.BuildBugReport()
 		assert(not report:find("INSTALL PROBLEM", 1, true), "no install line on top")
-		assert(report:find("\ndebug (1.5.5):\ninstall: client Forever", 1, true), "the debug section, its install line first")
+		assert(report:find("\ndebug (1.5.5):\ninstall: problems none  |  client Forever", 1, true), "the debug section, its install line first")
 	end)
 	-- Era and Anniversary are clients this copy lists too.
 	WithInstall({ toc = 11510 }, function() eq(ns.Install().client, "Era"); eq(#ns.Install().problems, 0) end)
 	WithInstall({ toc = 20507 }, function() eq(ns.Install().client, "Anniversary"); eq(#ns.Install().problems, 0) end)
 end)
 
-test("1.5.5 install: a newer release on two guildmates' clients is told once a session, with the CurseForge app's installation to pick; one guildmate's hello is not enough", function()
+-- (The independent check of the 1.5.5 lane: two guildmates on a test build of the next version, or
+-- two forged hellos, made every guildmate see "INSTALL PROBLEM: behind" and an update notice with
+-- nothing on CurseForge. Hellos are unsigned: shown in /oly bug, marked so, never a problem.)
+test("1.5.5 install: guildmates' hellos never make an install problem, however many name a newer release; only the author's released version does", function()
+	for _, count in ipairs({ 2, 40 }) do
+		WithInstall({ peers = { [ns.VERSION] = 3, [NEWER] = count } }, function()
+			local s = ns.Install()
+			eq(#s.problems, 0, count .. " hellos: " .. table.concat(s.problems, ",")); eq(s.behind, nil)
+			eq(#ns.InstallWarnings(), 0, count .. " hellos: nothing said at login")
+			assert(not ns.BuildBugReport():find("INSTALL PROBLEM", 1, true), count .. " hellos: no install line on top")
+			assert(ns.InstallFilesLine():find("guild hellos " .. NEWER .. " x" .. count .. " (unsigned)", 1, true), ns.InstallFilesLine())
+		end)
+	end
 	WithInstall({ peers = { [ns.VERSION] = 3, [NEWER] = 1 } }, function()
-		eq(#ns.Install().problems, 0, "one hello naming a newer version could be anyone's")
+		eq(#ns.Install().problems, 0)
+		assert(ns.InstallFilesLine():find("guild hellos none newer", 1, true), ns.InstallFilesLine())
 	end)
 	WithInstall({ peers = { [ns.VERSION] = 3, [NEWER .. "-mod"] = 5, ["?"] = 4 } }, function()
 		eq(#ns.Install().problems, 0, "no release's form, no version")
 	end)
-	WithInstall({ peers = { [ns.VERSION] = 3, [NEWER] = 2 } }, function()
+	-- The author's released version newer (his presence, under a name pinned as his: Workshop.Behind):
+	-- his own line says so (Workshop.HeardVersion), this adds the app's installation.
+	WithInstall({ behind = NEWER, peers = { [ns.VERSION] = 3 } }, function()
 		local s = ns.Install()
-		assert(Has(s.problems, "behind"), "behind"); eq(s.peers, NEWER); eq(s.peersCount, 2)
+		eq(table.concat(s.problems, ","), "behind"); eq(s.behind, NEWER)
 		local said = ns.InstallWarnings()
-		eq(#said, 2)
-		eq(said[1], ns.L.INSTALL_BEHIND:format(NEWER, 2, ns.VERSION))
-		eq(said[2], ns.L.INSTALL_FLAVOR)
+		eq(#said, 1); eq(said[1], ns.L.INSTALL_FLAVOR)
 		eq(#ns.InstallWarnings(), 0, "once a session")
 		local report = ns.BuildBugReport()
 		assert(report:find("^```\nINSTALL PROBLEM: behind %(Olympus " .. ns.VERSION:gsub("%.", "%%.")), report:sub(1, 200))
-		assert(ns.InstallLine():find("guild " .. NEWER .. " x2", 1, true), ns.InstallLine())
-	end)
-	-- The author's released version newer: his own line says so (Workshop), this adds the app's installation.
-	WithInstall({ behind = NEWER }, function()
-		local said = ns.InstallWarnings()
-		eq(#said, 1); eq(said[1], ns.L.INSTALL_FLAVOR)
-		assert(ns.InstallLine():find("author " .. NEWER, 1, true), ns.InstallLine())
+		assert(ns.InstallFilesLine():find("released: author " .. NEWER, 1, true), ns.InstallFilesLine())
 	end)
 end)
 
-test("1.5.5 install: a client this copy does not list, and files of two versions (an arena or a site reporter left from another install), are told and head /oly bug", function()
-	WithInstall({ toc = 16200 }, function()
+-- (The independent check: the "toc" problem matched the interface number exactly, so Forever's next
+-- patch, before an Olympus lists it, would have told every player at login to update and to change
+-- the CurseForge app's installation, with no update to get.)
+test("1.5.5 install: a patch of a game this copy is made for whose number Olympus.toc does not list is a note in /oly bug alone, never told", function()
+	-- (Olympus.toc lists Forever's 16001-16005, 16010 and 16100: its 16006 falls between them.)
+	local patches = { { 16006, "Forever", "unlisted" }, { 16200, "Forever", "newer" }, { 11511, "Era", "newer" },
+		{ 11508, "Era", "older" }, { 20508, "Anniversary", "newer" } }
+	for _, p in ipairs(patches) do
+		local toc, client, note = p[1], p[2], p[3]
+		WithInstall({ toc = toc }, function()
+			local s = ns.Install()
+			eq(#s.problems, 0, toc .. ": " .. table.concat(s.problems, ","))
+			eq(#ns.InstallWarnings(), 0, toc .. ": nothing said at login")
+			assert(not ns.BuildBugReport():find("INSTALL PROBLEM", 1, true), toc .. ": no install line on top")
+			eq(s.client, client); eq(s.declared, false); eq(s.note, note, toc .. "'s note")
+			local line = ("install: problems none  |  client %s (toc %d, in Olympus.toc: no, %s %s patch: a note, not told"):format(client, toc, note, client)
+			assert(ns.InstallLine():find(line, 1, true), ns.InstallLine())
+		end)
+	end
+	-- No interface from the client (GetBuildInfo failing): nothing to judge, a note too.
+	WithInstall({}, function()
+		GetBuildInfo = function() error("no build info") end
 		local s = ns.Install()
-		eq(s.client, "Forever"); eq(s.declared, false); assert(Has(s.problems, "toc"))
-		local said = ns.InstallWarnings()
-		eq(said[1], ns.L.INSTALL_TOC:format(ns.VERSION, "16200")); eq(said[2], ns.L.INSTALL_FLAVOR)
-		assert(ns.BuildBugReport():find("INSTALL PROBLEM: toc", 1, true))
-		assert(ns.InstallLine():find("listed in Olympus.toc: NO", 1, true))
+		eq(#s.problems, 0, table.concat(s.problems, ",")); eq(#ns.InstallWarnings(), 0); eq(s.note, "unread")
+		assert(ns.InstallLine():find("in Olympus.toc: interface not read: a note, not told", 1, true), ns.InstallLine())
 	end)
+	-- On such a patch, files of two versions are still a problem, told with the game's own installation.
+	WithInstall({ toc = 16006, arena = "1.4.6" }, function()
+		eq(table.concat(ns.Install().problems, ","), "mixed")
+		local said = ns.InstallWarnings()
+		eq(#said, 2); eq(said[1], ns.L.INSTALL_MIXED:format(ns.VERSION, "1.4.6")); eq(said[2], ns.L.INSTALL_FLAVOR)
+	end)
+end)
+
+-- (The independent check: the CurseForge app hint always named WoW: Forever, wrong advice on the Era
+-- and Anniversary clients the TOC also lists; followed, it caused the wrong-flavor install it is for.)
+test("1.5.5 install: the CurseForge app's installation the hint names is the player's own game: Forever, Era or Anniversary", function()
+	for toc, key in pairs({ [16001] = "INSTALL_FLAVOR", [11510] = "INSTALL_FLAVOR_ERA", [20507] = "INSTALL_FLAVOR_ANNIVERSARY" }) do
+		WithInstall({ toc = toc, arena = "1.4.6" }, function()
+			local said = ns.InstallWarnings()
+			eq(#said, 2, toc .. ": the problem, then the hint")
+			eq(said[1], ns.L.INSTALL_MIXED:format(ns.VERSION, "1.4.6"))
+			eq(said[2], ns.L[key], toc .. ": " .. key)
+		end)
+		WithInstall({ toc = toc, behind = NEWER }, function()
+			local said = ns.InstallWarnings()
+			eq(#said, 1); eq(said[1], ns.L[key], toc .. " behind: " .. key)
+		end)
+	end
+	-- Each hint names its own game's installation, in every language file.
+	local names = { INSTALL_FLAVOR = "WoW: Forever,", INSTALL_FLAVOR_ERA = "_classic_era_", INSTALL_FLAVOR_ANNIVERSARY = "_anniversary_" }
+	for key, name in pairs(names) do assert(ns.L[key]:find(name, 1, true), key .. ": " .. ns.L[key]) end
+	local found = {}
+	for _, file in ipairs({ "Locales.lua", "Locales/deDE.lua", "Locales/esES.lua", "Locales/frFR.lua", "Locales/itIT.lua", "Locales/ruRU.lua" }) do
+		for line in io.lines(ROOT .. "Olympus/" .. file) do
+			local key = line:match("^%s*L?%.?(INSTALL_FLAVOR[%u_]*) = ")
+			if key then
+				assert(names[key] and line:find(names[key], 1, true), file .. ": " .. line)
+				found[key] = (found[key] or 0) + 1
+			end
+		end
+	end
+	for key in pairs(names) do eq(found[key], 7, key .. " in the 7 languages") end
+end)
+
+test("1.5.5 install: another game's interface (none of that game's in Olympus.toc) and files of two versions (an arena or a site reporter left from another install) are told and head /oly bug", function()
+	for _, toc in ipairs({ 50500, 110205 }) do
+		WithInstall({ toc = toc }, function()
+			local s = ns.Install()
+			eq(s.client, "?"); eq(s.declared, false); eq(s.note, nil); assert(Has(s.problems, "toc"))
+			local said = ns.InstallWarnings()
+			eq(#said, 1, toc .. ": no CurseForge installation to name for a game Olympus is not made for")
+			eq(said[1], ns.L.INSTALL_TOC:format(ns.VERSION, tostring(toc)))
+			assert(ns.BuildBugReport():find("INSTALL PROBLEM: toc", 1, true))
+			assert(ns.InstallLine():find("in Olympus.toc: NO", 1, true), ns.InstallLine())
+		end)
+	end
 	WithInstall({ arena = "1.4.6" }, function()
 		assert(Has(ns.Install().problems, "mixed"), "an old arena folder")
 		eq(ns.InstallWarnings()[1], ns.L.INSTALL_MIXED:format(ns.VERSION, "1.4.6"))
@@ -116,9 +191,29 @@ test("1.5.5 install: a client this copy does not list, and files of two versions
 	WithInstall({ tocVersion = ns.VERSION .. "-test.3" }, function() eq(#ns.Install().problems, 0, "an arena test build's TOC (scripts/package.sh --test)") end)
 	WithInstall({ arena = ns.VERSION .. "-test.3" }, function() assert(Has(ns.Install().problems, "mixed"), "the arena module's version is ours alone") end)
 	-- The message in every language keeps the English one's codes (tests/locales-full.lua checks the rest).
-	for _, k in ipairs({ "INSTALL_BEHIND", "INSTALL_TOC", "INSTALL_MIXED", "INSTALL_FLAVOR" }) do
+	for _, k in ipairs({ "INSTALL_TOC", "INSTALL_MIXED", "INSTALL_FLAVOR", "INSTALL_FLAVOR_ERA", "INSTALL_FLAVOR_ANNIVERSARY" }) do
 		assert(type(ns.L[k]) == "string" and ns.L[k] ~= k, k)
 	end
+end)
+
+test("1.5.5 install: /oly bug's install lines name the problems first and each stays within one debug line, their longest fields filled", function()
+	local savedRealm, savedGroup = ns.realm, ns.group
+	local ok, err = pcall(function()
+		ns.realm, ns.group = "CAMWOWUS12Realm12PvE", "ForeverPvE"
+		WithInstall({ toc = 20508, game = "2.5.5", tocVersion = ns.VERSION .. "-test.12", arena = "1.4.6", site = "1.4.6-site.12",
+			behind = "10.12.12", peers = { [ns.VERSION] = 3, ["10.12.13"] = 120 } }, function()
+			local line, files = ns.InstallLine(), ns.InstallFilesLine()
+			assert(line:find("^install: problems mixed, behind  |  client Anniversary %(toc 20508, in Olympus%.toc: no, newer Anniversary patch"), line)
+			assert(files:find("^install files: Olympus " .. ns.VERSION:gsub("%.", "%%.") .. " %(toc "), files)
+			assert(files:find("released: author 10.12.12, guild hellos 10.12.13 x120 (unsigned)", 1, true), files)
+			assert(#line <= ns.DEBUG_LINE, #line .. " bytes: " .. line)
+			assert(#files <= ns.DEBUG_LINE, #files .. " bytes: " .. files)
+			local debug = table.concat(ns.DebugLines(), "\n")
+			assert(debug:find("\n" .. line .. "\n" .. files .. "\n", 1, true), "both in the debug section, whole: " .. debug)
+		end)
+	end)
+	ns.realm, ns.group = savedRealm, savedGroup
+	if not ok then error(err, 0) end
 end)
 
 test("1.5.5 /oly bug debug: per kind of message in pieces, what was put together, dropped incomplete (stale, old) or refused (full, bad, restart)", function()

@@ -3274,10 +3274,11 @@ how many arrived, were put together, were dropped incomplete or were refused, an
 shows the relay and the reporter, the census's sources per realm group with their ages, the
 signed lists held, and the chat values the game kept secret. It holds counts, not other players'
 names or BattleTags. If your copy of Olympus does not fit the game, the report's first line says
-so, and the chat tells you at login. That happens with a copy made for another game version,
-with files of two versions, or with a version older than the one two guildmates run. In the
-CurseForge app, pick the installation of the game you play (WoW: Forever, not Classic), then
-update.
+so, and the chat tells you at login. That happens with a copy made for another game, with files
+of two versions, or with a version older than the one the author marked as released. The chat
+then names the CurseForge app's installation to pick for your game (WoW: Forever, Classic Era or
+TBC Anniversary). A patch of your game newer than the ones Olympus lists is only a note in the
+debug section, and the versions your guildmates run are shown there but never warned about.
 
 ## Integrating with Olympus
 
