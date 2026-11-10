@@ -1345,3 +1345,36 @@ test("1.2.4 Church: picking the Church's room says nothing of those it would mis
 	for i = before + 1, #m1.printed do if m1.printed[i]:find("were not reached", 1, true) then told = true end end
 	eq(told, true, "said when he writes")
 end)
+
+-- 1.5.5 (the author, 2026-11-10: "pegar essa lista e assinar ela direto na atualização 1.5.5, porque eu acho que
+-- não chegou para ninguém"): the Twelve came in one signed titles list that only a paste and the relay could
+-- carry. The release carries it now (Olympus/SignedLists.lua, ns.SHIPPED_LISTS: in the zip alone, written by
+-- scripts/package.sh): every client holds the Apostles from its first login, checked with the key as any list.
+test("1.5.5 Church: the Twelve Apostles from the signed lists the release carries; a newer list still decides", function()
+	local K = World.COUNCIL
+	local saved = { council = ns.rdb.council, titles = ns.rdb.councilTitles, shipped = ns.SHIPPED_LISTS, fire = ns.Fire, after = ns.After }
+	local ok, err = pcall(function()
+		ns.rdb.council, ns.rdb.councilTitles = nil, nil
+		ns.Fire, ns.After = function() end, function() end
+		local w = World.New({})
+		local cl = w:Client("Plain Member", { real = true })
+		eq(#w:As(cl, cl.Church.SignedApostles), 0, "no list held: no Apostle")
+		-- A forged copy (an Apostle's name changed) is no list.
+		ns.SHIPPED_LISTS = { { K.names, (K.titles2:gsub("Aldric Vane%-Realm", "Forger Name-Realm", 1)) } }
+		ns.Sign.WithKey(K.N, K.MU, K.K, function() ns.Workshop.CouncilLogin() end)
+		eq(#w:As(cl, cl.Church.SignedApostles), 0, "a forged list")
+		ns.SHIPPED_LISTS = { { K.names, K.titles2 } }
+		ns.Sign.WithKey(K.N, K.MU, K.K, function() ns.Workshop.CouncilLogin() end)
+		eq(#w:As(cl, cl.Church.SignedApostles), 12, "the release's list: twelve")
+		eq(w:As(cl, cl.Church.Role, "Bera Stone-Realm"), "A")
+		eq(w:As(cl, cl.Church.State).apostles, 12)
+		-- A newer signed list (relayed or pasted) decides, and the release's never comes back over it.
+		ns.Sign.WithKey(K.N, K.MU, K.K, function() assert(ns.Workshop.TakeTitles(K.titles3)) end)
+		eq(w:As(cl, cl.Church.Role, "Bera Stone-Realm"), nil, "a newer list without her")
+		ns.Sign.WithKey(K.N, K.MU, K.K, function() ns.Workshop.CouncilLogin() end)
+		eq(w:As(cl, cl.Church.Role, "Bera Stone-Realm"), nil, "the next login: the newer list stays")
+		eq(#w:As(cl, cl.Church.SignedApostles), 2)
+	end)
+	ns.rdb.council, ns.rdb.councilTitles, ns.SHIPPED_LISTS, ns.Fire, ns.After = saved.council, saved.titles, saved.shipped, saved.fire, saved.after
+	if not ok then error(err, 0) end
+end)

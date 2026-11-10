@@ -2921,6 +2921,29 @@ function Workshop.ResetIcons()
 	lastIconSent = -math.huge
 end
 
+-- 1.5.5 (the author: "era bom que na versão 1.5.5 estivesse arrumado e a lista assinada já no
+-- arquivo"): the signed lists the release carries. The Twelve Apostles came in one titles list that
+-- only a paste and the relays carried, and it reached almost nobody. scripts/package.sh now puts
+-- the author's signed lists in the zip (Olympus/SignedLists.lua, written by scripts/ship-lists.lua
+-- and named in the zip's TOC alone; the repository never holds them): ns.SHIPPED_LISTS, a { names,
+-- titles } pair for each realm group, as signed. Each is taken as the author's own file is
+-- (TakeCouncil, TakeTitles: the key, our realm group, only one newer than the list held), so a
+-- newer list relayed or pasted since stays, another group's is left out and a changed one is
+-- refused. They are no author's file: ns.COUNCIL_SIGNED and ns.COUNCIL_TITLES mark his machine
+-- (AuthorLists, ns.CouncilVisible) and stay his alone; the relays pass these on at their own pace.
+-- Without the file (the repository's TOC, any build before) nothing changes. The number taken.
+function Workshop.TakeShipped()
+	local taken = 0
+	for _, pair in ipairs(type(ns.SHIPPED_LISTS) == "table" and ns.SHIPPED_LISTS or {}) do
+		if type(pair) == "table" then
+			if type(pair[1]) == "string" and Workshop.TakeCouncil(pair[1]) then taken = taken + 1 end
+			if type(pair[2]) == "string" and Workshop.TakeTitles(pair[2]) then taken = taken + 1 end
+		end
+	end
+	if taken > 0 then ns.Log("High Council: %d of the release's signed lists taken", taken) end
+	return taken
+end
+
 -- At login. The author's machine holds the signed lists (CouncilList.lua, never published: the
 -- names, and the titles since 0.9.9): his client takes them and sends the newest it holds at
 -- once. Any other client passes the lists along a whole RELAY_EVERY after login at the earliest
@@ -2930,8 +2953,10 @@ end
 -- then when due (Workshop.AskLists), the council's ticker trying too.
 -- Over GUILD (1.0.0) the same: the author's client sends his lists to his guildmates on every
 -- realm at once too, any other client a whole RELAY_EVERY after login at the earliest (RelayGuild).
+-- (1.5.5) Every client first takes the lists the release carries (Workshop.TakeShipped).
 function Workshop.CouncilLogin()
 	lastCouncilSent, lastGuildSent = ns.Now(), ns.Now()
+	Workshop.TakeShipped()
 	local names, titles = ns.COUNCIL_SIGNED, ns.COUNCIL_TITLES
 	-- (1.4.5) The file may carry the lists of several realm groups (ns.COUNCIL_BY_GROUP, by the
 	-- group each is signed for: the dev's PvP character beside his PvE one): ours, where it has them.

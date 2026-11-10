@@ -16217,6 +16217,69 @@ test("0.9.9 the High Council's lists: relayed together, and a relay of both from
 	end)
 end)
 
+-- 1.5.5 (the author, 2026-11-10: "era bom que na versão 1.5.5 estivesse arrumado e a lista assinada já no
+-- arquivo"): the signed lists the release carries. scripts/package.sh puts them in the zip alone
+-- (Olympus/SignedLists.lua, ns.SHIPPED_LISTS: each realm group's names and titles as the author signed them,
+-- written by scripts/ship-lists.lua) and names that file in the zip's TOC; the repository never holds them.
+-- Every client takes them at login with the checks of any list: the key, its realm group, only newer than
+-- the one it holds. They are not the author's file: never relayed at once, the council not shown for them.
+test("1.5.5 the signed lists the release carries: taken at login with the key; another group's, a forged or an older one left out; a newer one held wins; none changes nothing; not the author's file", function()
+	WithTestCouncil(function()
+		local W = ns.Workshop
+		local saved = ns.SHIPPED_LISTS
+		local ok, err = pcall(function()
+			local scheduled, sent = {}, {}
+			ns.After = function(_, where) scheduled[#scheduled + 1] = where end
+			ns.Comm.SendChunked = function(msg) sent[#sent + 1] = msg end
+			local function RelayScheduled()
+				for _, where in ipairs(scheduled) do if where == "council" then return true end end
+				return false
+			end
+			-- No file (the repository's own TOC, any build before 1.5.5): nothing taken.
+			ns.SHIPPED_LISTS = nil
+			W.CouncilLogin()
+			eq(ns.rdb.council, nil); eq(ns.rdb.councilTitles, nil)
+			-- Another realm group's titles beside ours, newer: left out. Ours: taken, checked with the key.
+			ns.SHIPPED_LISTS = { { nil, COUNCIL_TEST_ELSEWHERE }, { COUNCIL_TEST_NAMES4, COUNCIL_TEST_TITLES } }
+			W.CouncilLogin()
+			eq(ns.rdb.council and ns.rdb.council.blob, COUNCIL_TEST_NAMES4, "the names")
+			eq(ns.rdb.councilTitles and ns.rdb.councilTitles.blob, COUNCIL_TEST_TITLES, "our group's titles")
+			eq(ns.IsHighCouncillor("Fourth Mod-Realm"), true)
+			eq(ns.CouncilTitle("Other Mod").title, "Operations Director")
+			-- Not the author's file: no relay 15 seconds after login (the relays' own pace passes them on),
+			-- and the council shows as the list says, not as on his client.
+			eq(RelayScheduled(), false, "no relay at login")
+			eq(#sent, 0)
+			eq(ns.COUNCIL_SIGNED, nil); eq(ns.COUNCIL_TITLES, nil)
+			eq(ns.CouncilVisible(), false, "a list not public yet, on the client of nobody on the council")
+			-- A newer list pasted (or relayed) wins; the release's, older, never replaces it at a later login.
+			eq(W.PasteTitles(COUNCIL_TEST_PUBLIC), true)
+			W.CouncilLogin()
+			eq(ns.rdb.councilTitles.blob, COUNCIL_TEST_PUBLIC, "the newer list held")
+			-- A forged list (one councillor changed): refused by its signature; the names beside it taken.
+			ns.rdb.council, ns.rdb.councilTitles = nil, nil
+			ns.SHIPPED_LISTS = { { COUNCIL_TEST_NAMES4, (COUNCIL_TEST_TITLES:gsub("Fourth Mod", "Faker Guy", 1)) } }
+			W.CouncilLogin()
+			eq(ns.rdb.council and ns.rdb.council.blob, COUNCIL_TEST_NAMES4)
+			eq(ns.rdb.councilTitles, nil, "a forged list")
+			-- Anything else in the table: nothing taken, no error.
+			ns.rdb.council = nil
+			ns.SHIPPED_LISTS = { "HS1~junk", { 42, false }, {}, { "HS1~1~Realm~Nobody~ab" } }
+			eq(W.TakeShipped(), 0)
+			eq(ns.rdb.council, nil)
+			-- The author's machine: his own file, newer, wins over the release's, and only his lists are relayed.
+			ns.SHIPPED_LISTS = { { COUNCIL_TEST_NAMES4, COUNCIL_TEST_TITLES } }
+			ns.COUNCIL_SIGNED, ns.COUNCIL_TITLES = COUNCIL_TEST_NAMES2, COUNCIL_TEST_PUBLIC
+			wipe(scheduled)
+			W.CouncilLogin()
+			eq(ns.rdb.council.blob, COUNCIL_TEST_NAMES2); eq(ns.rdb.councilTitles.blob, COUNCIL_TEST_PUBLIC)
+			eq(RelayScheduled(), true, "his file: relayed after login, as ever")
+		end)
+		ns.SHIPPED_LISTS = saved
+		if not ok then error(err, 0) end
+	end)
+end)
+
 -- Konig's review of 1.0.0: since 0.9.9 the gap is per sender and kind of list, so three strangers
 -- each sending a forged names list and a forged titles list spent the VERIFY_MAX checks of the
 -- minute, before Sign.Verify refused a signature of one digit. Meanwhile nothing relayed was
