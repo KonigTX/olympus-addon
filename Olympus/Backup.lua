@@ -459,8 +459,9 @@ function Backup.Read(text)
 		local key = d.key:gsub("[~|\n]", "")
 		if #key >= 6 and #key <= 64 then out.key = key end
 	end
+	local settings = type(d.settings) == "table" and d.settings or {}
 	for key, kind in pairs(Backup.SETTINGS) do
-		local v = type(d.settings) == "table" and d.settings[key]
+		local v = settings[key]
 		if type(v) == kind and (kind ~= "number" or (v >= -100000 and v <= 100000)) then out.settings[key] = v end
 	end
 	-- (A No alone: a yes in a text, made or not, is left out.)

@@ -48697,6 +48697,30 @@ local function ForgedBackup(data)
 	return ("OLYB1:%d:%s:%s"):format(#payload, ns.Backup.Sum(payload), payload)
 end
 
+test("backup settings: an absent or malformed settings table changes no saved preferences, and explicit false is restored", function()
+	local Bk = ns.Backup
+	local saved = { menus = ns.db.playerMenus, map = ns.db.showMap }
+	local ok, err = pcall(function()
+		for _, source in ipairs({ {}, { settings = false }, { settings = "invalid" }, { settings = 0 }, { settings = {} } }) do
+			source.v, source.char, source.faction = 1, ns.me, ns.faction
+			local data = assert(Bk.Read(ForgedBackup(source)))
+			eq(next(data.settings), nil, "missing preferences never become false")
+			ns.db.playerMenus, ns.db.showMap = true, true
+			Bk.Apply(data)
+			eq(ns.db.playerMenus, true, "the menu preference stays on")
+			eq(ns.db.showMap, true, "the map preference stays on")
+		end
+		local data = assert(Bk.Read(ForgedBackup({ v = 1, char = ns.me, faction = ns.faction,
+			settings = { playerMenus = false, showMap = false } })))
+		eq(data.settings.playerMenus, false, "an explicit saved false is kept")
+		Bk.Apply(data)
+		eq(ns.db.playerMenus, false)
+		eq(ns.db.showMap, false)
+	end)
+	ns.db.playerMenus, ns.db.showMap = saved.menus, saved.map
+	if not ok then error(err, 0) end
+end)
+
 test("1.1 the clipboard backup keeps the other parts' toggles: alerts, camps, shared block terms, do not contact, the sounds silenced", function()
 	local Bk = ns.Backup
 	local keys = { "alertsAlways", "showCamps", "filterSharedOff", "recruitsOff", "soundOff" }

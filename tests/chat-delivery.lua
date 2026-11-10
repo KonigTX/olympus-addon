@@ -107,8 +107,11 @@ test("chat delivery (1.5.5): a waiting chat whisper goes to its guild's reporter
 		for i = 1, n - 1 do
 			R.Relay.HandleIn("WHISPER", ("Rep Number%d-CAMWOWUS2Realm7PvE"):format(i), ("RL~P~RR~Guild %d"):format(i))
 		end
-		-- Another relay answered us: every line crosses to it too (RX).
-		R.Relay.HandleAck("WHISPER", "Max Ran-CAMWOWUS2Realm1PvE", "RY~")
+		-- In the mesh, the other signed relay answers and joins before chat crosses (RX).
+		local other = "Max Ran-CAMWOWUS2Realm1PvE"
+		R.Relay.HandleAck("WHISPER", other, "RY~")
+		eq(R.Relay.HandleMesh("WHISPER", other, "RJ~1~0~0"), true, "the other relay joined")
+		eq(R.Relay.MeshPeer(other), true, "a live mesh peer before the lines queue")
 		for k = 1, 6 do Say(R, k) end
 		local before = #sent
 		assert(R.Relay.ChatWaiting() >= 5 * (n + 1), "lines 2 to 6 wait in the lane: " .. R.Relay.ChatWaiting())
