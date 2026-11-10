@@ -331,7 +331,10 @@ function Borders.RoleBadgeOfName(who, guild)
 	-- department named by the same signed titles list. It is presentation only: a missing title or
 	-- unknown department yields no badge and never invents authority. 1.5.5 (a member's report: his
 	-- shields showed in the guilds he leads, not in the one he is a member of): the signed list names
-	-- the person, not a guild, so its shield is his in any guild or none.
+	-- the person, not a guild, so its shield is his in any guild or none; never under a moderator's
+	-- cover name on this client (Cover.lua: nothing that says what he is).
+	local C = ns.Cover
+	if type(C) == "table" and type(C.AliasOf) == "function" and C.AliasOf(who) then return nil end
 	if type(ns.CouncilTitle) == "function" then
 		local title = ns.CouncilTitle(who)
 		if type(title) == "table" then return Borders.DEPARTMENT_BADGE[title.dept] end

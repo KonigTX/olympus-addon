@@ -86,6 +86,12 @@ test("1.5.5 office shields: a signed office's shield (the council titles list) i
 		w.target(nil)
 		w.target(BorderUnit("Plain Pip", nil, nil, nil))
 		eq(w.roleBadge("target"), nil)
+		-- Under a moderator's cover name on this client (Cover.lua): no shield that says what he is.
+		w.ns.Cover = { AliasOf = function(n) if ns.FullName(n) == "Sage Owl-Realm" then return "Masked One" end end,
+			Version = function() return 2 end }
+		w.target(nil)
+		w.target(BorderUnit("Sage Owl", nil, nil, nil))
+		eq(w.roleBadge("target"), nil, "covered")
 	end)
 end)
 
