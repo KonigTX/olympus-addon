@@ -38082,7 +38082,8 @@ test("1.5.5 a relay passes a Hand's logged week entry on to every reporter it ho
 		ns.IsMember = function() return true end
 		IsInGuild = function() return true end
 		GetGuildInfo = function() return "Olympus II", "Member", 3 end
-		local R, _, sent = Harness.RelayWorld("Hildryn Payne-CAMWOWUS2Realm1PvE", "Olympus II")
+		local R, _, sent = Harness.RelayWorld("Relay Keeper-CAMWOWUS2Realm1PvE", "Olympus II")
+		R.rdb.council.names = { ["relay keeper"] = "Relay Keeper" } -- (a signed councillor's client: a relay)
 		local timers, tickers = {}, {}
 		R.After = function(_, _, fn) timers[#timers + 1] = fn end
 		R.Every = function(_, _, fn) tickers[#tickers + 1] = fn return { Cancel = function() end } end
@@ -48359,11 +48360,11 @@ test("1.1 taking donations (the Treasurer's idea): a keeper's switch, a line on 
 			ns.Relay = relay
 			assert(done, why)
 			eq(#says, 1, "one word")
-			eq(said[1], ns.PREFIX); eq(said[2], "RG~P~Pyralis Ashandar~TD~Olympus~0~0~"); eq(said[3], "GUILD"); eq(said[4], nil)
+			eq(said[1], ns.PREFIX); eq(said[2], "RG~P~" .. ns.ShortName(TREASURER) .. "~TD~Olympus~0~0~"); eq(said[3], "GUILD"); eq(said[4], nil)
 			eq(T.TakingDonations(), false)
 			-- A guildmate's client takes it as his word: hop 3 (the real Relay.lua) hands it to the TD handler.
 			AsSoldier()
-			local function Listed() return Texts(T.DonationLines()):find("Pyralis Ashandar", 1, true) ~= nil end
+			local function Listed() return Texts(T.DonationLines()):find(ns.ShortName(TREASURER), 1, true) ~= nil end
 			T.HandleDonations("CHANNEL", TREASURER, ("TD~Olympus~1~%d~"):format(w.clock))
 			eq(Listed(), true, "his line")
 			local R = Harness.RelayWorld("Soldier-Realm", "Olympus II")
