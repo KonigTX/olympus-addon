@@ -1538,6 +1538,8 @@ test("a city's count also shows on the map of the zone around it (Stormwind on E
 	if not ok then error(err, 0) end
 end)
 
+-- (1.5.5) The shared map-name labels against a model of Forever's map canvas (Map.LayoutNames).
+assert(loadfile(ROOT .. "tests/map-labels.lua"))(ns, test, eq, { ADDON_DIR = ADDON_DIR })
 test("map refresh runs end to end with a map library (continent totals included)", function()
 	-- A stub where every method returns another stub, so frame building code can run.
 	local function deep()
