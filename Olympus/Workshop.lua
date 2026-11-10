@@ -1930,6 +1930,21 @@ local function FromGuild(dist, sender)
 	return dist == "GUILD" or (sender ~= nil and ns.Roster ~= nil and ns.Roster.RankOf(sender) ~= nil)
 end
 
+-- (1.5.5) Guild verification's fresh grace (Verify.ListState, Verify.ListTaken): whether the list held
+-- named someone here who can verify, asked right before a newer list is kept, and told right after.
+-- Never in a list's way: an error there is left out.
+local function HoldBefore()
+	local V = ns.Verify
+	if type(V) ~= "table" or type(V.ListState) ~= "function" then return nil end
+	local ok, state = pcall(V.ListState)
+	if ok then return state end
+	return nil
+end
+local function HoldAfter(before)
+	local V = ns.Verify
+	if type(V) == "table" and type(V.ListTaken) == "function" then pcall(V.ListTaken, before) end
+end
+
 -- sender: nil for the author's own file (never limited); the author's name (a relay from his
 -- client) outside both budgets; guild: charged to our guild's budget.
 function Workshop.TakeCouncil(blob, sender, guild)
@@ -1960,7 +1975,9 @@ function Workshop.TakeCouncil(blob, sender, guild)
 		name = name:gsub("^%s+", ""):gsub("%s+$", "")
 		if name ~= "" and #name <= 48 and n < Workshop.COUNCIL_MAX then names[name:lower()], n = name, n + 1 end
 	end
+	local hold = HoldBefore()
 	ns.rdb.council = { at = at, names = names, realm = realm ~= "" and realm or nil, blob = blob }
+	HoldAfter(hold)
 	ns.Log("High Council: a signed list of %d names (%s)", n, tostring(at))
 	ns.Fire("DATA_CHANGED")
 	return true
@@ -2036,10 +2053,12 @@ function Workshop.TakeTitles(blob, sender, guild)
 	-- The approved guilds (1.1, Core.lua: ns.ReadApprovedGuilds): the list may make our guild Olympus.
 	-- (1.2.5.1: an Olympus guild, the Olympus Accord accepted or not: ns.InOlympusGuild.)
 	local wasMember = ns.InOlympusGuild()
+	local hold = HoldBefore() -- (1.5.5, above)
 	-- 1.2: the signed arbiters and auditors of the Blood Arena (Core.lua: ns.ReadArbiters), an entry
 	-- of their own, as the Steward's.
 	ns.rdb.councilTitles = { at = at, public = public == "1", realm = realm ~= "" and realm or nil, depts = depts, blob = blob, stewards = stewards,
 		guilds = ns.ReadApprovedGuilds(list), arbiters = ns.ReadArbiters(list) }
+	HoldAfter(hold)
 	-- 1.2's legacy HT1 migration marker records its one-way activation boundary here. The scalable
 	-- HA1 sets are separate and enter through Authority.lua; either path makes a later absent,
 	-- expired or bad generation fail closed instead of falling back to census ranks.

@@ -137,8 +137,9 @@ function Data.Trimmed() return trimmed end -- (this session: /oly status)
 
 -- Where the King is pinned by name (ns.KING_CHARACTER), a report of his guild that names
 -- anyone else as its leader (or nobody) is not his guild's: forged, or out of date.
+-- (1.5.5) Never on Forever's live realms (ns.KingIsMaster): the main guild's master there is not the King.
 function Data.OtherKing(guild, leader)
-	return ns.IsKingGuild(guild) and ns.KingCharacter() ~= nil and not ns.IsKingCharacter(leader)
+	return ns.KingIsMaster() and ns.IsKingGuild(guild) and ns.KingCharacter() ~= nil and not ns.IsKingCharacter(leader)
 end
 
 -- (1.2.3) Every report's vote stays in its row until the guild's next report counts the votes again

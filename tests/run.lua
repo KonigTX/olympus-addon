@@ -24099,6 +24099,9 @@ local function WithBorders(fn, setup)
 end
 
 assert(loadfile(ROOT .. "tests/treasurer-dragon.lua"))(ns, test, eq, WithBorders, BorderUnit, BORDER_KING)
+-- 1.5.5: the Quaestor, the Treasurer and the King's main guild on Forever, the verification hold where nobody verifies.
+assert(loadfile(ROOT .. "tests/roles-155.lua"))(ns, test, eq,
+	{ ADDON_DIR = ADDON_DIR, WithBorders = WithBorders, BorderUnit = BorderUnit, BORDER_KING = BORDER_KING, Vouched = Vouched })
 
 -- 1.0.0, Max's final list: six tiers, highest first, each with its own art. Before it the King was
 -- gold, the High Council, Lords and Captains all silver, Veterans and Raiders a grey (the plain

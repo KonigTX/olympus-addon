@@ -68,7 +68,8 @@ OlympusBridge.RegisterSection("realm", 1, function()
 		if #out.guilds >= REALM_GUILDS then break end
 		local g = type(e) == "table" and e.g
 		if type(g) == "table" and type(e.name) == "string" then
-			if not out.king and type(g.leader) == "string" and ns.IsKingGuild(e.name) then out.king = Text(g.leader) end
+			-- (1.5.5: never on Forever's live realms, whose main guild's master is not the King: ns.KingIsMaster.)
+			if not out.king and type(g.leader) == "string" and ns.IsKingGuild(e.name) and ns.KingIsMaster() then out.king = Text(g.leader) end
 			local on, days, at = g.leaderOnline, g.leaderDays, nil
 			if type(V) == "table" and type(V.PresenceNow) == "function" then
 				local okP, pOn, pDays, _, pAt = pcall(V.PresenceNow, e, g.leader, g.leaderOnline, g.leaderDays)

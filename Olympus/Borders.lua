@@ -132,9 +132,9 @@ ns.Borders = Borders
 --            Legates are explicitly appointed, not derived from the council; a separate actual
 --            council title still has its own precedence and portrait frame.
 -- The primary federal Treasurer's supplied dragon is portrait-only (TreasurerPin == 1, never
--- the mail alternate). The Queen's head also identifies her in native chat; nameplate marks
+-- the mail alternate; 1.5.5: a signed Quaestor's too, Dragon). The Queen's head also identifies her in native chat; nameplate marks
 -- stay unchanged. The King takes precedence.
--- Portrait order: the King, the Queen, the primary Treasurer, the High Council, the dev, a guild master, a nominee
+-- Portrait order: the King, the Queen, the primary Treasurer and the Quaestors, the High Council, the dev, a guild master, a nominee
 -- (then, on nameplates and in the game's chat, the star).
 -- (1.0.1's Max's second option, ns.BORDERS_COUNCIL_GOLD, the High Council in the King's gold
 -- wings, is gone with 1.1.5: the gold is the King's alone, on the borders, the nameplates and in
@@ -309,6 +309,16 @@ local function IsDev(who)
 end
 Borders.IsDevName = IsDev -- (1.2.3: HonorsNet's The Royal Dev title asks the core, never naming the author)
 
+-- The Treasurer's blue dragon: the Treasurer himself (TreasurerPin 1, never his mail characters) and
+-- (1.5.5, the dev: "give him his old frame") a Quaestor the signed list names (ns.IsQuaestorName), the
+-- Treasurer's executor, who wore it as the beta's Treasurer. The Treasurer's tier, under the King's crown.
+local function Dragon(who)
+	local T = ns.Treasury
+	if type(T) == "table" and type(T.TreasurerPin) == "function" and T.TreasurerPin(who) == 1 then return true end
+	return type(ns.IsQuaestorName) == "function" and ns.IsQuaestorName(who) == true
+end
+Borders.Dragon = Dragon -- (tests)
+
 -- A verified office is presentation metadata, never a rank or an honour.
 local function Nominee(who, guild)
 	local N = ns.Nominees
@@ -402,8 +412,7 @@ local function Facts(unit)
 	f.council = f.councillor and not ns.CouncilMasked()
 	f.dev = IsDev(who)
 	f.queen = type(ns.IsQueenCharacter) == "function" and ns.IsQueenCharacter(who) == true
-	local T = ns.Treasury
-	f.treasurer = type(T) == "table" and type(T.TreasurerPin) == "function" and T.TreasurerPin(who) == 1
+	f.treasurer = Dragon(who)
 	Uncover(f)
 	if not f.guild or not ns.IsFederation(f.guild) then return f end
 	f.olympus = true
@@ -497,7 +506,7 @@ function Borders.Changed(k)
 		or (k.who ~= nil and NetOff(k.who, k.guild) ~= k.off)
 		or k.nominees ~= NomineesVersion()
 		or k.cover ~= CoverVersion()
-		or (k.who ~= nil and k.treasurer ~= (type(ns.Treasury) == "table" and type(ns.Treasury.TreasurerPin) == "function" and ns.Treasury.TreasurerPin(k.who) == 1))
+		or (k.who ~= nil and k.treasurer ~= Dragon(k.who))
 end
 
 local function Compute(unit, guid)
@@ -562,8 +571,7 @@ function Borders.MarkOfName(who, guild)
 	f.dev = IsDev(who) -- (1.2.3: the dev's silver has its mark, before his name in the game's chat)
 	f.queen = type(ns.IsQueenCharacter) == "function" and ns.IsQueenCharacter(who) == true
 	if f.off then return nil, f end
-	local T = ns.Treasury
-	f.treasurer = type(T) == "table" and type(T.TreasurerPin) == "function" and T.TreasurerPin(who) == 1
+	f.treasurer = Dragon(who)
 	Uncover(f)
 	if guild and ns.IsFederation(guild) then
 		f.olympus = true
@@ -1635,7 +1643,7 @@ local function ChatGuilds(who)
 	local K = ns.King
 	if ns.IsKingCharacter(who) or (type(K) == "table" and ((type(K.IsStewardName) == "function" and K.IsStewardName(who))
 		or (type(K.IsHandName) == "function" and K.IsHandName(who)))) then
-		local king = ns.KING_GUILD[ns.faction or "Alliance"]
+		local king = ns.KingGuildKey() -- (1.5.5: <OLYMPUS PRIME> on Forever's live realms)
 		if king then out[#out + 1] = ns.Data.GuildKey(king) or king end
 	end
 	local claimed = type(ns.Data.ClaimedGuild) == "function" and ns.Data.ClaimedGuild(who) or nil

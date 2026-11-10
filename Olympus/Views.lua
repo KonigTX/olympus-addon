@@ -1854,6 +1854,8 @@ end
 -- The King's guild: the one named exactly "Olympus" (the addon's King everywhere else, the
 -- Throne, the layer hop). No such guild reporting: no King line, never another guild's Lord.
 local function King(guilds)
+	-- (1.5.5) On Forever's live realms its master is not the King (ns.KingIsMaster): the signed King's own line.
+	if not ns.KingIsMaster() then return nil end
 	for _, e in ipairs(guilds) do
 		if ns.IsKingGuild(e.name) and e.g.leader then return e end
 	end

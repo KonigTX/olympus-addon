@@ -52,7 +52,9 @@ end
 
 test("1.5.4 the King's presence on Forever: the signed King, a Captain of another Olympus guild, is online on the Realm's King line and in Hop.King (the layer line, the API's leader presence) as his guild's fresh report says; offline as it says; nothing claimed with nothing known", function()
 	WithForever("Olympus Faraway", function(advance, now)
-		eq(ns.IsKingGuild("OLYMPUS PRIME"), false, "no guild named Olympus on Forever")
+		-- (1.5.5, the dev: "fern is the gm of the main guild") OLYMPUS PRIME is the King's main guild on Forever's live
+		-- realms (ns.KING_GUILD_FOREVER); its master is not the King (ns.KingIsMaster), so what follows holds as before.
+		eq(ns.IsKingGuild("OLYMPUS PRIME"), true, "the King's main guild on Forever")
 		-- His guild's fresh report: a Captain online (it said "offline today").
 		ns.rdb.guilds["OLYMPUS PRIME"] = PrimeReport(now(), true)
 		local line = KingLine()

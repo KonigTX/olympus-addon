@@ -299,6 +299,8 @@ function Relay.Names(withSelf, signedOnly)
 		local pins, signed = ns.TreasurerPins()
 		if (not horde and not signedOnly) or signed == true then for _, n in ipairs(pins) do Add(n) end end
 	end
+	-- (1.5.5) The Quaestors the signed list names for our side (ns.QuaestorPins), never by code.
+	if ns.QuaestorPins then for _, n in ipairs((ns.QuaestorPins(horde and "Horde" or "Alliance"))) do Add(n) end end
 	table.sort(out)
 	return out
 end
