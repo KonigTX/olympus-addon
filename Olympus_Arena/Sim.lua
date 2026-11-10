@@ -506,7 +506,8 @@ if not (ns.Compliance and ns.Compliance.Wallet and ns.Compliance.Wallet()) then
 end
 Sim.COUNT = #Sim.SCENES
 
--- The records (scene 29): the Hall, the level race, a belt's lineage, sample lines in a pop-up.
+-- The records (scene 29): the Hall, a belt's lineage, sample lines in a pop-up. (1.5.5: the level race's
+-- line left, the race being off.)
 local records
 function Sim.Records()
 	records = records or Kit.Frame("OlympusArenaRecords", 420, 360, { title = L.ARENA_SIM_RECORDS })
@@ -515,7 +516,6 @@ function Sim.Records()
 	local F = W.fighters
 	records.list:SetLines({
 		{ header = true, text = L.ARENA_SIM_HALL }, { text = L.ARENA_SIM_HALL_LINE:format(1, Kit.Name(F[1].name)), indent = 1 },
-		{ header = true, text = L.ARENA_SIM_LEVEL_RACE }, { text = L.ARENA_TITLE_FIRST_TO:format(60) .. ": " .. Kit.Name(F[3].name), indent = 1 },
 		{ header = true, text = L.ARENA_SIM_LINEAGE }, { text = Kit.Name(F[4].name) .. " > " .. Kit.Name(F[1].name), indent = 1 },
 	})
 	records:Show()

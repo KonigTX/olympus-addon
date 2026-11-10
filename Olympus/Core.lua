@@ -1074,6 +1074,28 @@ function ns.IsAuthorName(name)
 	end
 	return false
 end
+-- (1.5.5) The Olympus Speedrunner (a name heard, or ours): the character the signed list we hold names in a
+-- ^speedrunner^ entry, either side's (a name is one per realm group whatever its side), by its name on
+-- its realm group, whatever its case. The code names nobody; no list, or a newer one without him: nobody.
+function ns.IsSpeedrunnerName(name)
+	if type(name) ~= "string" or name == "" then return false end
+	local p = ns.SignedPins and ns.SignedPins()
+	local s = p and p.speedrunner
+	if type(s) ~= "table" or not (s.Alliance or s.Horde) then return false end
+	local full = ns.FullName(name)
+	local realm = ns.RealmOf(full)
+	if realm == nil then return false end
+	local short, group = ns.ShortName(full):lower(), nil
+	for _, side in ipairs({ "Alliance", "Horde" }) do
+		for _, n in ipairs(s[side] or NO_PINS) do
+			if short == ns.ShortName(n):lower() then
+				group = group or ns.GroupOf(realm)
+				if group == ns.GroupOf(ns.RealmOf(n)) then return true end
+			end
+		end
+	end
+	return false
+end
 -- The Treasurer of Olympus, chosen by Asmongold's chat on September 23, 2026: exactly this
 -- character, in the guild named Olympus. Look-alikes in other guilds exist: both must match,
 -- and his realm group (Forever's PvP realms), where only he carries that name.
@@ -1527,7 +1549,10 @@ end
 -- a namesake on another group is someone else. A side the list names a King, Queen or Treasurer for has
 -- that one alone; a side it names none for keeps the code's (on the beta's group alone). Nobody else
 -- ever is one: no census vote counts, and a newer signed list without him ends it at once.
-ns.PINS_MAX = { king = 1, queen = 1, treasurer = 4, author = 8 } -- names a side, each kind
+-- (1.5.5, the owner's call) ^speedrunner^<Alliance|Horde>^<First Surname-Realm>: the Olympus Speedrunner, who
+-- holds the level race's gold comet (Honors.Holdings) whatever the race does: a title and a frame alone, no
+-- authority of any kind (ns.IsSpeedrunnerName). Clients before 1.5.5 leave the entry out unread, as above.
+ns.PINS_MAX = { king = 1, queen = 1, treasurer = 4, author = 8, speedrunner = 1 } -- names a side, each kind
 ns.REALM_KINDS = { pvp = true, pve = true, rp = true, rppvp = true, hardcore = true }
 ns.REALM_REGIONS = { NA = true, EU = true }
 ns.REALMS_MAX = 40 -- realms a region
@@ -1548,7 +1573,7 @@ end
 -- where it names nobody valid. Anything PinName, ns.PINS_MAX, the kinds or the regions leave out is
 -- left out.
 function ns.ReadPins(text)
-	local out = { king = {}, queen = {}, treasurer = {}, author = {}, realms = {} }
+	local out = { king = {}, queen = {}, treasurer = {}, author = {}, speedrunner = {}, realms = {} }
 	local regions = {}
 	for entry in tostring(text or ""):gmatch("[^;]+") do
 		local kind, slot, list = entry:match("^%^(%l+)%^(%a+)%^([^%^]*)$")

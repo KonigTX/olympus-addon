@@ -13,6 +13,10 @@ local W3 = {}
 -- realms (ns.RealmInfo, as a ^realms^ entry gives it; the signed path itself: tests/launch-identity.lua),
 -- after file loading, before INIT/LOGIN; a reload gets it again. Shipped-release clients too: the race
 -- is the release's now.
+-- (1.5.5, the owner's call: the race ships switched off again, HonorsNet.LEVEL_RACE_LAUNCHED = false; its
+-- code is kept, dormant.) This helper's world is where the race's own mechanics are still tested: each
+-- client's switch is turned on here as the launch's release had it, explicitly (opts.raceOff: left as the
+-- release ships it). The shipped switch itself: tests/arena/honors-level-launch.lua.
 W3.LAUNCH_REALMS = { emberfall = { kind = "pvp", region = "NA" }, emberfall2 = { kind = "pvp", region = "NA" } }
 function W3.LaunchRealmInfo(realm)
 	local e = type(realm) == "string" and W3.LAUNCH_REALMS[(realm:gsub("[%s%-]", "")):lower()]
@@ -27,6 +31,7 @@ function W3.LevelRaceWorld(opts)
 		if type(net) == "table" and seen[c] ~= net then
 			seen[c] = net
 			rawset(c.ns, "RealmInfo", W3.LaunchRealmInfo)
+			if not (opts and opts.raceOff) then net.LEVEL_RACE_LAUNCHED = true end
 		end
 		return ...
 	end

@@ -664,3 +664,37 @@ test("1.5.4 the Horde apart: a Horde client's relays are the signed list's Horde
 		eq(#(ns.AuthorCharactersOf("Horde")), 0); eq((ns.AuthorCharactersOf("Alliance"))[1], ns.AUTHOR .. "-" .. ns.AUTHOR_REALM)
 	end)
 end)
+
+-- (1.5.5) The Olympus Speedrunner: the list's ^speedrunner^ entry (Core.lua: ns.ReadPins,
+-- ns.IsSpeedrunnerName), as scripts/council-sign.py signs it for the PvE realm group with a throwaway key
+-- of its own (its private half was not kept):
+--   SPEED   "ForeverPvE": Test Councillor outside any department, Quill Maker-CAMWOWUS2Realm1PvE the
+--           author's character, Swift Runner-CAMWOWUS2Realm1PvE the Alliance's Olympus Speedrunner,
+--           CAMWOWUS2Realm1PvE a PvE realm of NA
+local SPEED_N = "a5bce9bbb7a51b91e7141c77c9d5c896c8c4c6fcb12bc0ba156f1e005dcf9cb9b7eb7a21f1db256bcc1555ef66126c152ee7c404a66554a9964b80bd800975a2bb0dab02aaa6360d0f79eb2124edd0e31168d211f376e03a3f99298325b0aa9676e3da735d0b6c9bdc70df8fc703e6b81ff7c168b727e54780921330e9c765186397751da8dddf7d51edb67ba6219bb717e09ebdb012fa8bcf941ef08dc70c704c465b8e08c51c7951b2f20775d2af2c098330af206b02d62a384869624e4c9fedcaf0fab325865a3c6984d4c4aee6a65a77be7951ff4df668a64e882f5d0c0f85ce4aafc7b8eb42643726edf6e4a354c3810d1406432c1dd7c7be0ec438dd61"
+local SPEED_MU = "18b6b5ed59dd26b617bb373889d8774dd306bf1760bd5f554f006b40f92c8c86f5591ba4ce7994d8569973f7eee370833d7dadf9e23d52d5627b01f99dff9e0e6bdb023aa031acfcd8fd499cb82202d2a2bc345b9b6fdf73f7602bbfeddf7c2351b08eaf41d3bb68524e2524b7a62d5a61348d073e5653964f6570803028d085f8bfc27e59c0f24ab693b9632c4df7fbcb0dd01a7e855d0ada1ba9c4565473952163edc897f02c3799ce7c2989f6d60aba40148d4abb31a7dfe7e6b9a72cde45c424d5490b4930a14d7e9042a39259f8c39249db1a0e2dd5309638280408b3c168279ff3acdf1302b918307ccb8fb0243c5317bef328d52824102176b20f0b0e63e8fb0e8"
+local SPEED = "HT1~1794332497~ForeverPvE~0~^^Test Councillor=Council Speaker;^author^Alliance^Quill Maker-CAMWOWUS2Realm1PvE;^speedrunner^Alliance^Swift Runner-CAMWOWUS2Realm1PvE;^realms^NA^CAMWOWUS2Realm1PvE=pve~4f1e2d28291730c2930fded7b874d3daf0b7dc5863226ba37dada6d07c4ecd48fc11441b401db660824109db5d1710e21a23c8705d14335552afec534c3dcdac269f3ba1051523b46f8d3907115c61c0ef47e50a47fcc013cdf866e616cdf69706221c6fc282d8c21bf152cf150e4e9bf2a7b6ac129abe4d2f36de6a75b3c4fd06392e42f03f56cb15bb4c080422c780496aa3f874346a30f67d229537a44d488f2553b363b1db31584ba595618087e785902578a5c64c6b88422aa93bd3f8903cd3155c72c088c2915a8315fb71d9e61bbe61654b1dcdab81e65a385697bc58ba8078d64cbfbb60f6de4d73cc9239eabbf7f6d923fd87375d87323d250bfcbd"
+
+test("1.5.5 the Olympus Speedrunner: the author's signed list for the PvE realm group names him on every sub-realm of it, whatever the case; nobody else, nor a namesake of the PvP group, nor anyone once the list is not ours", function()
+	WithWorld("CAMWOWUS2Realm1PvE", "Alliance", nil, function()
+		ns.group = ns.GroupOf(ns.realm)
+		ns.Sign.WithKey(SPEED_N, SPEED_MU, 86, function() assert(ns.Workshop.TakeTitles(SPEED), "the signed PvE list") end)
+		eq(ns.IsSpeedrunnerName("Swift Runner-CAMWOWUS2Realm1PvE"), true)
+		eq(ns.IsSpeedrunnerName("swift runner-CAMWOWUS2Realm1PvE"), true, "whatever the case")
+		eq(ns.IsSpeedrunnerName("Swift Runner"), true, "a name without a realm is ours")
+		eq(ns.IsSpeedrunnerName("Swift Runner-CAMWOWUS2Realm2PvE"), true, "another sub-realm of the PvE group")
+		eq(ns.IsSpeedrunnerName("Swift Runner-CAMWOWUS1Realm8PvP"), false, "a namesake of the PvP group")
+		eq(ns.IsSpeedrunnerName("Quill Maker-CAMWOWUS2Realm1PvE"), false, "the author's character is not him")
+		eq(ns.IsSpeedrunnerName("Some Body-CAMWOWUS2Realm1PvE"), false)
+		eq(ns.Workshop.IsAuthorName("Quill Maker-CAMWOWUS2Realm1PvE"), true, "the other entries read as before")
+		eq(ns.IsKingCharacter("Swift Runner-CAMWOWUS2Realm1PvE"), false, "no authority: never the King")
+		eq(ns.IsHighCouncillor("Swift Runner-CAMWOWUS2Realm1PvE"), false, "nor a councillor")
+		-- A client of the PvP group holds no list of ours: nobody.
+		ns.realm, ns.me = "CAMWOWUS1Realm8PvP", "Some Body-CAMWOWUS1Realm8PvP"
+		ns.group = ns.GroupOf(ns.realm)
+		eq(ns.IsSpeedrunnerName("Swift Runner-CAMWOWUS2Realm1PvE"), false, "the list is the PvE group's")
+	end)
+	WithWorld("CAMWOWUS2Realm1PvE", "Alliance", nil, function()
+		eq(ns.IsSpeedrunnerName("Swift Runner-CAMWOWUS2Realm1PvE"), false, "no list held: nobody")
+	end)
+end)

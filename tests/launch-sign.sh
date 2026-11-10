@@ -63,6 +63,8 @@ python3 "$signer" king 'Crown Owl-Launchrealm' > /dev/null
 python3 "$signer" king 'Tusk Crown-Launchtwo' Horde > /dev/null
 python3 "$signer" queen 'Crown Wren-Launchrealm' > /dev/null
 python3 "$signer" queen 'Tusk Wren-Launchtwo' Horde > /dev/null
+python3 "$signer" speedrunner 'Swift Runner-Launchrealm' > speedrunner.txt # (1.5.5: the Olympus Speedrunner)
+grep -Fq 'to paste in game with /oly approved paste:' speedrunner.txt || fail 'speedrunner does not print the list to paste'
 python3 "$signer" treasurer 'Ledger Wren-Launchrealm, Ledger Post-Launchtwo' > /dev/null
 python3 "$signer" realm Launchrealm pvp NA > /dev/null
 python3 "$signer" realm "Kel'thas" rppvp EU > /dev/null
@@ -74,16 +76,18 @@ for want in "the Alliance King (signed): Crown Owl-Launchrealm" "the Horde King 
 	"the Alliance Queen (signed, presentation only): Crown Wren-Launchrealm" "the Horde Queen (signed, presentation only): Tusk Wren-Launchtwo" \
 	"the Alliance Treasurer, then his mail characters (signed): Ledger Wren-Launchrealm,Ledger Post-Launchtwo" \
 	"the Alliance author's characters (signed): Quill Maker-Launchrealm" "the Horde author's characters (signed): Quill Horde-Launchrealm" \
+	"the Alliance Olympus Speedrunner (signed, a title and a frame alone): Swift Runner-Launchrealm" \
+	"the Horde Olympus Speedrunner (signed, a title and a frame alone): none" \
 	"the realms of NA: Launchrealm=pvp,Launchtwo=pve" "the realms of EU: Kel'thas=rppvp"; do
 	grep -Fq "$want" check.txt || fail "check does not show: $want"
 done
 grep -q '^  (outside any department): Test Councillor=Council Speaker$' check.txt || fail 'the council changed'
 if grep -F '(outside' check.txt | grep -Fq '^'; then fail 'an identity read as a department'; fi
 case "$pasted" in
-	"HT1~"*"~Launchrealm+Launchtwo~0~^^Test Councillor=Council Speaker;^king^Alliance^Crown Owl-Launchrealm;^king^Horde^Tusk Crown-Launchtwo;^queen^Alliance^Crown Wren-Launchrealm;^queen^Horde^Tusk Wren-Launchtwo;^treasurer^Alliance^Ledger Wren-Launchrealm,Ledger Post-Launchtwo;^author^Alliance^Quill Maker-Launchrealm;^author^Horde^Quill Horde-Launchrealm;^realms^NA^Launchrealm=pvp,Launchtwo=pve;^realms^EU^Kel'thas=rppvp~"*) ;;
+	"HT1~"*"~Launchrealm+Launchtwo~0~^^Test Councillor=Council Speaker;^king^Alliance^Crown Owl-Launchrealm;^king^Horde^Tusk Crown-Launchtwo;^queen^Alliance^Crown Wren-Launchrealm;^queen^Horde^Tusk Wren-Launchtwo;^treasurer^Alliance^Ledger Wren-Launchrealm,Ledger Post-Launchtwo;^author^Alliance^Quill Maker-Launchrealm;^author^Horde^Quill Horde-Launchrealm;^speedrunner^Alliance^Swift Runner-Launchrealm;^realms^NA^Launchrealm=pvp,Launchtwo=pve;^realms^EU^Kel'thas=rppvp~"*) ;;
 	*) fail "the titles list printed to paste is not in the grammar: $pasted" ;;
 esac
-printf 'ok: the King, the Queen, the Treasurer, the author and the realms signed, read back and checked\n'
+printf 'ok: the King, the Queen, the Treasurer, the author, the Speedrunner and the realms signed, read back and checked\n'
 
 # Refused before anything is signed: nothing written, the key's time and the file unchanged.
 before=$(last_at); file_before=$(sum "$OLYMPUS_COUNCIL_JSON")
@@ -104,6 +108,10 @@ refused queen 'Crown Wren'
 refused queen 'Crown Wren-Farrealm'
 refused queen 'Crown Wren-Launchrealm' Neutral
 refused queen --remove Neutral
+refused speedrunner 'Swift Runner'
+refused speedrunner 'Swift Runner-Farrealm'
+refused speedrunner 'Swift Runner-Launchrealm' Neutral
+refused speedrunner --remove Horde
 refused treasurer 'Ledger Wren'
 refused treasurer 'A Aa-Launchrealm,B Bb-Launchrealm,C Cc-Launchrealm,D Dd-Launchrealm,E Ee-Launchrealm'
 refused treasurer 'Same Name-Launchrealm,same name-Launchrealm'
@@ -126,6 +134,7 @@ refused_council() {
 refused_council '{"realm": "R", "king": ["Crown Owl-R"]}' 'a King that is not per side'
 refused_council '{"realm": "R", "queen": ["Crown Wren-R"]}' 'a Queen that is not per side'
 refused_council '{"realm": "R", "queen": {"Alliance": "Three Word Queen-R"}}' 'a Queen with an invalid exact name'
+refused_council '{"realm": "R", "speedrunner": ["Swift Runner-R"]}' 'a Speedrunner that is not per side'
 refused_council '{"realm": "R", "treasurer": {"Alliance": []}}' 'a Treasurer without a name'
 refused_council '{"realm": "R", "author": [{"name": "Quill Maker-R", "side": "Horde"}]}' "an author's character with an unknown field"
 refused_council "$(python3 -c 'import json; print(json.dumps({"realm": "R", "author": ["Dev %s-R" % chr(65 + i) for i in range(9)]}))')" "nine author's characters for one side"
@@ -147,4 +156,8 @@ grep -Fq "the Horde author's characters (signed): none" check.txt || fail "the H
 grep -Fq "the realms of EU: none" check.txt || fail 'the EU realm is still there'
 grep -Fq "the Alliance King (signed): Crown Owl-Launchrealm" check.txt || fail 'a removal took the Alliance King too'
 grep -Fq "the Alliance Queen (signed, presentation only): Crown Wren-Launchrealm" check.txt || fail 'a removal took the Alliance Queen too'
+grep -Fq "the Alliance Olympus Speedrunner (signed, a title and a frame alone): Swift Runner-Launchrealm" check.txt || fail 'a removal took the Speedrunner'
+python3 "$signer" speedrunner --remove > /dev/null
+python3 "$signer" check > check.txt || fail 'check refused the list without the Speedrunner'
+grep -Fq "the Alliance Olympus Speedrunner (signed, a title and a frame alone): none" check.txt || fail 'the Speedrunner is still there'
 printf 'ok: each taken off by a newer list, the rest kept\n'

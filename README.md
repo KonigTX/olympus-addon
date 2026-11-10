@@ -350,7 +350,7 @@ channels; the same charter and Join controls work for each side.
   invitations, removals or native promotions happen automatically. An online member of the group
   has **Invite online member to raid** (1.4.0): one party invite on the Legate's click, only while
   the guild roster still lists that member.
-- **Level race**: the highest level players of the realm.
+- **Top levels**: the highest level players of the realm.
 - **Recruiting**: the guilds that still have free slots, so new players go where there is room
   (the five with the most, then every one on a click, 1.1).
   When the King opens **the gates** of a guild, it tops the list: send new recruits there.

@@ -142,7 +142,12 @@ H.REFRESH_DELAY = 60            -- after login, the own honours looked at once t
 -- not name, a client that holds no list yet) it stays as 1.2.4 left it: nothing collected, sent,
 -- relayed or worn, the old book kept untouched. A saved book, a timestamp, a wire word or the games'
 -- live switch never starts it; no runtime setting either.
-H.LEVEL_RACE_LAUNCHED = true
+-- (1.5.5, the owner's call) Off again, everywhere: in its first days not everyone could be witnessed and
+-- a bug showed comets nobody won. Its code and the saved book stay, dormant (nothing collected, sent,
+-- relayed or awarded); the gold comet is the Olympus Speedrunner's alone (H.Holdings), the bronze and
+-- silver ones are retired (Honors.RETIRED_LEVELS), and whoever was told or wore one gets the apology
+-- once (H.ApologyDue).
+H.LEVEL_RACE_LAUNCHED = false
 function H.LevelRaceActive() return H.LEVEL_RACE_LAUNCHED == true and ns.LaunchRealm() == true end
 -- The race's start (server time): 2026-11-04 00:00:00 UTC, the first second of launch day (the
 -- realms' opening hour was not known for sure: about 23:00 UTC). On a launch realm nobody can have
@@ -418,7 +423,10 @@ function H.Holdings(name, guid)
 	-- (The dev's own character, as the core's borders know him: no arena file names the author.)
 	local B = ns.Borders
 	local author = type(B) == "table" and type(B.IsDevName) == "function" and B.IsDevName(ns.FullName(name)) == true
-	return ns.Honors.Holdings({ name = name, guid = GameGuid(guid), guild = GuildOf(name), author = author }, H.Inputs())
+	-- (1.5.5) The Olympus Speedrunner, as the author's signed list names him (ns.IsSpeedrunnerName).
+	local speedrunner = type(ns.IsSpeedrunnerName) == "function" and ns.IsSpeedrunnerName(ns.FullName(name)) == true
+	return ns.Honors.Holdings({ name = name, guid = GameGuid(guid), guild = GuildOf(name), author = author, speedrunner = speedrunner },
+		H.Inputs())
 end
 
 -- A player's pick as heard (or ours), and a GUID for him we are sure of.
@@ -532,6 +540,8 @@ local CLASS_FILE = { warrior = "WARRIOR", paladin = "PALADIN", hunter = "HUNTER"
 local RACE_ID = { human = 1, orc = 2, dwarf = 3, nightelf = 4, undead = 5, tauren = 6, gnome = 7, troll = 8 }
 function H.TitleText(key)
 	if type(key) ~= "string" then return nil end
+	-- (1.5.5: the level race's apology names no honour: its line's name in the lists.)
+	if key == H.APOLOGY_KEY then return L.HONOR_APOLOGY_TITLE end
 	-- (1.2.4: the Most Wanted Slayer letter's family, "wanted@": its title is Wanted.lua's, read
 	-- from its key alone, Wanted.LetterTitle.)
 	if key:find("^wanted@") then
@@ -1717,6 +1727,8 @@ function H.Refresh()
 	refreshing = true
 	local P = ns.ArenaProfile
 	local ok, err = pcall(function()
+		-- (1.5.5) The level race's apology, worked out before this look stands his comet in.
+		local sorry = H.ApologyDue()
 		local held = H.Holdings(ns.me, P.MyGk())
 		local before = P.Pick()
 		local first = before.seen == nil
@@ -1756,6 +1768,7 @@ function H.Refresh()
 		for _, h in ipairs(earned) do
 			if (h.frame or h.title) and not h.noLetter then H.QueueLetter(h.key, h.period) end
 		end
+		if sorry then H.Apologize(true) end
 		if sent or #earned > 0 then
 			gen = gen + 1
 			ns.Fire("HONORS_CHANGED", ns.me)
@@ -1839,6 +1852,49 @@ function H.FirstLook(held)
 	m.letterLook = nil
 end
 
+-- (1.5.5, the owner's call) The level race's apology: once, to every character whose profile shows a
+-- comet of the race told (lettered), remembered (seen) or worn (its pick's frame or title), never to the
+-- Olympus Speedrunner (his gold comet is his). Its words (L.HONOR_LETTER.apology): in the race's first
+-- days not everyone could be witnessed, the comet he saw came from a bug, the race is off, sorry, new
+-- things will come. A letter like the King's others (QueueLetter: told once per character, kept to read
+-- again), with no honour to wear; the race's own letters it leaves are let go from his list, so none is
+-- read again in the gold comet's words.
+H.APOLOGY_KEY = "apology@level-race"
+local function RaceKey(v) return type(v) == "string" and v:find("^level%-race%-%d+$") ~= nil end
+local function RaceTrace(m)
+	if type(m) ~= "table" then return false end
+	if RaceKey(m.frame) or RaceKey(m.title) then return true end
+	for mark, v in pairs(type(m.lettered) == "table" and m.lettered or {}) do
+		if v and RaceKey(mark) then return true end
+	end
+	for family, x in pairs(type(m.seen) == "table" and m.seen or {}) do
+		if type(family) == "string" and family:find("^level%-%d+$") then return true end
+		if type(x) == "table" and (RaceKey(x.frame) or RaceKey(x.title)) then return true end
+	end
+	return false
+end
+function H.ApologyDue()
+	local P = ns.ArenaProfile
+	if not ns.db or type(P) ~= "table" or P.missing or type(P.Mine) ~= "function" then return false end
+	if H.Lettered()[H.APOLOGY_KEY] then return false end
+	if type(ns.IsSpeedrunnerName) == "function" and ns.IsSpeedrunnerName(ns.me) == true then return false end
+	return RaceTrace(P.Mine())
+end
+-- due: H.ApologyDue's answer from before a look stood his comet in (H.Refresh), else asked now.
+function H.Apologize(due)
+	if due == nil then due = H.ApologyDue() end
+	if not due or H.Lettered()[H.APOLOGY_KEY] then return false end
+	local m = ns.ArenaProfile.Mine(true)
+	if type(m.letters) == "table" then
+		for i = #m.letters, 1, -1 do
+			local x = m.letters[i]
+			if type(x) == "table" and RaceKey(x.key) then table.remove(m.letters, i) end
+		end
+	end
+	H.QueueLetter(H.APOLOGY_KEY)
+	return true
+end
+
 -- A letter queued (and kept, re-readable): shown now, or after the one open; never twice (period:
 -- a month's honour's month).
 -- Where the save did not come back (Arena.Persists: the Forever beta loads an empty one at each
@@ -1884,6 +1940,8 @@ end
 -- The family a letter speaks for (its text in L.HONOR_LETTER).
 function H.LetterFamily(key)
 	if type(key) ~= "string" then return nil end
+	-- (1.5.5: the level race's apology, a letter with no honour: H.ApologyDue.)
+	if key == H.APOLOGY_KEY then return "apology" end
 	if key:find("^arena%-champion") then return "arena" end
 	if key:find("^arena%-class%-") then return "class" end
 	if key:find("^arena%-race%-") then return "race" end
@@ -2111,8 +2169,11 @@ function H.ShowLetter(key, prompted)
 	-- (1.2.4 repair: a Slayer letter has no honour to wear: its first button opens the Slayers, the
 	-- Wanted tab, and his portrait wears his rank's frame, as his own does.)
 	local slayer = H.LetterFamily(nextLetter.key) == "wanted"
-	frame.wear:SetText(slayer and L.HONOR_LETTER_SLAYERS or L.HONOR_LETTER_WEAR)
-	H.DressPortrait(frame.rig, slayer and "rank" or nextLetter.key)
+	-- (1.5.5: the level race's apology has nothing to wear either: its first button closes it, and his
+	-- portrait wears his rank's frame.)
+	local apology = nextLetter.key == H.APOLOGY_KEY
+	frame.wear:SetText(slayer and L.HONOR_LETTER_SLAYERS or apology and L.LETTERS_CLOSE or L.HONOR_LETTER_WEAR)
+	H.DressPortrait(frame.rig, (slayer or apology) and "rank" or nextLetter.key)
 	frame:Show()
 	return true
 end
@@ -2163,7 +2224,12 @@ function H.PreviewKeys()
 	for _, family in ipairs({ "donor-top", "donor-month", "oracle", "missionary", "apostle", "bones", "wanted-slayer" }) do
 		for i = 1, 3 do out[#out + 1] = family .. "-" .. i end
 	end
-	for _, milestone in ipairs(ns.Honors.MILESTONES) do out[#out + 1] = "level-race-" .. milestone end
+	-- (1.5.5: the gold comet's alone, the Olympus Speedrunner's, and the level race's apology; bronze and
+	-- silver are retired.)
+	for _, milestone in ipairs(ns.Honors.MILESTONES) do
+		if not ns.Honors.RETIRED_LEVELS[milestone] then out[#out + 1] = "level-race-" .. milestone end
+	end
+	out[#out + 1] = H.APOLOGY_KEY
 	for _, pair in ipairs({ { "class", ns.Honors.CLASS_ART }, { "race", ns.Honors.RACE_ART } }) do
 		local words = {}; for word in pairs(pair[2]) do words[#words + 1] = word end; table.sort(words)
 		for _, word in ipairs(words) do
@@ -2189,7 +2255,7 @@ function H.PreviewLetter(key)
 	frame.wear:SetText(L.HONOR_LETTER_PREVIEW_ONLY)
 	frame.later:SetText(CLOSE or L.HONOR_LETTER_LATER)
 	Place(frame)
-	H.DressPortrait(frame.rig, H.LetterFamily(key) == "wanted" and "rank" or key)
+	H.DressPortrait(frame.rig, (H.LetterFamily(key) == "wanted" or key == H.APOLOGY_KEY) and "rank" or key)
 	frame:Show()
 	return true
 end
@@ -2535,8 +2601,21 @@ ns.On("LOGIN", function()
 	-- saved data already holds some (an idle client starts no timer: the weight rule).
 	local LG = ns.ArenaLedger
 	local titles = LG and LG.CoreT and LG.CoreT("L", "titles")
-	if H.Store() or (titles and next(titles)) then
+	-- (1.5.5: also the Olympus Speedrunner's, his gold comet held by the signed list alone, and a
+	-- character the level race's apology is due to, with no arena data saved.)
+	H.speedrunner = type(ns.IsSpeedrunnerName) == "function" and ns.IsSpeedrunnerName(ns.me) == true
+	if H.Store() or (titles and next(titles)) or H.speedrunner or H.ApologyDue() then
 		ns.After(H.REFRESH_DELAY, "arena honours refresh", function() H.Refresh() end)
+	end
+end)
+-- (1.5.5) A signed list that names us the Olympus Speedrunner, or no longer does (DATA_CHANGED: a newer
+-- titles list taken): our honours looked at again.
+ns.On("DATA_CHANGED", function()
+	if not ns.db or type(ns.IsSpeedrunnerName) ~= "function" then return end
+	local now = ns.IsSpeedrunnerName(ns.me) == true
+	if now ~= (H.speedrunner == true) then
+		H.speedrunner = now
+		H.RefreshSoon()
 	end
 end)
 -- Our honours looked at again a moment after a change that may be ours (the realm's words, the

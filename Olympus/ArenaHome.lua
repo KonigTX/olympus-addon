@@ -1745,7 +1745,8 @@ function ArenaHome.Family(key)
 	if key:find("^arena%-race%-") then return "race", place, key:match("^arena%-race%-(%a+)") end
 	if key:find("^donor%-top%-") then return "donorTop", tonumber(key:match("(%d)$")) or 1 end
 	if key:find("^donor%-month%-") then return "donorMonth", tonumber(key:match("(%d)$")) or 1 end
-	if key:find("^level%-race%-") then return "level", 1, key:match("(%d+)$") end
+	-- (1.5.5: the level race is off: its comets have no letter or title of the design's here; the
+	-- Olympus Speedrunner's gold one is HonorsNet's, as every honour's.)
 	if key == "guild-top-leader" then return "guild", 1 end
 	if key:find("^oracle%-") then return "oracle", tonumber(key:match("(%d)$")) or 1 end
 	return nil
@@ -1765,7 +1766,6 @@ function ArenaHome.TitleOf(key)
 	if type(t) == "string" and t ~= "" then return ns.Codec.Plain(t) end
 	local family, place, extra = ArenaHome.Family(key)
 	if not family then return nil end
-	if family == "level" then return L.ARENA_TITLE_FIRST_TO:format(tonumber(extra) or 60) end
 	if family == "guild" then return L.ARENA_TITLE_WISEST end
 	local keys = TITLES[family]
 	local word = keys and L[keys[math.max(1, math.min(3, place))]]

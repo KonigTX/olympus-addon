@@ -352,6 +352,9 @@ Honors.DUES_NOTE = "olympus fund" -- ...and so the dues' note (Dues.Note)
 Honors.MILESTONES = { 20, 40, 60 } -- the level race (the design): the first to 20, 40 and 60
 Honors.PLACES = 1               -- places of each milestone of the level race: the first alone
 Honors.MAX_LEVEL = 60
+-- 1.5.5 (the owner's call, the race off): the milestones whose comets are retired, never held again
+-- (bronze and silver); the gold one stays the Olympus Speedrunner's.
+Honors.RETIRED_LEVELS = { [20] = true, [40] = true }
 Honors.CONFIRM_AFTER = 600      -- a vouched claim takes its place once it is this old (claims timed
                                 -- before it, heard late, still get their turn meanwhile)
 Honors.SKEW = 300               -- a gift or claim timed further ahead of now is ignored
@@ -1207,16 +1210,26 @@ function Honors.Holdings(player, inputs)
 		end
 	end
 	local levels = type(inputs.levels) == "table" and inputs.levels or {}
+	local gold = false
 	for _, m in ipairs(Honors.MILESTONES) do
-		for i, p in ipairs(type(levels[m]) == "table" and levels[m] or {}) do
+		for i, p in ipairs(not Honors.RETIRED_LEVELS[m] and type(levels[m]) == "table" and levels[m] or {}) do
 			if i > Honors.PLACES then break end
 			if Same(p, key, guid) then
 				-- The first to each milestone: the comet in its metal; the addon writes the level on it.
 				held[#held + 1] = Honour("level", Honors.MAX_LEVEL + 10 - m, i, ("level-race-%d"):format(m),
 					{ milestone = m, family = "level-" .. m })
+				gold = gold or m == Honors.MAX_LEVEL
 				break
 			end
 		end
+	end
+	-- 1.5.5 (the owner's call): the Olympus Speedrunner, the one character the author's signed list
+	-- names (HonorsNet.Holdings: ns.IsSpeedrunnerName), holds the gold comet, level-race-60, whatever the
+	-- level race does (off since 1.5.5) and without any book of its places.
+	if player.speedrunner == true and not gold then
+		local m = Honors.MAX_LEVEL
+		held[#held + 1] = Honour("level", Honors.MAX_LEVEL + 10 - m, 1, ("level-race-%d"):format(m),
+			{ milestone = m, family = "level-" .. m })
 	end
 	local g = inputs.guild
 	if key and type(g) == "table" then
@@ -1307,8 +1320,12 @@ end
 -- 1.4.0 (the owner's call, the launch): the level race's comets (first to 20, 40 and 60) are worn
 -- too; the race runs on the launch's realms alone (HonorsNet.LevelRaceActive). The Arena's and the
 -- Oracle's still wait.
+-- 1.5.5 (the owner's call): the level race is off (HonorsNet.LEVEL_RACE_LAUNCHED). Its bronze and silver
+-- comets (first to 20 and 40) are retired: never held (Honors.RETIRED_LEVELS), shown or worn again, a
+-- pick that wore one falls back as any frame this version does not wear (Update's Unworn: even a locked
+-- pick). The gold comet stays: the Olympus Speedrunner's (Holdings' player.speedrunner).
 Honors.FRAMES_SHIPPED = { ["donor-top"] = true, missionary = true, ["donor-month"] = true, guild = true, apostle = true, bones = true,
-	["wanted-slayer"] = true, ["level-20"] = true, ["level-40"] = true, ["level-60"] = true }
+	["wanted-slayer"] = true, ["level-60"] = true }
 -- (nil: every family's frame, as the honours' own tests and 2.0 have them.)
 local function Shipped(h)
 	local s = Honors.FRAMES_SHIPPED

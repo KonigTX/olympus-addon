@@ -126,7 +126,6 @@ What's new in version 1.4.0, for the march:
 - {church} The Church's top three and the donors now reach everyone, not only whoever was online at the right moment, and the frames follow.
 - {news} Every office receives a letter from the King, and every guild master a checklist of what to name.
 - {crown} Every guild master has 48 hours to verify with the High Council.
-- {gold} The level race is on: the first to reach 20, 40 and 60 earns the comet frame, for good.
 - {star} Olympus now finds groups: list yours, apply to one, see who is looking.
 - {team} Olympus now speaks English, Portuguese, Spanish, German, French, Italian and Russian.
 - {watch} An addon older than 1.4.0 no longer finds the army's channel. If a friend sees an empty census, tell them to update.
@@ -290,7 +289,6 @@ O que há de novo na versão 1.4.0, para a marcha:
 - {church} O top três da Igreja e os doadores agora chegam a todos, não só a quem estava online na hora certa, e as molduras acompanham.
 - {news} Cada cargo recebe uma carta do Rei, e cada mestre de guilda uma lista do que nomear.
 - {crown} Todo mestre de guilda tem 48 horas para se verificar com o Alto Conselho.
-- {gold} A corrida de level está valendo: o primeiro a chegar ao 20, ao 40 e ao 60 ganha a moldura do cometa, para sempre.
 - {star} O Olympus agora encontra grupos: anuncie o seu, candidate-se a um, veja quem está procurando.
 - {team} Olympus agora fala inglês, português, espanhol, alemão, francês, italiano e russo.
 - {watch} Um addon anterior à 1.4.0 não encontra mais o canal do exército. Se um amigo vir o censo vazio, diga para ele atualizar.
@@ -629,7 +627,8 @@ L.INACTIVE_LINE = "Inactive: %d for 7+ days, %d for 30+ days"
 L.AVG_LEVEL = "Average level"
 L.VACANCIES = "Free slots"
 L.CLICK_EXPAND = "Click to open / close"
-L.LEVEL_RACE = "Level race"
+-- (1.5.5: the level race is off; the Realm page's census list of the highest levels stays, by this name.)
+L.LEVEL_RACE = "Top levels"
 L.LEVEL_N = "level %d"
 L.RECRUITING = "Recruiting - guilds with room"
 L.ALL_FULL = "Every guild is full."
@@ -3084,7 +3083,7 @@ if GetLocale and GetLocale() == "ptBR" then
 	L.AVG_LEVEL = "Nível médio"
 	L.VACANCIES = "Vagas"
 	L.CLICK_EXPAND = "Clique para abrir / fechar"
-	L.LEVEL_RACE = "Corrida de nível"
+	L.LEVEL_RACE = "Níveis mais altos"
 	L.LEVEL_N = "nível %d"
 	L.RECRUITING = "Recrutamento - guildas com vaga"
 	L.ALL_FULL = "Todas as guildas estão cheias."
