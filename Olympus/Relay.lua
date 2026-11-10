@@ -307,27 +307,84 @@ local function Hash(text)
 	for i = 1, #text do h = (h * 33 + text:byte(i)) % 2147483647 end
 	return h
 end
--- The relay this client whispers to now, and whether it is sure: among the relays that answered
--- a ping within VERIFIED_FOR (our own client counts, when it is a relay: no whisper needed), the
--- one our guild's name and the window pick, sure; with none answered yet, the same among those
--- not left out, not sure (Out then holds the message and pings them all); nil without any (then
--- the channel, as before).
+-- The relay this client whispers to now, and whether it is sure. A relay's own client, and a
+-- serving provisional relay (RelayFallback.lua), carry their own words: themselves, no whisper
+-- needed. (1.5.5) Anyone else, the first of:
+--   (1) the relay a rebalance pinned (Relay.PinnedRelay), once it answered;
+--   (2) the signed relays that answered a ping within VERIFIED_FOR, those whose answer named
+--       PREFER_VERSION or newer first (they carry what 1.5.5 adds);
+--   (3) the code's unsigned pins that answered, as transport alone (Relay.IsSignedRelay);
+--   (4) the signed relays not left out, none answered yet: not sure (Out holds the word and pings);
+--   (5) the provisional relays this client elected (RelayFallback.Elected), sure: each said yes or
+--       answered our ping within VERIFIED_FOR;
+-- else nil, and Out holds the word for HOLD_FOR: Forever's channel delivers nothing (1.5.4 sent it
+-- there). Within a step our guild's name and the window pick, so the load spreads.
+Relay.PREFER_VERSION = "1.5.5"
+local function Fallback()
+	local F = ns.RelayFallback
+	if type(F) == "table" and not F.missing then return F end
+	return nil
+end
+local function Answered(key, now) return now - (verified[key] or -math.huge) < Relay.VERIFIED_FOR end
 function Relay.Pick()
 	if not Relay.On() then return nil end
 	local now = Now()
-	local mine = ns.ShortName(ns.me or ""):lower()
-	local live, answered = {}, {}
-	for _, n in ipairs(Relay.Names(true)) do
+	local F = Fallback()
+	local function Picked(name, sure, why)
+		if F and type(F.NotePick) == "function" then F.NotePick(name, why, now) end
+		return name, sure
+	end
+	local mine = ns.ShortName(ns.me or "")
+	if Relay.IsRelay(ns.me) then return Picked(mine, true, "self") end
+	if F and F.Serving() then return Picked(mine, true, "provisional self") end
+	local seed = Lower(GetGuildInfo and GetGuildInfo("player") or ns.me or "") .. "#" .. tostring(math.floor(now / Relay.PICK_WINDOW))
+	local function From(pool) return pool[(Hash(seed) % #pool) + 1] end
+	local pin = Relay.PinnedRelay()
+	if type(pin) == "string" and pin ~= "" then
+		local key = Lower(ns.ShortName(pin))
+		if (offline[key] or 0) <= now and Answered(key, now) then return Picked(ns.ShortName(pin), true, "pinned") end
+	end
+	local newer, signed, pins, live = {}, {}, {}, {}
+	for _, n in ipairs(Relay.Names(false)) do
 		local key = n:lower()
 		if (offline[key] or 0) <= now then
-			live[#live + 1] = n
-			if key == mine or now - (verified[key] or -math.huge) < Relay.VERIFIED_FOR then answered[#answered + 1] = n end
+			local isSigned = Relay.IsSignedRelay(n)
+			if not Answered(key, now) then
+				if isSigned then live[#live + 1] = n end
+			elseif not isSigned then pins[#pins + 1] = n
+			elseif Relay.AtLeast(relayVersion[key], Relay.PREFER_VERSION) then newer[#newer + 1] = n
+			else signed[#signed + 1] = n end
 		end
 	end
-	local pool = #answered > 0 and answered or live
-	if #pool == 0 then return nil end
-	local seed = Lower(GetGuildInfo and GetGuildInfo("player") or ns.me or "") .. "#" .. tostring(math.floor(now / Relay.PICK_WINDOW))
-	return pool[(Hash(seed) % #pool) + 1], #answered > 0
+	if #newer > 0 then return Picked(From(newer), true, "signed " .. Relay.PREFER_VERSION) end
+	if #signed > 0 then return Picked(From(signed), true, "signed") end
+	if #pins > 0 then return Picked(From(pins), true, "unsigned pin") end
+	if #live > 0 then return Picked(From(live), false, "not answered yet") end
+	if F then
+		local elected = F.Elected(now)
+		if #elected > 0 then return Picked(From(elected), true, "provisional") end
+	end
+	return Picked(nil, nil, "none")
+end
+-- (1.5.5, for RelayFallback.lua) When `name` last answered our ping; whether it is left out now; a
+-- signed relay but us that answered within VERIFIED_FOR; how many signed relays are not left out.
+function Relay.AnsweredAt(name) return verified[Lower(ns.ShortName(name or ""))] end
+function Relay.IsLeftOut(name) return (offline[Lower(ns.ShortName(name or ""))] or 0) > Now() end
+function Relay.SignedAnswered(now)
+	now = now or Now()
+	for _, n in ipairs(Relay.Names(false)) do
+		local key = n:lower()
+		if (offline[key] or 0) <= now and Answered(key, now) and Relay.IsSignedRelay(n) then return n end
+	end
+	return nil
+end
+function Relay.SignedLive(now)
+	now = now or Now()
+	local k = 0
+	for _, n in ipairs(Relay.Names(false)) do
+		if (offline[n:lower()] or 0) <= now and Relay.IsSignedRelay(n) then k = k + 1 end
+	end
+	return k
 end
 
 local function LeaveOut(name, why)
@@ -383,14 +440,34 @@ local function Sweep()
 end
 Relay.Sweep = Sweep
 
+-- (1.5.5) A relay named again (a provisional relay's "no", or its stand-down, named one it reached:
+-- RelayFallback.lua): its left-out mark goes and it is pinged now.
+function Relay.Reconsider(name)
+	local short = ns.ShortName(name or "") or ""
+	if short == "" or not Relay.IsRelay(short) then return false end
+	local key = short:lower()
+	offline[key], pinged[key] = nil, nil
+	Ping(short)
+	return true
+end
+
 -- Held for the first relay to answer. A keyed message takes a waiting one's place, as in Comm's
 -- queue (the newest payload, a supplied callback replaces the old one); past PENDING_MAX the
--- oldest is dropped (its callback told).
-local function Hold(parts, logged, done, key, urgent, options)
+-- oldest is dropped (its callback told, "dropped").
+-- (1.5.5) Held HOLD_FOR at most for a relay picked sure (Daniel: "eu não quero que nenhum dado seja
+-- perdido"): the signed relays are swept once a PING_WAIT at most and the provisional relays elected
+-- meanwhile (RelayFallback.lua), and what waited goes to the first relay picked sure, signed or
+-- provisional. 1.5.4 sent it on after PING_WAIT to a relay that had not answered, or with none to
+-- pick on Forever's channel, which delivers nothing: both lost it. Past HOLD_FOR its callback hears
+-- "norelay" (counted, /oly bug), once.
+Relay.HOLD_FOR = 600
+local lastLook = -math.huge
+local function Hold(parts, logged, done, key, urgent, options, at, copied)
+	at = at or Now()
 	if key then
 		for _, p in ipairs(pending) do
 			if p.key == key then
-				p.parts, p.logged, p.urgent, p.options = parts, logged, urgent, options
+				p.parts, p.logged, p.urgent, p.options, p.at, p.copied = parts, logged, urgent, options, at, copied
 				p.done = done or p.done
 				return
 			end
@@ -398,27 +475,78 @@ local function Hold(parts, logged, done, key, urgent, options)
 	end
 	if #pending >= Relay.PENDING_MAX then
 		local old = table.remove(pending, 1)
-		if old.done then ns.SafeCall("relay done", old.done, false) end
+		stats.holdDropped = (stats.holdDropped or 0) + 1
+		if old.done then ns.SafeCall("relay done", old.done, false, "dropped") end
 	end
-	pending[#pending + 1] = { parts = parts, logged = logged, done = done, key = key, urgent = urgent, options = options }
+	pending[#pending + 1] = { parts = parts, logged = logged, done = done, key = key, urgent = urgent, options = options, at = at, copied = copied }
 end
--- What waited goes out to the relay picked now: once one answered, or anyway after PING_WAIT (to
--- the pick as 1.4.3 did; an older relay may not hear it, and registrations and the census repeat).
+-- What waited HOLD_FOR goes, its callback told "norelay".
+local function Expire(now)
+	local kept, gone = {}, {}
+	for _, p in ipairs(pending) do
+		if now - (p.at or now) >= Relay.HOLD_FOR then gone[#gone + 1] = p else kept[#kept + 1] = p end
+	end
+	if #gone == 0 then return end
+	pending = kept
+	stats.norelay = (stats.norelay or 0) + #gone
+	ns.Log("relay: %d word(s) held %ds with no relay to take them: dropped", #gone, Relay.HOLD_FOR)
+	for _, p in ipairs(gone) do
+		if p.done then ns.SafeCall("relay done", p.done, false, "norelay") end
+	end
+end
+-- A relay to take what waits: the signed relays pinged (once a PING_WAIT at most when none is
+-- live), and the provisional relays' election run where this client elects (RelayFallback.Want).
+local function LookForRelay(none)
+	local now = Now()
+	if not none or now - lastLook >= Relay.PING_WAIT then
+		lastLook = now
+		Sweep()
+	end
+	local F = Fallback()
+	if F and type(F.Want) == "function" then ns.SafeCall("relay fallback", F.Want, now) end
+end
+-- What waited goes out to the relay picked now, once one is picked sure (an answer, or a provisional
+-- relay elected); else, from the hold's timer (anyway), the stale ones go and a relay is looked for.
+-- (1.5.5) A provisional relay hears first that a relay answered us (RelayFallback.Answered): a
+-- signed one ends its service.
 local function Flush(anyway)
+	local F = Fallback()
+	if F and type(F.Answered) == "function" then ns.SafeCall("relay fallback", F.Answered) end
 	if flushing or #pending == 0 then return end
-	local _, sure = Relay.Pick()
-	if not sure and not anyway then return end
+	local relay, sure = Relay.Pick()
+	if not sure then
+		if anyway then
+			Expire(Now())
+			if #pending > 0 then LookForRelay(relay == nil) end
+		end
+		return
+	end
 	flushing = true
 	local list = pending
 	pending = {}
 	for _, p in ipairs(list) do
-		if not Relay.Out(p.parts, p.logged, p.done, p.key, p.urgent, p.options, true) and p.done then
-			ns.SafeCall("relay done", p.done, false)
+		if not Relay.Out(p.parts, p.logged, p.done, p.key, p.urgent, p.options, true, p.at, p.copied) and p.done then
+			ns.SafeCall("relay done", p.done, false, "norelay")
 		end
 	end
 	flushing = false
 end
 Relay.Flush = Flush
+-- While anything waits: looked at again every PING_WAIT (Flush, anyway).
+local function HoldTimer()
+	if holding then return end
+	holding = true
+	ns.After(Relay.PING_WAIT + 1, "relay hold", function()
+		holding = false
+		Flush(true)
+		if #pending > 0 then HoldTimer() end
+	end)
+end
+-- (1.5.5) What waits and what HOLD_FOR dropped, for RelayFallback.Stats (/oly bug); the look's clock (tests).
+function Relay.HoldStats()
+	return { held = #pending, norelay = stats.norelay or 0, dropped = stats.holdDropped or 0, refused = stats.refusedOut or 0 }
+end
+function Relay.ResetHold() lastLook = -math.huge end
 
 -- Hop 1: what a module said "on the channel" goes to our relay. parts: the message's pieces as the
 -- channel would carry them (each one whisper). Returns true when handed to the queue.
@@ -540,57 +668,25 @@ local function CrownToRelays(parts, pick)
 		end
 	end
 end
-function Relay.Out(parts, logged, done, key, urgent, options, anyway)
-	if not anyway and not logged and #parts == 1 and IsInGuild() then
-		local route = GuildRoute(parts[1])
-		if route == "only" then
-			if OwnGuild(parts[1], done, key, urgent, options) ~= nil then return true end
-		elseif route == "too" then
-			OwnGuild(parts[1], nil, key, urgent, options)
-		end
-	end
-	local relay, sure = Relay.Pick()
-	if not relay then return false end
-	if not anyway then CrownToRelays(parts, relay) end
-	-- (1.4.5) A chat line reaches the sender's own guild at once, over GUILD, as hop 3 from himself,
-	-- whatever the relays do (one dead, none answered yet): guildmates take it once (Seen), and
-	-- the relay's copy that comes back later counts once too. The relay still carries it to the
-	-- other guilds. The flush of a held line sends to the guild no second time.
-	if logged and not anyway and IsInGuild() then
-		local valid, why = PermitParts(parts, options)
-		if not valid then
-			if done then ns.SafeCall("relay done", done, false, why) end
-			return true
-		end
-		-- (The review of the 1.5.4 candidate.) Our line is taken here by our plain name as it leaves,
-		-- as Deliver takes a chat line: the copies that come back, our own client the relay (its
-		-- reporter branch) or another relay's RM naming us as its client stamped us, are this line,
-		-- and were handed to the guild a second time, shown to us again under the other stamp.
-		for _, p in ipairs(parts) do
-			if ToGuild("L", ns.me, p) then Seen(ns.ShortName(ns.me), p) end
-		end
-	end
-	if not sure and not anyway then
-		-- A held message is refused now, as its whispers would be later, when the capability
-		-- that guards it refuses it (1.5.2 checked it for the text fallback, gone in 1.5.4).
-		local valid, why = PermitParts(parts, options)
-		if not valid then
-			if done then ns.SafeCall("relay done", done, false, why) end
-			return true
-		end
-		-- (1.4.4) No relay answered yet: all pinged at once, the message held for the first answer.
-		-- (1.5.4: no channel text meanwhile; ChatHall.lua says why.)
-		Sweep()
-		Hold(parts, logged, done, key, urgent, options)
-		if not holding then
-			holding = true
-			ns.After(Relay.PING_WAIT + 1, "relay hold", function()
-				holding = false
-				Flush(true)
-			end)
-		end
-		return true
-	end
+-- (1.5.5) A word our guild has at once while no relay is there (Out): a single one that is no census
+-- report of ours, no registration and no ask only a relay answers (NO_FORWARD; a verifier's decision
+-- goes), nor one GuildRoute gave the guild already. Our own census report is each guildmate's own.
+local function GuildCopy(parts)
+	local p = parts[1]
+	if #parts ~= 1 or type(p) ~= "string" then return false end
+	if p:match("^C%w+:%d+:%d+:") or p:match("^RR~") or GuildRoute(p) then return false end
+	if Relay.NO_FORWARD[p:sub(1, 2)] and not p:match("^GV~1~[ARS]~") then return false end
+	return true
+end
+local function OwnReport(parts) return type(parts[1]) == "string" and parts[1]:match("^C%w+:1:%d+:R[12]~") ~= nil end
+-- A relay that may carry our words: a signed relay (or a code pin), or a provisional relay we elected.
+local function Carrier(name)
+	if Relay.IsRelay(name) then return true end
+	local F = Fallback()
+	return F ~= nil and type(F.IsElected) == "function" and F.IsElected(name) == true
+end
+-- The word to one relay. True always: handed on, or refused with its callback told (once).
+local function SendTo(relay, parts, logged, done, key, urgent, options)
 	local flag = logged and "L" or "P"
 	parts = Identify(parts, relay) -- (1.5.4: a registration names our version to a relay that named its own)
 	-- Our own client the relay: handed to it here, whole (a whisper to oneself is never delivered).
@@ -613,7 +709,13 @@ function Relay.Out(parts, logged, done, key, urgent, options, anyway)
 			pieces[#pieces + 1], originals[e] = e, p
 		end
 	end
-	if #pieces == 0 or #pieces > ns.Codec.MAX_CHUNKS then return false end
+	-- (1.5.5) Too long for one transfer: refused, its callback told once. 1.5.4 returned false and
+	-- Comm put it on the channel, with the same callback to tell a second time.
+	if #pieces == 0 or #pieces > ns.Codec.MAX_CHUNKS then
+		stats.refusedOut = (stats.refusedOut or 0) + 1
+		if done then ns.SafeCall("relay done", done, false, "size") end
+		return true
+	end
 	Ping(relay)
 	Quiet(relay)
 	stats.out = stats.out + 1
@@ -623,21 +725,100 @@ function Relay.Out(parts, logged, done, key, urgent, options, anyway)
 		if options.permit then
 			-- Comm normalized key -> guardKey on the logical CHANNEL job. Restore
 			-- the public capability shape when creating its physical WHISPER job.
-			-- Only these exact envelopes to this still-signed relay may spend it;
+			-- Only these exact envelopes to this still-signed (or still-elected) relay may spend it;
 			-- the owner's permit continues to see its original lane and payload.
 			pass.key = options.guardKey
 			pass.permit = function(owner, guardKey, dist, target, message)
 				local original = originals[message]
 				if owner ~= options.owner or guardKey ~= options.guardKey or dist ~= "WHISPER"
-					or target ~= relay or not Relay.IsRelay(target) or not original then return false, "lane" end
+					or target ~= relay or not Carrier(target) or not original then return false, "lane" end
 				return options.permit(owner, guardKey, "CHANNEL", nil, original)
 			end
 		end
 	end
-	if #pieces == 1 then
-		return ns.Comm.Whisper(relay, pieces[1], key, urgent, logged, done, pass) ~= false
+	if #pieces == 1 then ns.Comm.Whisper(relay, pieces[1], key, urgent, logged, done, pass)
+	else ns.Comm.SendBatch("WHISPER", pieces, key, relay, urgent, done, pass) end
+	return true
+end
+-- (1.5.5) Out takes every word it is handed on Forever and tells its callback once: sent, refused,
+-- dropped, or "norelay" past HOLD_FOR (Comm makes no channel job there any more). False only where
+-- the relay does not run (off Forever). at, copied: a held word's first hold, and whether our guild
+-- had its copy then (Flush hands them back).
+function Relay.Out(parts, logged, done, key, urgent, options, anyway, at, copied)
+	if not Relay.On() then return false end
+	if not anyway and not logged and #parts == 1 and IsInGuild() then
+		local route = GuildRoute(parts[1])
+		if route == "only" then
+			if OwnGuild(parts[1], done, key, urgent, options) ~= nil then return true end
+		elseif route == "too" then
+			OwnGuild(parts[1], nil, key, urgent, options)
+		end
 	end
-	return ns.Comm.SendBatch("WHISPER", pieces, key, relay, urgent, done, pass) ~= false
+	local relay, sure = Relay.Pick()
+	if relay and not anyway then CrownToRelays(parts, relay) end
+	-- (1.4.5) A chat line reaches the sender's own guild at once, over GUILD, as hop 3 from himself,
+	-- whatever the relays do (one dead, none answered yet): guildmates take it once (Seen), and
+	-- the relay's copy that comes back later counts once too. The relay still carries it to the
+	-- other guilds. The flush of a held line sends to the guild no second time.
+	if logged and not anyway and IsInGuild() then
+		local valid, why = PermitParts(parts, options)
+		if not valid then
+			if done then ns.SafeCall("relay done", done, false, why) end
+			return true
+		end
+		-- (The review of the 1.5.4 candidate.) Our line is taken here by our plain name as it leaves,
+		-- as Deliver takes a chat line: the copies that come back, our own client the relay (its
+		-- reporter branch) or another relay's RM naming us as its client stamped us, are this line,
+		-- and were handed to the guild a second time, shown to us again under the other stamp.
+		for _, p in ipairs(parts) do
+			if ToGuild("L", ns.me, p) then Seen(ns.ShortName(ns.me), p) end
+		end
+	end
+	if not sure then
+		if not anyway then
+			-- A held message is refused now, as its whispers would be later, when the capability
+			-- that guards it refuses it (1.5.2 checked it for the text fallback, gone in 1.5.4).
+			local valid, why = PermitParts(parts, options)
+			if not valid then
+				if done then ns.SafeCall("relay done", done, false, why) end
+				return true
+			end
+			-- (1.5.5) No relay at all: our guild has a single word at once, as a relay would hand it
+			-- (RG from ourselves, OwnGuild), whatever becomes of it on the way to the others.
+			if not relay and not logged and IsInGuild() and GuildCopy(parts) then
+				OwnGuild(parts[1], nil, key, urgent, options)
+				copied = true
+			end
+		end
+		-- (1.4.4) No relay answered yet: all pinged at once, the message held for the first answer.
+		-- (1.5.4: no channel text meanwhile; ChatHall.lua says why.) (1.5.5) Held HOLD_FOR at most.
+		LookForRelay(relay == nil)
+		Hold(parts, logged, done, key, urgent, options, at, copied)
+		HoldTimer()
+		return true
+	end
+	-- (1.5.5) While provisional relays carry our words, our census report goes to two of them (its
+	-- guild's hash picks which): a row counts where two provisional snapshots agree (Data's witnesses).
+	local F = Fallback()
+	if OwnReport(parts) and F and not Relay.IsRelay(ns.me) and F.Active() then
+		local targets = F.ReportTargets(GetGuildInfo and GetGuildInfo("player") or ns.me or "")
+		if #targets > 1 then
+			local left, ok = #targets, false
+			local function Each(sent, why)
+				left, ok = left - 1, ok or sent == true
+				if left == 0 and done then ns.SafeCall("relay done", done, ok, (not ok) and (why or "failed") or nil) end
+			end
+			for _, target in ipairs(targets) do SendTo(target, parts, logged, Each, nil, urgent, options) end
+			return true
+		end
+	end
+	-- (1.5.5) A provisional relay hands no other origin's word on: our guild has a single word at once
+	-- (unless it had it when the word was held), as it would from a signed relay's hand-over.
+	if not copied and not logged and IsInGuild() and not Relay.IsRelay(relay)
+		and relay:lower() ~= ns.ShortName(ns.me or ""):lower() and GuildCopy(parts) then
+		OwnGuild(parts[1], nil, key, urgent, options)
+	end
+	return SendTo(relay, parts, logged, done, key, urgent, options)
 end
 
 -- The reporter's registration (Comm.MaybeBroadcast, every REGISTER_EVERY while elected).
