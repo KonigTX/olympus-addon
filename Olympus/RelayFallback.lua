@@ -641,17 +641,26 @@ local function Check(origin, word, now)
 	return not F.IsElected(origin, now)
 end
 
--- RO heard: only from a provisional relay this client elected; taken as from its origin (hop "O":
--- nothing trusted comes this way) and handed to our guild once. A serving relay hands a peer's
--- snapshot and a QA on to its own registrants. A snapshot that made its relay disagree (Check) goes
--- no further than this client, where it is one witness.
+-- What a provisional relay carries, and nothing else (a changed client elected by chance could
+-- otherwise speak for any origin, the King's crown or a verifier's decision): its own snapshot or
+-- carried totals, an elected peer's snapshot, and an author's signed look (QA proves itself).
+local function Carried(sender, origin, word, now)
+	if word:match("^QA~") then return true end
+	local snapshot = word:match("^CG~%d+~S~") ~= nil
+	if Key(origin) == Key(sender) then return snapshot or word:match("^CX~") ~= nil end
+	return snapshot and F.IsElected(origin, now)
+end
+-- RO heard: only from a provisional relay this client elected, and only what such a relay carries;
+-- taken as from its origin (hop "O": nothing trusted comes this way) and handed to our guild once.
+-- A serving relay hands a peer's snapshot and a QA on to its own registrants. A snapshot that made
+-- its relay disagree (Check) goes no further than this client, where it is one witness.
 function F.HandleRO(dist, sender, text)
 	local R = ns.Relay
 	if dist ~= "WHISPER" or type(R) ~= "table" or not R.On() then return false end
 	local flag, origin, word = tostring(text):match("^RO~([LP])~([^~]+)~(.*)$")
 	if not flag then return false end
 	local now = Now()
-	if not F.IsElected(sender, now) then
+	if not F.IsElected(sender, now) or not Carried(sender, origin, word, now) then
 		stats.roDropped = stats.roDropped + 1
 		return false
 	end
