@@ -6997,6 +6997,8 @@ assert(loadfile(ROOT .. "tests/hop-forever.lua"))(ns, test, eq, { RelayWorld = R
 assert(loadfile(ROOT .. "tests/relay-fanout.lua"))(ns, test, eq, { RelayWorld = RelayWorld })
 -- 1.5.4: lists as one word by the relay (Comm.SendList, LS), the Church's public rows first.
 assert(loadfile(ROOT .. "tests/relay-lists.lua"))(ns, test, eq, { RelayWorld = RelayWorld, FreshComm = FreshComm, addon = ADDON_DIR, ROOT = ROOT })
+-- 1.5.5: the author as the census's trusted distributor, his signed looks (QA) and Data.CensusStats.
+assert(loadfile(ROOT .. "tests/census-author.lua"))(ns, test, eq, { RelayWorld = RelayWorld, addon = ADDON_DIR, ROOT = ROOT })
 assert(loadfile(ROOT .. "tests/relay-presentation.lua"))(ns, test, eq, { RelayWorld = RelayWorld })
 -- 1.5.4: the presentation, the relay's admission and the relay rules (tests/relay-admit.lua).
 assert(loadfile(ROOT .. "tests/relay-admit.lua"))(ns, test, eq, { RelayWorld = RelayWorld, FreshComm = FreshComm, ROOT = ROOT })

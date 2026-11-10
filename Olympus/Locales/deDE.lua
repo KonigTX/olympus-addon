@@ -1039,6 +1039,7 @@ ns.Locale("deDE", {
 	CENSUS_STATS_SEEN = "Stand %s",
 	CENSUS_STATS_SERVERS = "Alle Server",
 	CENSUS_STATS_SERVERS_TIP = "Dein eigener Server wird live gezählt. Das Spiel zeigt jedem Spieler nur seinen eigenen Server, also kommen die Zahlen der anderen über Spieler, die auch dort spielen: was du selbst gesehen hast, als du dort warst, und worauf sich zwei Spieler einigen (oder was ein Moderator sagt). Das Wort eines einzelnen Spielers wird grau gelistet und nicht gezählt.",
+	CENSUS_STATS_SRC_AUTHOR = "Vom Autor des Addons mitgeteilt.",
 	CENSUS_STATS_SRC_HEARD = "Empfangener Bericht; die ursprüngliche Beobachtung ist nicht unabhängig bestätigt.",
 	CENSUS_STATS_SRC_LIVE = "Live gezählt: der Server, auf dem du bist.",
 	CENSUS_STATS_SRC_OWN = "Was du selbst gesehen hast, als du dort warst.",
