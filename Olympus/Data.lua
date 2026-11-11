@@ -2538,7 +2538,7 @@ local function TakeLook(look, direct, trusted, src)
 		local old = store[key]
 		-- (1.5.5) The guilds in the author's own look are his word too (as his capsule, ReceiveGroupDetails).
 		local label = trusted and (src == "author" or AuthorIdentity(observer)) and "author" or "heard"
-		if not old or old.source == "heard" or old.unscoped then
+		if not old or old.source == "heard" or old.unscoped or (label == "author" and old.source == "author") then
 			local newest = 0
 			for _, r in pairs(rows) do r.source = label; newest = math.max(newest, r.observed) end
 			if not old or old.unscoped or newest > old.observed or (label == "author" and old.source == "heard") then

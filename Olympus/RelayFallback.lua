@@ -401,7 +401,7 @@ end
 
 -- Pieces of an own CG/CX or a QA word put together (head: the pattern its first piece starts with);
 -- the whole word once its last piece is here, else nil.
-local function Collect(origin, body, now, head)
+local function Collect(origin, body, now, head, also)
 	local id, i, n, part = body:match("^C(%w+):(%d+):(%d+):(.*)$")
 	i, n = tonumber(i), tonumber(n)
 	if not id or n < 1 or n > ns.Codec.MAX_CHUNKS or i < 1 or i > n then return nil end
@@ -409,7 +409,7 @@ local function Collect(origin, body, now, head)
 	local key = Lower(origin) .. "#" .. id
 	local s = sets[key]
 	if not s then
-		if i ~= 1 or not part:match(head) or Count(sets) >= SETS_MAX then return nil end
+		if i ~= 1 or not (part:match(head) or (also and part:match(also))) or Count(sets) >= SETS_MAX then return nil end
 		s = { n = n, got = 0, pieces = {}, last = now }
 		sets[key] = s
 	end
@@ -511,15 +511,14 @@ local function Register(sender, rest, now)
 	return true
 end
 
--- Our own word (Relay.Pick names us while we serve): a census snapshot or carried totals to our
--- registrants and peers; any other single word to our own guild alone (no other guild hears a
--- provisional relay's own words but its numbers).
+-- Our own word (Relay.Pick names us while we serve): a census snapshot, carried totals or an
+-- author's signed look to our registrants and peers; any other single word to our own guild alone.
 local function Own(flag, origin, body, now)
 	local R = ns.Relay
-	local word = Collect(origin, body, now, "^C[GX]~")
+	local word = Collect(origin, body, now, "^C[GX]~", "^QA~")
 	if not word and not body:match("^C%w+:%d+:%d+:") then word = body end
 	if not word then return true end
-	if word:match("^CG~%d+~S~") or word:match("^CX~") then
+	if word:match("^CG~%d+~S~") or word:match("^CX~") or word:match("^QA~") then
 		Spread(flag, origin, word, true)
 	elseif flag ~= "L" and word == body and not word:match("^RR~") and not R.GuildRoute(word)
 		and not (R.NO_FORWARD[word:sub(1, 2)] and not word:match("^GV~1~[ARS]~")) then

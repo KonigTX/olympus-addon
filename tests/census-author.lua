@@ -163,6 +163,77 @@ test("census author (1.5.5): the author's carried look whose observer is his PvP
 	end)
 end)
 
+-- The guild detail follows the same original observation as its aggregate, including a refresh.
+local function DetailLook(observed, total)
+	return ("CX~3~S~%s-%s~ForeverPvP~Alliance~%d,%d,1,%d~Olympus Detail,%d,10,250,%d")
+		:format(AUTHOR_PVP, PVP, total, total, observed, total, observed)
+end
+
+local function CheckAuthorDetailRefresh(Node, Frames, signed)
+	local Ed, seed = ns.Ed25519, string.rep("\31", 32)
+	local pk = signed and Ed.PublicKey(seed) or nil
+	local R = Node(LISTENER, { pk = pk and Ed.ToB64(pk) or nil })
+	local t = R.clock
+	local firstObserved, newerObserved = t - R.Data.TOTAL_KEEP + 30, t - 10
+	local first, newer = DetailLook(firstObserved, 800), DetailLook(newerObserved, 900)
+	local function Hear(wire, id)
+		if signed then
+			local qa = "QA~1~" .. Ed.ToB64(Ed.Sign(seed, "OLYQA1|" .. wire, pk)) .. "~" .. wire
+			Carry(R, "M", "Sage Ledger", "Plain Member-" .. PVE, qa, id)
+			Frames()
+			return qa
+		end
+		Carry(R, "M", "Sage Ledger", AUTHOR, wire, id)
+	end
+	local firstQA = Hear(first, "71")
+	local detail = assert(R.Data.GroupGuilds("ForeverPvP")[1])
+	eq(detail.characters, 800); eq(detail.source, "author"); eq(detail.observed, firstObserved)
+	R.clock = t + 60
+	local newerQA = Hear(newer, "72")
+	local aggregate = assert(PvP(R.Data.Groups()))
+	eq(aggregate.characters, 900); eq(aggregate.observed, newerObserved)
+	detail = assert(R.Data.GroupGuilds("ForeverPvP")[1])
+	eq(detail.characters, 900, "new author details follow the refreshed aggregate")
+	eq(detail.observed, newerObserved, "the author's original date survives receipt")
+	eq(detail.source, "author"); eq(detail.counted, true, "the replaced first look's age cannot expire newer details")
+	if signed then
+		eq(R.Data.CensusStats().qa.verified, 2, "both author signatures were actually verified")
+		assert(R.Data.ReceiveAttest("CHANNEL", "Another Carrier-" .. PVE, firstQA))
+		assert(R.Data.ReceiveAttest("CHANNEL", "Another Carrier-" .. PVE, newerQA))
+	else
+		assert(R.Data.ReceivePortable(AUTHOR, first))
+		assert(R.Data.ReceivePortable(AUTHOR, newer))
+	end
+	assert(R.Data.ReceivePortable("Plain Member-" .. PVE, DetailLook(R.clock - 1, 990)))
+	detail = assert(R.Data.GroupGuilds("ForeverPvP")[1])
+	eq(detail.characters, 900, "older, repeated and unproven looks cannot replace the author detail")
+	eq(detail.observed, newerObserved, "a replay never renews the observation")
+end
+
+test("census author details: a newer trusted carried look refreshes author guild details and their original expiry", function()
+	World(function(Node, Frames) CheckAuthorDetailRefresh(Node, Frames, false) end)
+end)
+
+test("census author details: a newer verified QA refreshes author guild details without replay or carrier upgrades", function()
+	World(function(Node, Frames) CheckAuthorDetailRefresh(Node, Frames, true) end)
+end)
+
+test("census author details: a newer author look cannot replace this account's own guild-detail evidence", function()
+	World(function(Node)
+		local R = Node(LISTENER)
+		local t = R.clock
+		R.group, R.realm, R.me = "ForeverPvP", PVP, "Local Observer-" .. PVP
+		R.rdb.guilds["Olympus Detail"] = { total = 875, online = 10, avgLevel = 25, t = t - 100, st = t - 100,
+			from = PVP, faction = "Alliance" }
+		assert(R.Data.CaptureGroupDetails(R.Data.Summary(), t))
+		R.group, R.realm, R.me, R.rdb.guilds = "ForeverPvE", PVE, LISTENER, {}
+		Carry(R, "M", "Sage Ledger", AUTHOR, DetailLook(t - 1, 900), "73")
+		local detail = assert(R.Data.GroupGuilds("ForeverPvP")[1])
+		eq(detail.source, "own"); eq(detail.characters, 875)
+		eq(detail.observed, t - 100, "newer author data cannot relabel or renew stronger own evidence")
+	end)
+end)
+
 -- Fails before: the author's client said no Forever row at all (not trusted), and a councillor's client
 -- heard the author (groupHeard) but never said his row, so old clients counted nothing of it.
 test("census author (1.5.5): the author's client says every family row it counts, never a heard or hand-over one; a councillor re-says his rows for old clients, not those taken over RG; a 1.5.4 receiver counts that copy", function()

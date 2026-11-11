@@ -16,6 +16,15 @@ local function World(fn)
 		inGuild = IsInGuild, chat = C_ChatInfo, time = GetTime, server = GetServerTime }
 	local dialogs = {}; for k, v in pairs(StaticPopupDialogs) do dialogs[k] = v end
 	local W = { nodes = {}, timers = {}, now = T0, channel = {} }
+	function W.CheckSignatures()
+		local Ed, frames = ns.Ed25519, {}
+		W.edAfter = Ed.after
+		Ed.Reset()
+		Ed.after = function(fn) frames[#frames + 1] = fn end
+		return function(n)
+			while #frames > 0 do W.As(n, table.remove(frames, 1)) end
+		end
+	end
 	GetChannelName = function() return 5 end -- (joined: Forever's channel takes our words and delivers none)
 	JoinChannelByName = function() end
 	ns.IsMember = function() return true end
@@ -121,6 +130,7 @@ local function World(fn)
 	end
 	function W.Elected(n) return table.concat(W.As(n, n.c.RelayFallback.Elected) or {}, ",") end
 	local ok, err = pcall(fn, W)
+	if W.edAfter then ns.Ed25519.Reset(); ns.Ed25519.after = W.edAfter end
 	GetChannelName, JoinChannelByName, ns.IsMember, GetGuildInfo, IsInGuild, C_ChatInfo, GetTime, GetServerTime =
 		saved.channel, saved.join, saved.member, saved.guild, saved.inGuild, saved.chat, saved.time, saved.server
 	for k in pairs(StaticPopupDialogs) do StaticPopupDialogs[k] = dialogs[k] end
@@ -128,11 +138,12 @@ local function World(fn)
 end
 
 -- Handlers that note what a node took and how it came (Relay.ViaProvisional while it is handled).
-local function Watch(n, kinds)
+local function Watch(n, kinds, take)
 	local got = {}
 	for _, kind in ipairs(kinds) do
 		n.c.Comm.Handle(kind, function(dist, sender, text)
 			got[#got + 1] = { kind = kind, dist = dist, sender = sender, text = text, via = n.c.Relay.ViaProvisional() }
+			if take then return take(dist, sender, text) end
 		end)
 	end
 	return function(kind, text)
@@ -355,6 +366,99 @@ test("1.5.5 fallback: a provisional relay forwards its own CG and CX, its peers'
 		eq((atP("QA")), 1, "QA heard there")
 		eq(#W.Sent(ps[1], "RO~P~Member Eve-Realm~QA~", PROV[2]), 1, "QA from anyone goes on: to its peers")
 		eq((atR("T1")) + (atR("GV")) + (atR("MN")) + (atR("O1")), 0, "nothing of the staff's kinds came back by RO")
+		eq(#W.channel, 0)
+	end)
+end)
+
+test("1.5.6 fallback: a serving relay carries its own single and saved chunked QA to registrants, peers and its guild", function()
+	World(function(W)
+		local ps = Provisional(W, { census = true })
+		local r = W.Node("Attest Reader", "Olympus Reader", { registrant = true, census = true })
+		local mate = W.Node("Prov Mate", "Olympus Prov 1")
+		Elect(W, { ps[1], ps[2], ps[3], r })
+		r.c.Relay.Pick = function() return PROV[1], true end
+		W.As(r, r.c.Relay.Register, true); W.Flush()
+		local frames = W.CheckSignatures()
+		local atR, atPeer, atMate = Watch(r, { "QA" }, r.c.Data.ReceiveAttest), Watch(ps[2], { "QA" }), Watch(mate, { "QA" })
+		local p = ps[1]
+		eq(W.As(p, p.c.Relay.Pick), p.name, "the serving relay takes its actual self route")
+		local single = "QA~1~single carried look"
+		eq(W.As(p, p.c.Comm.Send, "CHANNEL", single), true)
+		W.Flush()
+		eq((atR("QA", single)), 1, "an own single QA reaches the registrant")
+		eq((atPeer("QA", single)), 1, "and its elected peer")
+		eq((atMate("QA", single)), 1, "and its own guild once")
+		-- A previously checked author's look saved account-wide and carried from another family.
+		local seed, Ed = string.rep("\23", 32), ns.Ed25519
+		local pk = Ed.PublicKey(seed)
+		local observed = math.floor(W.now) - 60
+		p.c.AUTHOR_ATTEST_PK = Ed.ToB64(pk)
+		r.c.AUTHOR_ATTEST_PK = Ed.ToB64(pk)
+		local function SavedLook(details, at)
+			local wire = ("CX~3~S~Carried Author-CAMWOWUS1Realm8PvP~ForeverPvP~Alliance~13614,12900,30,%d~%s"):format(at, details)
+			local text = "QA~1~" .. Ed.ToB64(Ed.Sign(seed, "OLYQA1|" .. wire, pk)) .. "~" .. wire
+			p.c.db.groupAttest = { ["Alliance|ForeverPvP"] = { text = text, group = "ForeverPvP", faction = "Alliance", observed = at } }
+			return text
+		end
+		local shortQA = SavedLook("", observed)
+		eq(#ns.Codec.Chunk(shortQA, "short"), 1, "a saved look without guild details fits one piece")
+		eq(W.As(p, p.c.Data.SayGroupCensus), true)
+		W.Flush()
+		eq((atR("QA", shortQA)), 1); eq((atPeer("QA", shortQA)), 1); eq((atMate("QA", shortQA)), 1)
+		frames(r)
+		eq(r.c.Data.CensusStats().qa.verified, 1, "the receiver verifies the saved signature")
+		local qa = SavedLook(("Olympus Remembered,900,100,450,%d;Olympus Recalled,700,50,400,%d"):format(observed + 1, observed + 1), observed + 1)
+		eq(#ns.Codec.Chunk(qa, "test"), 2, "the actual author's look needs multiple pieces")
+		eq(W.As(p, p.c.Data.SayGroupCensus), true, "the real census sender accepts the saved look")
+		W.Flush()
+		eq((atR("QA", qa)), 1, "all pieces reach the registrant as one unchanged QA")
+		eq((atPeer("QA", qa)), 1, "and the elected peer")
+		eq((atMate("QA", qa)), 1, "and its own guild once")
+		frames(r)
+		eq(r.c.Data.CensusStats().qa.verified, 2, r.c.Data.CensusStats().line)
+		local function Foreign()
+			for _, row in ipairs(W.As(r, r.c.Data.Groups).rows) do if row.group == "ForeverPvP" then return row end end
+		end
+		local row = assert(Foreign(), "the authenticated foreign census is accepted")
+		eq(row.counted, true); eq(row.src, "author"); eq(row.characters, 13614); eq(row.observed, observed + 1)
+		eq(W.As(p, p.c.Data.AttestPayload, W.now, true), nil, "the normal per-origin repeat window still applies")
+		local forged = qa:gsub("13614,12900,30,", "13615,12900,30,", 1)
+		eq(W.As(p, p.c.Comm.SendChunked, forged, false, "CHANNEL"), true)
+		W.Flush(); frames(r)
+		eq(r.c.Data.CensusStats().qa.verified, 2, "a provisional route grants no signature authority")
+		eq(r.c.Data.CensusStats().last[1].why, "signature")
+		eq(Foreign().characters, 13614, "the forged copy cannot replace the accepted count")
+		eq(#W.Sent(ps[2], "RO~P~" .. p.c.me .. "~", p.name), 0, "no peer sends the look back to its origin")
+		eq(#W.channel, 0, "nothing leaks onto Forever's channel")
+	end)
+end)
+
+test("1.5.6 fallback: own QA keeps send guards and chunk bounds, and other private or unsupported words never spread", function()
+	World(function(W)
+		local ps = Provisional(W)
+		local r = W.Node("Guard Reader", "Olympus Guard", { registrant = true })
+		Elect(W, { ps[1], ps[2], ps[3], r })
+		r.c.Relay.Pick = function() return PROV[1], true end
+		W.As(r, r.c.Relay.Register, true); W.Flush()
+		local kinds = { "QA", "T1", "GV", "MN", "O1", "X1" }
+		local atR, atPeer = Watch(r, kinds), Watch(ps[2], kinds)
+		local p, calls = ps[1], {}
+		W.As(p, p.c.Comm.SendChunked, "QA~1~guarded " .. string.rep("x", 250), false, "CHANNEL",
+			function(sent, why) calls[#calls + 1] = { sent, why } end,
+			{ owner = p.c.RelayFallback, key = "guarded-qa", permit = function() return false, "held" end })
+		W.Flush()
+		eq(#calls, 1); eq(calls[1][1], false); eq(calls[1][2], "held")
+		W.As(p, p.c.RelayFallback.HandleIn, "WHISPER", p.c.me, "RL~P~Cbad:1:" .. (ns.Codec.MAX_CHUNKS + 1) .. ":QA~1~too many")
+		W.As(p, p.c.RelayFallback.HandleIn, "WHISPER", p.c.me, "RL~P~Ctail:2:2:QA~1~no first piece")
+		for _, word in ipairs({ "T1~P~1~2~3", "GV~1~A~1~2~3", "MN~1~a~b", "O1~x~y", "X1~unsupported" }) do
+			W.As(p, p.c.Comm.Send, "CHANNEL", word)
+			W.As(p, p.c.Comm.SendChunked, word .. string.rep("x", 250), false, "CHANNEL")
+		end
+		W.Flush()
+		for _, kind in ipairs(kinds) do
+			eq((atR(kind)), 0, kind .. " was not forwarded to a registrant")
+			eq((atPeer(kind)), 0, kind .. " was not forwarded to a peer")
+		end
 		eq(#W.channel, 0)
 	end)
 end)
