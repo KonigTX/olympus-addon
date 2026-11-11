@@ -3552,8 +3552,8 @@ python3 scripts/council-sign.py check     # the author: read dist/CouncilList.lu
 scripts/package.sh                        # dist/Olympus-<version>.zip (Olympus, Arena and SiteAggregate)
 scripts/package.sh --test N               # test build N with all three folders and rollback steps
 scripts/package.sh --release116           # 1.1.6: the release without scripts/bets-only.txt's files, in dist/release116/
-luajit scripts/ship-lists.lua [--group G] <CouncilList.lua> dist/SignedLists.lua  # 1.5.5: the signed lists for a zip (signs nothing)
-OLY_SIGNED_LISTS=dist/SignedLists.lua scripts/package.sh  # 1.5.5: a package carrying them (OLY_REQUIRE_LISTS=1: refused without)
+luajit scripts/ship-lists.lua [--group G] <CouncilList.lua> dist/SignedLists.lua  # 1.5.6: the signed lists for a zip (signs nothing)
+OLY_SIGNED_LISTS=dist/SignedLists.lua scripts/package.sh  # 1.5.6: a package carrying them (OLY_REQUIRE_LISTS=1: refused without)
 WOW_HOST=user@pc scripts/deploy.sh        # copy all bundled addon folders to a Windows PC over SSH
 OLY_TREE=dist/test1 WOW_HOST=user@pc scripts/deploy.sh  # deploy a test build's three folders instead
 WOW_HOST=user@pc scripts/logs.sh          # read the log and captured errors from that PC
@@ -3655,7 +3655,7 @@ command signs the whole council again and prints the titles list to paste; the a
 `HT1~` text with `/oly approved paste`. `/oly status` says where each identity comes from
 (`identities: King signed ...`), never a name.
 
-Since 1.5.5 a release carries the signed lists too, so a list reaches every client that updates
+Since 1.5.6 a release carries the signed lists too, so a list reaches every client that updates
 (the Twelve Apostles came in one titles list that only a paste and the relays carried, and it
 reached almost nobody). `scripts/ship-lists.lua` copies lists already signed (it signs nothing)
 from a `CouncilList.lua` or from the printed `HS1~`/`HT1~` text into a file under `dist/`, the

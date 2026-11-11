@@ -260,6 +260,23 @@ What version 1.5.5 changes:
 Close and reopen the game after the update.
 
 Long live the King. Long live Olympus.]==]
+L.LETTER_1_5_6_TITLE, L.LETTER_1_5_6_HEAD, L.LETTER_1_5_6_SIGNED, L.LETTER_1_5_6_LINK = "Census delivery and guild tools", "Census delivery and guild tools", L.LETTER_1_5_4_SIGNED, L.LETTER_1_5_4_LINK
+L.LETTER_1_5_6 = [==[Your Majesty. Soldiers of Olympus.
+
+This update improves how guilds exchange census reports and recover missing pieces. The players acting as network relays need this version too for the new connections to work across guilds.
+
+- {guild} Relays find one another and exchange their census snapshots. Large snapshots can be passed through several guild members, with checks and requests for missing pieces.
+- {guild} The saved census gives way to sufficient newer reports even when an extra old guild report remains. Its original observation date stays visible while coverage is incomplete.
+- {watch} The release carries the author's signed lists. The author's signed identity also restores access to the private High Council view. Guild-master verification holds wait where no appointed verifier is available.
+- {crown} Verification notices appear below the guilds on the King's Census screen. The King's identity remains separate from the guild master. The signed Treasurer and Quaestors have their own roles and frames.
+- {news} Olympus chat can show all rulesets or only PvP, PvE, RP or RP-PvP. Other rulesets are labelled in the combined view.
+- {church} Church history from characters on the same account is consolidated, and available recruitment logs help recover supported events.
+- {crown} The King and High Council can publish map names through the map editor. Office shields and the player-menu controls have also been revised.
+- {team} The first Bones lesson survives a roster update while the innkeeper's dialogue closes. The innkeeper starts the lesson and shows scoring groups more slowly. The guide pauses the demonstration until you close it.
+
+Close and reopen WoW after updating so the new network modules load. If census reports still fail to arrive, send an /oly bug report with your guild and ruleset.
+
+Long live the King. Long live Olympus.]==]
 L.LETTER_1_3_3_TITLE = "Your guild on the website"
 L.LETTER_1_3_3 = [==[Version 1.3.3.
 
@@ -427,6 +444,23 @@ O que muda na versão 1.5.5:
 - {news} O Companion Bridge diz de qual grupo de reinos e de qual tipo de reino são os dados de Wanted.
 
 Feche e abra o jogo de novo depois da atualização.
+
+Vida longa ao Rei. Vida longa ao Olympus.]==]
+	L.LETTER_1_5_6_TITLE, L.LETTER_1_5_6_HEAD, L.LETTER_1_5_6_SIGNED, L.LETTER_1_5_6_LINK = "Entrega do censo e ferramentas de guilda", "Entrega do censo e ferramentas de guilda", L.LETTER_1_5_4_SIGNED, L.LETTER_1_5_4_LINK
+	L.LETTER_1_5_6 = [==[Vossa Majestade. Soldados do Olympus.
+
+Esta atualização melhora a troca de relatórios do censo entre guildas e a recuperação de partes perdidas. Os jogadores que atuam como relays da rede também precisam atualizar para que as novas conexões funcionem entre guildas.
+
+- {guild} Os relays encontram uns aos outros e compartilham seus snapshots do censo. Snapshots grandes podem passar por vários membros das guildas, com conferência e pedidos das partes que faltarem.
+- {guild} O censo salvo dá lugar a uma quantidade suficiente de relatórios mais novos mesmo quando sobra um relatório antigo de outra guilda. A data original da observação continua visível enquanto a cobertura estiver incompleta.
+- {watch} A versão inclui as listas assinadas pelo autor. A identidade assinada do desenvolvedor também permite visualizar o High Council privado. A restrição do guild master por verificação aguarda onde ainda não existe um verificador nomeado disponível.
+- {crown} Os avisos de verificação ficam depois das guildas na tela de censo do Rei. A identidade do Rei permanece separada do guild master. O Tesoureiro e os Quaestors da lista assinada têm seus próprios cargos e molduras.
+- {news} O chat do Olympus pode mostrar todos os rulesets ou apenas PvP, PvE, RP ou RP-PvP. A visualização conjunta identifica as mensagens dos outros rulesets.
+- {church} O histórico da Igreja dos personagens da mesma conta é consolidado, e os registros de recrutamento disponíveis ajudam a recuperar os eventos compatíveis.
+- {crown} O Rei e o High Council podem publicar nomes de lugares pelo editor do mapa. Os escudos de cargos e os controles do menu de jogadores também foram revisados.
+- {team} A primeira lição de Bones continua mesmo se a lista da guilda atualizar durante o fechamento do diálogo do taverneiro. O taverneiro começa a lição e mostra os grupos de pontuação mais devagar. O guia pausa a demonstração até você fechá-lo.
+
+Feche e abra o WoW depois de atualizar para carregar os novos módulos da rede. Se os relatórios do censo continuarem sem chegar, envie um /oly bug com sua guilda e ruleset.
 
 Vida longa ao Rei. Vida longa ao Olympus.]==]
 	L.LETTER_1_3_3_TITLE = "Sua guilda no site"
