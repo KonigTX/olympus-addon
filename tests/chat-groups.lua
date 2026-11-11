@@ -271,7 +271,8 @@ test("chat groups (1.5.5): a [Captains] or [Lords] line of another realm family 
 		ns.Data.Receive(Rep(), "Dawn Reporter-CAMWOWUS2Realm3RP")
 		ns.Data.Receive(Rep(), "Dawn Witness-CAMWOWUS2Realm6RP")
 		eq(ns.Data.KnownRank("Dawn Officer-CAMWOWUS1Realm5PvE", "Olympus Dawn"), 1, "(the reports name him an officer)")
-		local before = C.Stats().otherRank or 0
+		local counts = C.Stats()
+		local ordinaryRank, before = counts.rank or 0, counts.otherRank or 0
 		local shown, why = C.Receive("CHANNEL", "Dawn Officer-CAMWOWUS1Realm5PvE", Line("C", "Olympus Dawn", 5201, "captains, to me"), 9200)
 		eq(shown, false); eq(why, "unverified", "never verified: another family's")
 		eq(Kept("C", "captains, to me"), 0, "not kept: not shown in [Captains]")
@@ -279,8 +280,9 @@ test("chat groups (1.5.5): a [Captains] or [Lords] line of another realm family 
 		eq(shown, false); eq(why, "unverified")
 		eq(Kept("L", "lords, to me"), 0)
 		eq((C.Stats().otherRank or 0) - before, 2, "counted")
+		eq(C.Stats().rank or 0, ordinaryRank, "foreign-family rejections do not change ordinary rank counts")
 		local bug = ns.StatusText():match("\nchat: [^\n]*") or ""
-		assert(bug:find("rank=" .. (before + 2), 1, true), "in /oly bug's chat line: " .. bug)
+		assert(bug:find("rank=" .. (ordinaryRank + before + 2) .. " ", 1, true), "ordinary and foreign-family rejections in /oly bug's chat line: " .. bug)
 		-- Our family's officer, as before.
 		shown, why = C.Receive("CHANNEL", "Dawn Captain-CAMWOWUS2Realm7RP", Line("C", "Olympus Dawn", 5203, "our family's captain"), 9220)
 		eq(shown, true, why)

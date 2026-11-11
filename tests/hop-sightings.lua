@@ -711,11 +711,14 @@ test("hop sighting integration: Hop never installs one sighting as King authorit
 		local requested
 		local h = {
 			L = setmetatable({}, { __index = function(_, key) return key end }), db = {}, me = "Asker-Realm", realm = "Realm",
-			CROWN_ICON = "Interface\\Icons\\INV_Misc_Coin_01",
-			rdb = { guilds = { Olympus = { leader = KING:match("^(.-)%-"), leaderOnline = true, realm = "Realm", t = w.clock } } },
+			CROWN_ICON = "Interface\\Icons\\INV_Misc_Coin_01", splitNames = true,
+			rdb = { guilds = { ["OLYMPUS PRIME"] = { leader = "Guild Keeper", leaderOnline = true, realm = "Realm", t = w.clock } } },
 		}
 		h.Now = function() return w.clock end
-		h.IsKingGuild = function(guild) return guild == "Olympus" end
+		h.IsKingGuild = function(guild) return guild == "OLYMPUS PRIME" end
+		-- Core.lua's live Forever contract: the signed King, never the main guild's master.
+		h.KingIsMaster = function() return false end
+		h.LaunchListHeld = function() return true end
 		h.FullName, h.ShortName = Full, function(n) return n and n:gsub("%-.*$", "") end
 		h.RealmOf = function(n) return n and n:match("%-(.+)$") end
 		h.KingCharacter = function() return KING:match("^(.-)%-") end
