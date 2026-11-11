@@ -370,8 +370,9 @@ ns.On("DATA_CHANGED", function()
 		local top = BestGuild()
 		local key = top and (top.guild .. "|" .. top.leader) or ""
 		if key == bestKey then return end
+		local had = bestKey
 		bestKey = key
-		Changed()
+		if had ~= nil or key ~= "" then Changed() end
 	end)
 end)
 
@@ -399,6 +400,10 @@ function H.Inputs()
 		if g then tiers[g] = tier end
 	end
 	local church = ChurchTop()
+	local guild = BestGuild()
+	-- A frame may be drawn before the first coalesced census look. Remember that first
+	-- observed winner so its removal still redraws it; an initially empty contest stays quiet.
+	if bestKey == nil then bestKey = guild and (guild.guild .. "|" .. guild.leader) or "" end
 	inputs = {
 		belts = LG and LG.Holders and LG.Holders("L") or {},
 		podium = LG and LG.PodiumWords and LG.PodiumWords("L") or {},
@@ -406,7 +411,7 @@ function H.Inputs()
 		donors = donors and { all = Places(donors.all), month = Places(donors.month), monthNo = donors.monthNo } or nil,
 		-- Retain the historical book, but it awards no title, frame, mark or letter before launch.
 		levels = race and store and store.levels or {},
-		guild = BestGuild(),
+		guild = guild,
 		oracle = ow and { month = Places(ow.names), monthNo = lastMonth } or nil,
 		church = church and { missionaries = Places(church.missionaries), apostles = Places(church.apostles), at = church.at } or nil,
 		bones = BonesTop(lastMonth),

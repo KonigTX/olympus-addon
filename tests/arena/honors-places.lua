@@ -547,9 +547,15 @@ end)
 -- vouched as the census vouches for him (Data.KnownRank's two senders: stood in, the census's own
 -- tests hold it), and DATA_CHANGED as the census fires it.
 local function Census(w, c, guild, leader, avg)
+	-- The contest now reads this client's merged census. Its Data functions must close over
+	-- this client, and its report must meet the released 950-member qualification.
+	if not c.owlCensus then
+		w:As(c, function() assert(loadfile(H.ADDON_DIR .. "Data.lua"))("Olympus", c.ns) end)
+		c.owlCensus = true
+		c.ns.Data.KnownRank = function() return 0, 2 end
+	end
 	W3.Report(c, guild, { short = "Rhea Teller", name = "Rhea Teller-" .. c.realm }, { { name = leader.short, level = 60, class = "WA" } },
-		{ leader = leader.short, total = 40, avgLevel = avg })
-	rawset(c.ns, "Data", setmetatable({ KnownRank = function() return 0, 2 end }, { __index = c.ns.Data }))
+		{ leader = leader.short, total = c.ns.Honors.GUILD_MIN_MEMBERS, avgLevel = avg })
 	w:As(c, c.ns.Fire, "DATA_CHANGED")
 end
 

@@ -530,6 +530,24 @@ test("1.5.6 best guild: legacy direct reports without a faction remain Alliance,
 	W3.NoErrors(w)
 end)
 
+test("1.5.6 best guild: an initially empty contest emits no unrelated honours change", function()
+	local w, cast = W3.New()
+	local c = cast.spectator
+	local D = OwnCensus(w, c)
+	c.rdb.guilds, c.rdb.censusGlobal = {}, {}
+	local changed = 0
+	w:As(c, function()
+		c.ns.On("HONORS_CHANGED", function(name) if name == nil then changed = changed + 1 end end)
+		D.ChangedNow()
+	end)
+	w:Run(c.ns.HonorsNet.BEST_SOON + 1)
+	eq(changed, 0, "there was no winner to gain or lose")
+	w:As(c, D.ChangedNow)
+	w:Run(c.ns.HonorsNet.BEST_SOON + 1)
+	eq(changed, 0, "another empty look remains silent")
+	W3.NoErrors(w)
+end)
+
 test("1.2.1 the level race: two senders of her guild heard through the census within Data.NOTIFY_GAP (the first one's row replaced before the burst's DATA_CHANGED) are both kept on her claim, which is vouched; her own report, a level below or a refused report vouch nothing; the place after CONFIRM_AFTER", function()
 	local w, cast = W3.New({ more = { { "young", "Brisa Vale", { level = 19 } } } })
 	local viewer, young = cast.spectator, cast.young
@@ -792,6 +810,27 @@ local function Frames(w, c)
 	end
 	return rec
 end
+
+test("1.5.6 best guild: an owl drawn before the first coalesced look is removed when its winner disappears", function()
+	local w, cast, c, net, D, Snapshot = GuildCensus()
+	cast.A.rank, cast.A.rankName = 0, "Guild Master"
+	w:As(c, function()
+		c.ns.Arena.Inject("CHANNEL", cast.A.name, "AP~L1~" .. table.concat({ "-", "WA", "1", "2", "60", "0.0", "-", "0",
+			"guild-top-leader", "guild-top-leader", c.ns.Arena.B36(w.clock) }, "~"))
+	end)
+	local r = Frames(w, c)
+	c.target = cast.A.name
+	r.B.Refresh("target", true)
+	eq(r.Shown("target"), "Interface\\AddOns\\Olympus\\media\\honors\\owl-gold")
+	local changed = 0
+	w:As(c, function() c.ns.On("HONORS_CHANGED", function(name) if name == nil then changed = changed + 1 end end) end)
+	Snapshot({ ("Olympus Unproven,1000,2,600,%d"):format(w.clock) })
+	w:Run(c.ns.HonorsNet.BEST_SOON + 1)
+	eq(changed, 1, "the displayed winner is the baseline even before its first timer")
+	eq(net.Verified(cast.A.name, cast.A.guid).frame, "rank")
+	eq(r.Shown("target"), "Interface\\AddOns\\Olympus\\media\\borders\\bronze-winged")
+	W3.NoErrors(w)
+end)
 
 test("1.5.6 best guild: another guild's winning report removes the old owl already drawn for an ordinary viewer", function()
 	local w, cast, c, net, D, _, Report = GuildCensus()
