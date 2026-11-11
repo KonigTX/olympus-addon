@@ -395,7 +395,7 @@ test("Forever layer hop: a 1.5.4 relay on another sub-realm, a 1.5.3 reporter an
 	if not ok then error(err, 0) end
 end)
 
-test("Forever layer hop: a relay in the origin's guild, its own guild's reporter, that had the guild copy hands the relay's copy to nobody and still crosses it to the other relays (RX)", function()
+test("Forever layer hop: a relay in the origin's guild, its own guild's reporter, that had the guild copy hands the relay's copy to nobody and (1.5.5) keeps it on its island: another client's layer word crosses to no relay", function()
 	local s = Saved()
 	local ok, err = pcall(function()
 		GetChannelName = function() return 0 end
@@ -405,7 +405,8 @@ test("Forever layer hop: a relay in the origin's guild, its own guild's reporter
 		ns.realm = "CAMWOWUS2Realm3PvE"
 		local X, xdeliver, xsent, _, xpump, xsentOf = extra.RelayWorld("Max Ran-CAMWOWUS2Realm3PvE", "Olympus II")
 		LoadLayers(X)
-		xdeliver("WHISPER", "Hildryn Payne", "RY~") -- (the other relay answered: words cross to it)
+		xdeliver("WHISPER", "Hildryn Payne", "RY~") -- (the other relay answered...)
+		xdeliver("WHISPER", "Hildryn Payne", "RJ~1~0~0") -- (...and joined the mesh: what crosses goes to it)
 		X.Relay.HandleIn("WHISPER", X.me, "RL~P~RR~Olympus II") -- (its own client is its guild's reporter)
 		xpump()
 		eq(X.Relay.Stats().reporters, 1)
@@ -414,9 +415,9 @@ test("Forever layer hop: a relay in the origin's guild, its own guild's reporter
 		xdeliver("WHISPER", "Asker Name", "RL~P~" .. LAYER)
 		xpump()
 		eq(#xsentOf("RG~"), 0, "no second hand-over to the guild")
-		local rx = xsentOf("RX~")
-		eq(#rx, 1, "the relay still crosses it"); eq(rx[1].target, "Hildryn Payne")
-		eq(rx[1].msg, "RX~P~Asker Name-CAMWOWUS2Realm3PvE~" .. LAYER)
+		-- (1.5.5) Only a closed set crosses (tests/relay-mesh.lua): a client's layer word reaches its own
+		-- guild over GUILD and this relay's guilds; the other relays' guilds have no use for it.
+		eq(#xsentOf("RX~"), 0, "not across")
 		eq((Counted(X)), 1, "and counts him once")
 	end)
 	Restore(s)

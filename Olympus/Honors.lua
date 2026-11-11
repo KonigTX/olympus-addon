@@ -164,13 +164,15 @@ local ADDON, ns = ...
 --       rows: census rows { guild, leader, members (or total), avgLevel, faction, t, off }, a list
 --       or a map by guild (ns.rdb.guilds). Highest average first (to the tenth, as the census
 --       carries it), then more members, then the guild's name. A guild needs GUILD_MIN_MEMBERS.
---       opts: { faction, skip, now, maxAge }
+--       opts: { faction, skip, now, maxAge, allowUnknownLeader }
 --         faction: that faction's rows only (a row without one: none).
 --         skip: function(guild, row) -> true to leave a guild out. The census's rows need it: the
 --         caller leaves out net-off guilds (Data.NetOff) and any no longer Olympus
 --         (ns.IsFederation), which the rows don't say.
 --         now, maxAge: with now, a row whose report (t, on the same clock) is older than maxAge
 --         (default GUILD_MAX_AGE), or has no time, is left out: a guild gone quiet can't win.
+--         allowUnknownLeader: rank eligible guilds before proving the winning leader separately;
+--         a missing leader never promotes a lower guild. The default still requires a leader.
 --       The leader passed on (GuildTop's) should be the one the census vouches for (two senders,
 --       as Data.KnownRank asks), as the borders do.
 --   Honors.Podium(cat, ranking, holder, eligible) -> { { cat, place, guid, name }, ... }
@@ -358,7 +360,7 @@ Honors.RETIRED_LEVELS = { [20] = true, [40] = true }
 Honors.CONFIRM_AFTER = 600      -- a vouched claim takes its place once it is this old (claims timed
                                 -- before it, heard late, still get their turn meanwhile)
 Honors.SKEW = 300               -- a gift or claim timed further ahead of now is ignored
-Honors.GUILD_MIN_MEMBERS = 25   -- members a guild needs for the best-guild plaque (a two-person guild can't win)
+Honors.GUILD_MIN_MEMBERS = 950  -- members a guild needs for the highest-average-level guild-master honour
 Honors.GUILD_MAX_AGE = 2 * 86400 -- a guild's report older than this can't win (opts.now given)
 Honors.ORACLE_PLACES = 3        -- the Oracle's gold, silver and bronze
 Honors.ORACLE_MIN_MARKETS = 10  -- settled public markets a bettor needs in the month to be ranked
@@ -796,7 +798,7 @@ function Honors.GuildRanking(rows, opts)
 			local leader, members, avg = Name(r.leader), tonumber(r.members or r.total), tonumber(r.avgLevel)
 			local t = Time(r.t)
 			local fresh = not now or (t ~= nil and now - t <= maxAge)
-			if guild and fresh and leader and members and members == floor(members) and members >= Honors.GUILD_MIN_MEMBERS
+			if guild and fresh and (leader or opts.allowUnknownLeader == true) and members and members == floor(members) and members >= Honors.GUILD_MIN_MEMBERS
 				and avg and avg >= 1 and avg <= Honors.MAX_LEVEL and not (skip and skip(guild, r)) then
 				-- To the tenth, as the census carries it (Codec: avgLevel10): no tie lost to a rounding.
 				-- (1.2.4: cut down as the census carries it and shows it, Data.AvgTenths, not rounded:
@@ -812,7 +814,7 @@ function Honors.GuildRanking(rows, opts)
 		local la, lb = a.guild:lower(), b.guild:lower()
 		if la ~= lb then return la < lb end
 		if a.guild ~= b.guild then return a.guild < b.guild end
-		return a.leader < b.leader
+		return (a.leader or "") < (b.leader or "")
 	end)
 	for i, r in ipairs(list) do r.place, r.tenths = i, nil end
 	return list

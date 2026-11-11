@@ -375,5 +375,50 @@ luajit "$repo_root/tests/sign-roundtrip.lua" "$repo_root" "$OLYMPUS_COUNCIL_KEY"
 	"$scratch/council3.lua" "$scratch/council4.lua" "$scratch/council5.lua" "$scratch/council6.lua" \
 	"$scratch/council7.lua" "$scratch/council8.lua" "$scratch/council9.lua" "$scratch/council10.lua" "$scratch/council11.lua" "$scratch/council12.lua"
 
+# 1.5.5: the lists a release carries (scripts/ship-lists.lua, then scripts/package.sh's OLY_SIGNED_LISTS): a council
+# with the Twelve Apostles signed with the throwaway key, written for the zip and checked with the key a copy of
+# Sign.lua carries, refused with the author's; the addon's own code takes the file (tests/ship-lists-roundtrip.lua).
+# The script prints counts, never a name.
+cat > "$scratch/twelve.json" <<'JSON'
+{"realm": "Realm", "public": false,
+ "members": [{"name": "Test Councillor", "title": "Council Speaker"}],
+ "apostles": ["Saint Aa-Realm", "Saint Ba-Realm", "Saint Ca-Realm", "Saint Da-Realm", "Saint Ea-Realm", "Saint Fa-Realm",
+              "Saint Ga-Realm", "Saint Ha-Realm", "Saint Ia-Realm", "Saint Ja-Realm", "Saint Ka-Realm", "Saint La-Realm"]}
+JSON
+OLYMPUS_COUNCIL_OUT="$scratch/council-twelve.lua" python3 "$signer" council "$scratch/twelve.json" > /dev/null
+mkdir -p "$scratch/test-addon"
+python3 - "$OLYMPUS_COUNCIL_KEY" "$repo_root/Olympus/Sign.lua" "$scratch/test-addon/Sign.lua" <<'PY' || fail 'the throwaway key in a copy of Sign.lua'
+import json, re, sys
+key = json.load(open(sys.argv[1]))
+src = open(sys.argv[2], encoding="utf-8").read()
+new, n = re.subn(r'\nSign\.N = FromHex\("[0-9a-fA-F]+"\)\nSign\.MU = FromHex\("[0-9a-fA-F]+"\)\nSign\.K = \d+\n',
+    '\nSign.N = FromHex("%s")\nSign.MU = FromHex("%s")\nSign.K = %d\n' % (key["n"][2:], key["mu"][2:], key["k"]), src, count=1)
+assert n == 1, "the key's three lines in Sign.lua"
+open(sys.argv[3], "w", encoding="utf-8").write(new)
+PY
+shipper="$repo_root/scripts/ship-lists.lua"
+shipped="$scratch/SignedLists.lua"
+luajit "$shipper" --addon "$scratch/test-addon" "$scratch/council-twelve.lua" "$shipped" > ship.txt || fail 'ship-lists.lua refused the council the script signed'
+grep -Fq 'Realm: names ' ship.txt && grep -Fq '(Apostles: Alliance 12)' ship.txt || fail 'ship-lists.lua does not count the twelve Apostles'
+if grep -Fq 'Saint' ship.txt || grep -Fq 'Test Councillor' ship.txt; then fail 'ship-lists.lua printed a name'; fi
+luajit "$shipper" --check --addon "$scratch/test-addon" "$shipped" > /dev/null || fail 'the file does not check with the key that signed it'
+if luajit "$shipper" --check "$shipped" > refused.txt 2>&1; then fail "the author's key took the test key's lists"; fi
+grep -Fq 'fails its signature with the key in' refused.txt || fail "the author's key's refusal says why"
+sed 's/Saint Ca/Saint Cx/' "$shipped" > "$scratch/Changed.lua"
+if luajit "$shipper" --check --addon "$scratch/test-addon" "$scratch/Changed.lua" > refused.txt 2>&1; then fail 'a changed list checked'; fi
+grep -Fq 'fails its signature' refused.txt || fail 'the changed-list refusal says why'
+# The titles alone, as the signer prints them to paste: that list alone, newer lists of the group kept.
+luajit - "$scratch/council-twelve.lua" > "$scratch/titles.txt" <<'LUA'
+local t = {}
+assert(loadfile(arg[1]))("Olympus", t)
+io.write("to paste in game with /oly approved paste:\n", t.COUNCIL_TITLES, "\n")
+LUA
+luajit "$shipper" --addon "$scratch/test-addon" "$scratch/titles.txt" "$scratch/TitlesOnly.lua" > ship.txt || fail 'ship-lists.lua refused the printed titles'
+grep -Fq 'Realm: names -, titles ' ship.txt || fail 'the printed titles alone: no names list'
+if luajit "$shipper" --addon "$scratch/test-addon" --group Elsewhere "$scratch/council-twelve.lua" "$scratch/None.lua" > refused.txt 2>&1; then fail 'a realm group with no list written'; fi
+[ ! -e "$scratch/None.lua" ] || fail 'a refused group left a file'
+printf 'ok: the lists a release carries: written from the signed council, checked with its key, refused with the author'"'"'s or changed, no name printed\n'
+luajit "$repo_root/tests/ship-lists-roundtrip.lua" "$repo_root" "$OLYMPUS_COUNCIL_KEY" "$shipped"
+
 # 1.3.4: the launch identities (king, treasurer, author, realm, --group), in a temporary folder of their own.
 bash "$repo_root/tests/launch-sign.sh"

@@ -19,7 +19,16 @@
 # Every package: each file bets-only.txt names is left out of the stage and its line out of its
 # folder's TOC (the repository is not touched); every line left in each TOC must name a file of
 # the stage. Shared paths remain refused by the compliance gate (Olympus/Compliance.lua).
+# 1.5.5: OLY_SIGNED_LISTS=<the file scripts/ship-lists.lua wrote, under dist/> puts the author's signed
+#   lists in the package (Workshop.TakeShipped takes them at login): checked again with the key the
+#   package carries, copied to its Olympus/SignedLists.lua and named in its Olympus.toc after Core.lua.
+#   The repository never holds that file nor names it (it names players). OLY_REQUIRE_LISTS=1 refuses
+#   a package without it. Without either, every package is the commit's alone, as before.
 set -euo pipefail
+# (OLY_SIGNED_LISTS from where the script was run: resolved before the cd below.)
+if [ -n "${OLY_SIGNED_LISTS:-}" ] && [ -f "$OLY_SIGNED_LISTS" ]; then
+	OLY_SIGNED_LISTS="$(cd "$(dirname "$OLY_SIGNED_LISTS")" && pwd)/$(basename "$OLY_SIGNED_LISTS")"
+fi
 cd "$(dirname "$0")/.."
 
 fail() { printf '%s\n' "$*" >&2; exit 1; }
@@ -117,6 +126,29 @@ stage_source() {
 	find "$out" -name '.DS_Store' -delete
 }
 
+# 1.5.5: the author's signed lists (OLY_SIGNED_LISTS, above), staged before the leave-out step, whose
+# check that every TOC line names a staged file covers this line too. The check runs on the staged
+# Sign.lua, the key that ships.
+ship_lists() {
+	local stage=$1 file=${OLY_SIGNED_LISTS:-} toc staged
+	if [ -z "$file" ]; then
+		[ "${OLY_REQUIRE_LISTS:-}" != 1 ] || fail "OLY_REQUIRE_LISTS=1: no OLY_SIGNED_LISTS file given (scripts/ship-lists.lua writes one)"
+		return 0
+	fi
+	[ -f "$file" ] || fail "OLY_SIGNED_LISTS: $file is not a file"
+	[ -f scripts/ship-lists.lua ] || fail "OLY_SIGNED_LISTS needs scripts/ship-lists.lua to check the lists"
+	command -v luajit >/dev/null 2>&1 || fail "OLY_SIGNED_LISTS needs luajit to check the lists"
+	toc="$stage/Olympus/Olympus.toc"
+	[ ! -e "$stage/Olympus/SignedLists.lua" ] || fail "the commit holds Olympus/SignedLists.lua: the signed lists never go in the repository"
+	if grep -qxF 'SignedLists.lua' <(tr -d '\r' < "$toc"); then fail "the commit's Olympus.toc names SignedLists.lua: only package.sh adds it"; fi
+	grep -qxF 'Core.lua' <(tr -d '\r' < "$toc") || fail "Olympus.toc has no Core.lua line for SignedLists.lua to follow"
+	luajit scripts/ship-lists.lua --check --addon "$stage/Olympus" "$file" >&2 || fail "OLY_SIGNED_LISTS: $file failed its check, nothing packaged"
+	cp "$file" "$stage/Olympus/SignedLists.lua"
+	staged="$toc.lists"
+	awk '{ line = $0; sub(/\r$/, "", line); print } line == "Core.lua" { print "SignedLists.lua" }' "$toc" > "$staged"
+	mv "$staged" "$toc"
+}
+
 # Wager-only modules are local source, never part of a release or a tester's install. There is
 # deliberately no packaging switch that enables them. Keep the legacy profile as an output alias.
 leave_out_bets() {
@@ -173,6 +205,7 @@ if [ "$MODE" = test ]; then
 	rm -rf "$OUT"
 	mkdir -p "$OUT"
 	stage_source "$OUT"
+	ship_lists "$OUT"
 	leave_out_bets "$OUT"
 	BUILT=$(date +%s)
 	EXPIRES=$((BUILT + 21 * 86400))
@@ -216,6 +249,7 @@ RELEASE_STAGE=$(mktemp -d "${TMPDIR:-/tmp}/olympus-package.XXXXXX")
 cleanup() { if [ -n "${RELEASE_STAGE:-}" ] && [ -d "$RELEASE_STAGE" ]; then rm -rf "$RELEASE_STAGE"; fi; }
 trap cleanup EXIT
 stage_source "$RELEASE_STAGE"
+ship_lists "$RELEASE_STAGE"
 leave_out_bets "$RELEASE_STAGE"
 if [ -n "${OLY_LINK_REPO:-}" ]; then
 	git -C "$OLY_LINK_REPO" rev-parse --git-dir >/dev/null 2>&1 || fail "OLY_LINK_REPO is not a git checkout: $OLY_LINK_REPO"

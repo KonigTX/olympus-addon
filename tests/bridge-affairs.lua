@@ -818,6 +818,18 @@ test("companion bridge affairs (931): every section together, full boards, caps 
 		assert(B.RegisterSection("church", 1, function() return { public = public, own = { title = "Missionary", apostle = "A", missionaries = 3, recruits = 14, points = 140, pending = 2 } } end))
 		assert(B.RegisterSection("games", 1, function() return { events = events, own = { duelsWon = 1, duelsLost = 1, bonesWon = 1, bonesLost = 1, points = 1, place = 1 } } end))
 		assert(B.RegisterSection("profile", 1, function() return { name = "Tester", guild = "Olympus Guild", rank = "Officer", level = 60, class = "Warrior", frame = "rank" } end))
+		-- (2026-11-09) The whole Church ranking, on the author's, the King's or a councillor's client alone
+		-- (BridgePeople.lua's churchRanking, its contract's shape): the twelve Apostles and 1000 places of
+		-- the missionaries, each window.
+		local churchBoards = {}
+		for _, list in ipairs({ "apostles", "missionaries" }) do
+			for _, window in ipairs({ "w", "m", "a" }) do
+				local rows = {}
+				for i = 1, list == "apostles" and 12 or 1000 do rows[i] = { place = i, name = Long("Pious" .. i, 48), points = 9999.5 } end
+				churchBoards[#churchBoards + 1] = { list = list, window = window, rows = rows }
+			end
+		end
+		assert(B.RegisterSection("churchRanking", 1, function() return { at = w.clock, boards = churchBoards } end, { values = 20000 }))
 
 		local sections, affairs, total = {}, 0, 0
 		local sizes = {}
@@ -838,6 +850,7 @@ test("companion bridge affairs (931): every section together, full boards, caps 
 		eq(#sections.watch.data.cases, 100); eq(#sections.watch.data.records, 100); eq(#sections.watch.data.inspected, 100); eq(#sections.watch.data.untabarded, 100)
 		eq(#sections.chatRooms.data, 100)
 		eq(#sections.roster.data.members, 1000, "the stand-in roster whole")
+		eq(#sections.churchRanking.data.boards[6].rows, 1000, "the whole Church ranking's last board whole")
 		local census = assert(B.GetCensusCheckpoint(), "the census checkpoint")
 		local file = { schema = "olympus-companion-db", version = 1, checkpoint = census, sections = sections }
 		total = Bytes(file)

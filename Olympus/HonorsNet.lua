@@ -235,24 +235,42 @@ ns.On("CHURCH_PUBLIC_CHANGED", function() Changed() end)
 -- What a player holds, and what his pick shows
 ---------------------------------------------------------------------------
 
--- The census's best guild, its leader vouched (two senders naming him guild master, Data.KnownRank;
--- our own guild: our roster).
+-- Contest counts come from the same scoped, merged rows the Census displays. A snapshot
+-- supplies counts alone: it cannot appoint a guild master or rewrite a retained direct report.
+local function CensusGuildRows()
+	local D = ns.Data
+	if type(D) ~= "table" or type(D.Summary) ~= "function" then return ns.rdb and ns.rdb.guilds or {} end
+	local summary, rows = D.Summary(), {}
+	for _, e in ipairs(type(summary) == "table" and summary.guilds or {}) do
+		local g = e.g
+		if type(g) == "table" then
+			rows[#rows + 1] = { guild = e.name, total = g.total, avgLevel = g.avgLevel,
+				t = tonumber(g.st) or g.t, faction = g.faction or (g.relayed and (ns.faction or "Alliance")) or "Alliance", off = g.off }
+		end
+	end
+	return rows
+end
+
+-- Select the winning guild before resolving its leader from independent rank evidence.
+-- An unknown winner withholds the owl; it never promotes a lower guild with a known leader.
 local function BestGuild()
-	local rows = ns.rdb and ns.rdb.guilds
-	if type(rows) ~= "table" then return nil end
+	local rows = CensusGuildRows()
 	local M = ns.Moderation
-	local top = ns.Honors.GuildTop(rows, { faction = ns.faction or "Alliance", now = ns.Now(), skip = function(guild)
+	local top = ns.Honors.GuildTop(rows, { faction = ns.faction or "Alliance", now = ns.Now(), allowUnknownLeader = true, skip = function(guild)
 		if not ns.IsFederation(guild) then return true end
 		return type(M) == "table" and not M.missing and M.Guild and M.Guild(guild) ~= nil
 	end })
 	if not top then return nil end
 	local D = ns.Data
-	local leader = ns.FullName(top.leader, rows[top.guild] and rows[top.guild].realm or nil)
-	if type(D) == "table" and type(D.KnownRank) == "function" then
-		local ok, rank, named = pcall(D.KnownRank, leader, top.guild)
-		local mine = GetGuildInfo and GetGuildInfo("player")
-		if not ok or rank ~= 0 or ((named or 0) < 2 and top.guild ~= mine) then return nil end
-	end
+	if type(D) ~= "table" or type(D.Guild) ~= "function" or type(D.KnownRank) ~= "function" then return nil end
+	local source = D.Guild(top.guild)
+	if type(source) ~= "table" or type(source.leader) ~= "string" or source.leader == "" then return nil end
+	if ns.ReportInGroup and not ns.ReportInGroup(source, ns.group) then return nil end
+	local leader = ns.FullName(source.leader, source.realm)
+	local ok, rank, named = pcall(D.KnownRank, leader, top.guild)
+	local mine = GetGuildInfo and GetGuildInfo("player")
+	if not ok or rank ~= 0 or ((named or 0) < 2 and (not mine or top.guild:lower() ~= mine:lower())) then return nil end
+	top.leader = source.leader
 	return top
 end
 
@@ -340,26 +358,21 @@ ns.On("WANTED_CHANGED", function()
 	wantedWord = word
 	if had ~= nil or word ~= "" then Changed() end
 end)
--- (1.2.4) The census changed: where this character is a guild master (a guild master alone holds the
--- owl) or was told he holds it, his own honours again once its first guild or that guild's leader
--- changed, BEST_SOON after a burst of reports (one look a burst).
+-- A different guild can win while the target's own report stays unchanged. Every viewer
+-- invalidates drawn honours when the winner changes, once BEST_SOON after a burst of reports.
 H.BEST_SOON = 5
 local bestKey, bestDue = nil, false
 ns.On("DATA_CHANGED", function()
 	if bestDue then return end
-	local rank = GetGuildInfo and select(3, GetGuildInfo("player"))
-	if rank ~= 0 then
-		local told = H.Standing().guild
-		if not (type(told) == "table" and (tonumber(told.p) or 0) > 0) then return end
-	end
 	bestDue = true
 	ns.After(H.BEST_SOON, "arena best guild", function()
 		bestDue = false
 		local top = BestGuild()
 		local key = top and (top.guild .. "|" .. top.leader) or ""
 		if key == bestKey then return end
+		local had = bestKey
 		bestKey = key
-		H.RefreshSoon()
+		if had ~= nil or key ~= "" then Changed() end
 	end)
 end)
 
@@ -387,6 +400,10 @@ function H.Inputs()
 		if g then tiers[g] = tier end
 	end
 	local church = ChurchTop()
+	local guild = BestGuild()
+	-- A frame may be drawn before the first coalesced census look. Remember that first
+	-- observed winner so its removal still redraws it; an initially empty contest stays quiet.
+	if bestKey == nil then bestKey = guild and (guild.guild .. "|" .. guild.leader) or "" end
 	inputs = {
 		belts = LG and LG.Holders and LG.Holders("L") or {},
 		podium = LG and LG.PodiumWords and LG.PodiumWords("L") or {},
@@ -394,7 +411,7 @@ function H.Inputs()
 		donors = donors and { all = Places(donors.all), month = Places(donors.month), monthNo = donors.monthNo } or nil,
 		-- Retain the historical book, but it awards no title, frame, mark or letter before launch.
 		levels = race and store and store.levels or {},
-		guild = BestGuild(),
+		guild = guild,
 		oracle = ow and { month = Places(ow.names), monthNo = lastMonth } or nil,
 		church = church and { missionaries = Places(church.missionaries), apostles = Places(church.apostles), at = church.at } or nil,
 		bones = BonesTop(lastMonth),
@@ -1687,7 +1704,7 @@ function H.Known()
 	local s = H.Store()
 	local titles = LG and LG.CoreT and LG.CoreT("L", "titles")
 	local words = LG and LG.CoreT and LG.CoreT("L", "beltWords")
-	local guilds = ns.rdb and ns.rdb.guilds
+	local guilds = CensusGuildRows()
 	local fresh = false
 	for _, r in pairs(type(guilds) == "table" and guilds or {}) do
 		if type(r) == "table" and r.t and ns.Now() - r.t <= ns.Honors.GUILD_MAX_AGE then fresh = true break end

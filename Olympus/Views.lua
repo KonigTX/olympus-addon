@@ -1313,7 +1313,13 @@ local function GuildTooltip(e)
 		tt:AddDoubleLine(L.VACANCIES, ns.FormatNumber(math.max(0, 1000 - (g.total or 0))), 1, 0.82, 0, 1, 1, 1)
 		-- (1.2.4: to the tenth as every client has it, Data.AvgLevelText: the Census's column too.)
 		local avg = ns.Data.AvgLevelText(g)
-		if avg then tt:AddDoubleLine(L.AVG_LEVEL, avg, 1, 0.82, 0, 1, 1, 1) end
+		if avg then
+			tt:AddDoubleLine(L.AVG_LEVEL, avg, 1, 0.82, 0, 1, 1, 1)
+			local honors = ns.Honors
+			if type(honors) == "table" and type(honors.GUILD_MIN_MEMBERS) == "number" then
+				tt:AddLine(L.GUILD_AVG_HONOUR_MIN:format(honors.GUILD_MIN_MEMBERS), 0.6, 0.6, 0.6, true)
+			end
+		end
 		tt:AddDoubleLine(L.INACTIVE_30, ns.FormatNumber(g.inactive30 or 0), 1, 0.82, 0, 1, 1, 1)
 		local classes = {}
 		for code, n in pairs(g.classes or {}) do classes[#classes + 1] = { code, n } end
@@ -1769,7 +1775,8 @@ local function CensusLines(s, q)
 	-- Our guild's verification (Verify.lua): its guild master's "GM verification pending", or its
 	-- members' notice once it is overdue; a click opens it.
 	local V = VerifyModule()
-	for _, l in ipairs(V and V.Lines and V.Lines() or {}) do lines[#lines + 1] = l end
+	local verification, verificationAt = V and V.Lines and V.Lines() or {}, #lines + 1
+	for _, l in ipairs(verification) do lines[#lines + 1] = l end
 	-- Recruits asking to join our guild (1.1, Recruit.lua): an officer's Invite and Decline.
 	for _, l in ipairs(ns.Recruit and ns.Recruit.RequestLines and ns.Recruit.RequestLines() or {}) do lines[#lines + 1] = l end
 	-- Clear party-invite whispers while the King is online (1.2.5.1): local, short-lived and
@@ -1817,6 +1824,12 @@ local function CensusLines(s, q)
 		lines[#lines].gapAfter = true
 		lines[#lines + 1] = behind
 	end
+	-- On the King's screen (including the author's preview), his verification desk follows the
+	-- guilds and status lines. Build it above first to retain the existing empty-state counting.
+	if ns.KingsScreen() then
+		for _ = 1, #verification do table.remove(lines, verificationAt) end
+		for _, l in ipairs(verification) do lines[#lines + 1] = l end
+	end
 	-- Record mode on (Record.lua, the Guinness attempt's witnesses): its line first; a click opens its
 	-- status. Put in last, so the lines above count as before ("No reports yet").
 	local record = ns.Record and ns.Record.Line and ns.Record.Line()
@@ -1854,6 +1867,8 @@ end
 -- The King's guild: the one named exactly "Olympus" (the addon's King everywhere else, the
 -- Throne, the layer hop). No such guild reporting: no King line, never another guild's Lord.
 local function King(guilds)
+	-- (1.5.5) On Forever's live realms its master is not the King (ns.KingIsMaster): the signed King's own line.
+	if not ns.KingIsMaster() then return nil end
 	for _, e in ipairs(guilds) do
 		if ns.IsKingGuild(e.name) and e.g.leader then return e end
 	end

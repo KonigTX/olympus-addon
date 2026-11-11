@@ -473,7 +473,7 @@ function CS.ServerLines(lines, s, now)
 				local observed = ObservationText(r.observed)
 				if observed then tt:AddLine(observed, 0.75, 0.75, 0.75) end
 				local src = r.src == "live" and L.CENSUS_STATS_SRC_LIVE or ({ own = L.CENSUS_STATS_SRC_OWN, relay = L.CENSUS_STATS_SRC_RELAY,
-					witnessed = L.CENSUS_STATS_SRC_WITNESSED, heard = L.CENSUS_STATS_SRC_HEARD })[r.src or ""] or ""
+					author = L.CENSUS_STATS_SRC_AUTHOR, witnessed = L.CENSUS_STATS_SRC_WITNESSED, heard = L.CENSUS_STATS_SRC_HEARD })[r.src or ""] or ""
 				if src ~= "" then tt:AddLine(src, 0.75, 0.75, 0.75, true) end
 				if not r.counted and not r.ours then tt:AddLine(L.CENSUS_STATS_NOT_COUNTED, 1, 0.5, 0.5, true) end
 			end }
@@ -495,7 +495,7 @@ function CS.ServerLines(lines, s, now)
 						local observed = ObservationText(guild.observed)
 						if observed then tt:AddLine(observed, 0.75, 0.75, 0.75) end
 						local src = ({ own = L.CENSUS_STATS_SRC_OWN, relay = L.CENSUS_STATS_SRC_RELAY,
-							witnessed = L.CENSUS_STATS_SRC_WITNESSED, heard = L.CENSUS_STATS_SRC_HEARD })[guild.source]
+							author = L.CENSUS_STATS_SRC_AUTHOR, witnessed = L.CENSUS_STATS_SRC_WITNESSED, heard = L.CENSUS_STATS_SRC_HEARD })[guild.source]
 						if src then tt:AddLine(src, 0.75, 0.75, 0.75, true) end
 					end }
 			end

@@ -49,6 +49,48 @@ local noticeTimer = false
 local gone = {}      -- chosen window name (lower case) -> true once we said it is gone
 local found = {}     -- chosen window name (lower case) -> true once found this session (1.1.1)
 
+-- The ruleset picker is a local view. Every admitted line stays in history for later views.
+Channels.GROUP_ORDER = { "all", "pvp", "pve", "rp", "rppvp" }
+function Channels.GroupKind(sender)
+	if ns.IsSecret(sender) or type(sender) ~= "string" then return nil end
+	local realm = ns.RealmOf(ns.FullName(sender))
+	local family = ns.ForeverFamily(realm)
+	if not family then return nil end
+	local rules = family:match("^Forever(%a+)$")
+	return rules and ns.Data.RULES_KIND[rules:lower()] or nil
+end
+function Channels.OtherFamily(sender)
+	if ns.IsSecret(sender) then return nil end
+	if not ns.splitNames or type(sender) ~= "string" then return false end
+	local here = ns.ForeverFamily(ns.realm)
+	local other = ns.ForeverFamily(ns.RealmOf(ns.FullName(sender)))
+	return here ~= nil and other ~= nil and here ~= other
+end
+function Channels.GroupView()
+	local groups = ns.db and ns.db.chatGroups
+	local choice = type(groups) == "table" and groups[ns.me]
+	for _, kind in ipairs(Channels.GROUP_ORDER) do if choice == kind then return kind end end
+	return "all"
+end
+function Channels.SetGroupView(kind)
+	local valid = false
+	for _, allowed in ipairs(Channels.GROUP_ORDER) do if kind == allowed then valid = true break end end
+	if not valid or type(ns.db) ~= "table" then return false end
+	if type(ns.db.chatGroups) ~= "table" then ns.db.chatGroups = {} end
+	ns.db.chatGroups[ns.me] = kind
+	ns.Fire("CHAT_CHANGED")
+	return true
+end
+function Channels.GroupVisible(tier, sender, mine)
+	return tier ~= "A" or not ns.splitNames or mine == true or Channels.GroupView() == "all"
+		or Channels.GroupKind(sender) == Channels.GroupView()
+end
+function Channels.GroupTag(tier, sender)
+	if tier ~= "A" or not ns.splitNames or Channels.GroupView() ~= "all" or not Channels.OtherFamily(sender) then return "" end
+	local kind = Channels.GroupKind(sender)
+	return kind and ("[" .. L["CHATWIN_GROUP_" .. kind:upper()] .. "] ") or ""
+end
+
 local function Label(tier)
 	return L[TIERS[tier].label]
 end
@@ -128,6 +170,7 @@ end
 -- when the legacy guild claim is false.
 -- Verified, the rank index it was read from too (0: the guild master; the King's Crown: 0).
 function Channels.VerifiedLevel(sender, guild)
+	if Channels.OtherFamily(sender) then return 1, false end
 	local who = ns.FullName(sender)
 	local rank = ns.Roster.RankOf(who)
 	local mine = GetGuildInfo("player")
@@ -240,7 +283,7 @@ function Channels.FormatLine(tier, sender, guild, class, text, bare)
 	-- mark, ChatMarks.lua), inside the link's brackets like the Treasurer's coin.
 	if not covered then name = Channels.Decorations(sender) .. name end
 	local guildLabel = Channels.ShowGuildNames() and (" <" .. tostring(guild or "?"):gsub("|", "||") .. ">") or ""
-	return (bare and "" or Channels.Tag(tier) .. " ") .. "|Hplayer:" .. (ns.TellName(sender) or "?") .. "|h[" .. name .. "]|h"
+	return (bare and "" or Channels.Tag(tier) .. " ") .. Channels.GroupTag(tier, sender) .. "|Hplayer:" .. (ns.TellName(sender) or "?") .. "|h[" .. name .. "]|h"
 		.. guildLabel .. ": " .. Codec.SanitizeChat(text)
 end
 
@@ -856,7 +899,7 @@ end
 -- the name greyed (still a player link), "[deleted by a moderator]", no mark and no words.
 function Channels.FormatDeleted(tier, sender, guild, bare)
 	local name = "|cff9d9d9d" .. (ns.DisplayName(sender) or "?") .. "|r"
-	return (bare and "" or Channels.Tag(tier) .. " ") .. "|Hplayer:" .. (ns.TellName(sender) or "?") .. "|h[" .. name .. "]|h <"
+	return (bare and "" or Channels.Tag(tier) .. " ") .. Channels.GroupTag(tier, sender) .. "|Hplayer:" .. (ns.TellName(sender) or "?") .. "|h[" .. name .. "]|h <"
 		.. tostring(guild or "?"):gsub("|", "||") .. ">: |cff9d9d9d" .. L.WATCHCHAT_DELETED .. "|r"
 end
 
@@ -920,6 +963,7 @@ end
 
 local function Accept(tier, sender, guild, class, text, mine, id)
 	Keep(tier, sender, guild, class, text, mine, id)
+	if not Channels.GroupVisible(tier, sender, mine) then return false, "group" end
 	if Muted()[tier] then return false, "muted" end
 	Show(tier, sender, guild, class, text, id)
 	stats.shown = stats.shown + 1
@@ -1233,7 +1277,9 @@ local function Person(sender)
 	if not realm then return sender end
 	if realm == ns.realm then return base end
 	local family = ns.ForeverFamily and ns.ForeverFamily(realm)
-	if family and family == ns.ForeverFamily(ns.realm) then return base end
+	if family then
+		return family == ns.ForeverFamily(ns.realm) and base or (base .. "-" .. family)
+	end
 	return sender
 end
 Channels.Person = Person
@@ -1341,6 +1387,10 @@ function Channels.Admit(sender, guild, text, now, o)
 		return false, "rate"
 	end
 	b.tokens = b.tokens - 1
+	if level > 1 and Channels.OtherFamily(sender) then
+		Bump(st, "otherRank")
+		return false, "unverified"
+	end
 	if level > 0 then
 		local have, verified = Channels.VerifiedLevel(sender, guild)
 		if have < level then

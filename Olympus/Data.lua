@@ -137,8 +137,9 @@ function Data.Trimmed() return trimmed end -- (this session: /oly status)
 
 -- Where the King is pinned by name (ns.KING_CHARACTER), a report of his guild that names
 -- anyone else as its leader (or nobody) is not his guild's: forged, or out of date.
+-- (1.5.5) Never on Forever's live realms (ns.KingIsMaster): the main guild's master there is not the King.
 function Data.OtherKing(guild, leader)
-	return ns.IsKingGuild(guild) and ns.KingCharacter() ~= nil and not ns.IsKingCharacter(leader)
+	return ns.KingIsMaster() and ns.IsKingGuild(guild) and ns.KingCharacter() ~= nil and not ns.IsKingCharacter(leader)
 end
 
 -- (1.2.3) Every report's vote stays in its row until the guild's next report counts the votes again
@@ -635,6 +636,10 @@ local function Take(r, sender, h)
 	-- new time, field 25, the votes counted now, no other sender's report outvoted against it).
 	if again then r.t, r.st, r.vouch, r.outvoted = now, h.st, votes, nil end
 	r.conflict = conflict
+	-- (1.5.5) Heard first-hand: whispered to this client by its sender (Relay.FirstHand: hop 1 at a relay
+	-- or a provisional one), not handed on. A serving provisional relay's snapshot holds these alone.
+	local R = ns.Relay
+	r.fh = (type(R) == "table" and type(R.FirstHand) == "function" and R.FirstHand() == true) or nil
 	ns.rdb.guilds[r.guild] = r
 	-- (1.2.3) The row it replaced is no sender's report any more; this one's text is kept for his
 	-- next (Data.DecodeReport), when it came from there spelling its guild as the row's key.
@@ -1030,9 +1035,70 @@ local function GlobalNumber(v, low, high)
 	if not n or n ~= math.floor(n) or n < low or n > high then return nil end
 	return n
 end
-local function GlobalTrusted(name)
-	return ns.Church and ns.Church.IsLedgerRelay and ns.Church.IsLedgerRelay(name) == true
+-- (The review of the 1.5.4 candidate.) This client's own word back from the relay's hops. On Forever
+-- a whisper arrives with the sender's bare name and the relay's client stamps its own sub-realm on
+-- the origin (Relay.lua's HandleIn), so "Name-Realm3" comes back for "Name-Realm1": one name across
+-- a family, as PersonKey takes it. Comm's echo check (OnAddonMessage: sender == ns.me) sees another
+-- name, so the census receivers ask here; a trusted client's own look of the other family (CX 1)
+-- came back as another councillor's word, was noted as heard (groupHeard) and never said again that
+-- session. Off Forever (no family) whole names alone, as before: "Bob-A" and "Bob-B" are two people.
+local function OwnWord(sender)
+	if type(ns.me) ~= "string" or type(sender) ~= "string" then return false end
+	local me, other = ns.FullName(ns.me), ns.FullName(sender)
+	if me == other then return true end
+	if ns.ShortName(me):lower() ~= ns.ShortName(other):lower() then return false end
+	local family = ns.ForeverFamily and ns.ForeverFamily(ns.RealmOf(me) or "")
+	return family ~= nil and family == ns.ForeverFamily(ns.RealmOf(other) or "")
 end
+-- 1.5.5, the author as the census's trusted distributor (the author, 11-10: "garantir que os números
+-- do PVP que estão saindo de mim vão chegar em todo mundo ... eu sou a pessoa mais confiável"). A
+-- whisper reaches its own Forever family alone, so the PvP numbers reach PvE only in what a client
+-- carries when its player logs in there: the author's own look among them. 1.5.4 trusted the Church's
+-- ledger relays alone (Church.IsLedgerRelay: its keepers, the King, the signed High Council), so his
+-- rows were one witness's and his carried look was "reported" everywhere. Now his characters are a
+-- trusted census source too: the signed list's (ns.IsAuthorName) or the launch's (Relay.IsLaunchAuthor,
+-- on the name's own family). A trusted origin counts only on a hop that proves it (Relay.HopTrusted,
+-- the relay mesh's: a signed relay's), never through a provisional relay (RO: member weight), and our
+-- own word back is ours whatever carried it. Our own client's trust is its identity alone.
+local function RelayAsk(fn, ...)
+	local R = ns.Relay
+	local f = type(R) == "table" and R[fn]
+	if type(f) ~= "function" then return nil end
+	return f(...)
+end
+local function Hop() return RelayAsk("Hop") end
+local function AuthorIdentity(name)
+	if type(name) ~= "string" or name == "" then return false end
+	if type(ns.IsAuthorName) == "function" and ns.IsAuthorName(name) == true then return true end
+	return RelayAsk("IsLaunchAuthor", name) == true
+end
+local function LedgerRelay(name)
+	return ns.Church ~= nil and ns.Church.IsLedgerRelay ~= nil and ns.Church.IsLedgerRelay(name) == true
+end
+local function TrustedCensusOrigin(name) return LedgerRelay(name) or AuthorIdentity(name) end
+local function GlobalTrusted(name)
+	if not TrustedCensusOrigin(name) then return false end
+	if name == ns.me then return true end
+	if Hop() == "O" then return false end
+	return OwnWord(name) or RelayAsk("HopTrusted") ~= false
+end
+-- (1.5.5) What the census took, left unproven and refused (Data.CensusStats, for /oly bug).
+Data.CENSUS_REFUSALS = 5 -- the last refusals kept, with their reason
+local censusStats = { cg = { trusted = 0, witnessed = 0, lone = 0, refused = 0 },
+	cx = { author = 0, trusted = 0, witnessed = 0, heard = 0, unproven = 0, refused = 0 },
+	cx3 = { direct = 0, author = 0, unproven = 0 }, qa = { verified = 0, refused = 0, signed = 0 } }
+local censusRefusals = {} -- { kind, why, from, t }, oldest first
+local function Tally(kind, what) censusStats[kind][what] = censusStats[kind][what] + 1 end
+local function Refused(kind, why, from)
+	Tally(kind, "refused")
+	if #censusRefusals >= Data.CENSUS_REFUSALS then table.remove(censusRefusals, 1) end
+	censusRefusals[#censusRefusals + 1] = { kind = kind, why = why, t = ns.Now(),
+		from = type(from) == "string" and ns.ShortName(from) or nil }
+	return false
+end
+-- (1.5.5) The census's trust gate as the relays ask it, and its counters for /oly bug (lane trust fills both).
+function Data.CensusTrusted(name) return GlobalTrusted(name) end
+function Data.CensusStats() return {} end
 -- 1.4.0: a member who may answer an ask with what it holds (any member; trust is the receiver's).
 local function GlobalMember()
 	if ns.QuietPresence and ns.QuietPresence() then return false end
@@ -1050,7 +1116,9 @@ local function GlobalRow(name, total, online, avg10, observed)
 	if observed > now + 5 * 60 or now - observed > Data.KEEP then return nil end
 	return { name = name, total = total, online = online, avg10 = avg10, observed = observed }
 end
-local function GlobalTake(name, total, online, avg10, observed, by, heardAt, witnesses)
+-- rg (1.5.5): a trusted row a guildmate handed over (RG, Relay.Hop "G"): his guild's word, any origin
+-- he names. It counts here for display, and never enters a trusted client's own snapshot (SendableRows).
+local function GlobalTake(name, total, online, avg10, observed, by, heardAt, witnesses, rg)
 	local row = GlobalRow(name, total, online, avg10, observed)
 	if not row then return false end
 	local now = ns.Now()
@@ -1058,7 +1126,7 @@ local function GlobalTake(name, total, online, avg10, observed, by, heardAt, wit
 	local old = store[key]
 	if type(old) == "table" and (tonumber(old.observed) or 0) > row.observed then return false end
 	store[key] = { name = row.name, total = row.total, online = row.online, avg10 = row.avg10,
-		observed = row.observed, by = ns.FullName(by), heard = heardAt or now, w = witnesses, scope = ns.group }
+		observed = row.observed, by = ns.FullName(by), heard = heardAt or now, w = witnesses, scope = ns.group, rg = rg or nil }
 	return old == nil or old.total ~= row.total or old.online ~= row.online or old.avg10 ~= row.avg10 or old.observed ~= row.observed
 end
 
@@ -1080,21 +1148,6 @@ local function PersonKey(name)
 	local realm = ns.RealmOf(full)
 	local group = realm and ns.GroupOf and ns.GroupOf(realm)
 	return group and (ns.ShortName(full):lower() .. "-" .. group:lower()) or full:lower()
-end
--- (The review of the 1.5.4 candidate.) This client's own word back from the relay's hops. On Forever
--- a whisper arrives with the sender's bare name and the relay's client stamps its own sub-realm on
--- the origin (Relay.lua's HandleIn), so "Name-Realm3" comes back for "Name-Realm1": one name across
--- a family, as PersonKey takes it. Comm's echo check (OnAddonMessage: sender == ns.me) sees another
--- name, so the census receivers ask here; a trusted client's own look of the other family (CX 1)
--- came back as another councillor's word, was noted as heard (groupHeard) and never said again that
--- session. Off Forever (no family) whole names alone, as before: "Bob-A" and "Bob-B" are two people.
-local function OwnWord(sender)
-	if type(ns.me) ~= "string" or type(sender) ~= "string" then return false end
-	local me, other = ns.FullName(ns.me), ns.FullName(sender)
-	if me == other then return true end
-	if ns.ShortName(me):lower() ~= ns.ShortName(other):lower() then return false end
-	local family = ns.ForeverFamily and ns.ForeverFamily(ns.RealmOf(me) or "")
-	return family ~= nil and family == ns.ForeverFamily(ns.RealmOf(other) or "")
 end
 -- Two rows agree: observed within the window of each other, sizes within max(5, 5%).
 function Data.WitnessesAgree(a, b)
@@ -1158,8 +1211,9 @@ local function TakeWitness(row, sender, now)
 			end
 		end
 	end
-	if not best or best == own then return false end
-	return GlobalTake(best.name, best.total, best.online, best.avg10, best.observed, best.by, now, 2)
+	-- (1.5.5) The second result: whether two people agreed on the guild (Data.CensusStats).
+	if not best or best == own then return false, best ~= nil end
+	return GlobalTake(best.name, best.total, best.online, best.avg10, best.observed, best.by, now, 2), true
 end
 
 local function TrimGlobal()
@@ -1221,15 +1275,22 @@ end
 -- 1.4.0: the rows this client would send. A trusted relay's store (its own direct rows captured
 -- into it, as before); a member's own direct rows with the confirmed rows it holds, the newer of
 -- each guild's two. The freshest first.
+-- (1.5.5) A trusted client never says a row it took over a guildmate's hand-over (rg, GlobalTake). A
+-- provisional relay while it serves (RelayFallback.lua: no signed relay reachable, member weight) says
+-- only what it heard first-hand: the reports whispered to it (Take's fh) and its own roster; never a
+-- row it heard from anyone else, nor a global one.
 local function SendableRows()
-	if GlobalTrusted(ns.me) then
+	local provisional = RelayAsk("ServingProvisional") == true
+	if not provisional and GlobalTrusted(ns.me) then
 		Data.CaptureGlobalCensus()
-		return GlobalRows()
+		local rows = {}
+		for _, e in ipairs(GlobalRows()) do if not e.rg then rows[#rows + 1] = e end end
+		return rows
 	end
 	local byKey, now = {}, ns.Now()
-	for _, e in ipairs(GlobalRows()) do byKey[e.name:lower()] = e end
+	if not provisional then for _, e in ipairs(GlobalRows()) do byKey[e.name:lower()] = e end end
 	for name, g in pairs(ns.rdb.guilds or {}) do
-		if LocalReport(g) then
+		if LocalReport(g) and (not provisional or g.fh == true or g.mine == true) then
 			local observed = ObservationTime(g)
 			local row = now - observed <= Data.KEEP and GlobalRow(name, math.min(tonumber(g.total) or 0, ns.Codec.GUILD_CAP),
 				math.min(tonumber(g.online) or 0, ns.Codec.GUILD_CAP), Data.AvgTenths(g) or 0, observed) or nil
@@ -1365,7 +1426,7 @@ function Data.ReceiveGlobalCensus(dist, sender, text)
 		or #text > Data.GLOBAL_MAX_BYTES or sender == "" or #sender > 100 or sender:find("[%c~]") then return false end
 	local ver, kind, made, body = text:match("^CG~(%d+)~([SQC])~(%d*)~?(.*)$")
 	ver = tonumber(ver)
-	if ver ~= Data.GLOBAL_PROTOCOL and ver ~= 2 then return false end
+	if ver ~= Data.GLOBAL_PROTOCOL and ver ~= 2 then return Refused("cg", "format", sender) end
 	local now = ns.Now()
 	local self = OwnWord(sender) -- (the relay's stamped copy of our own snapshot too)
 	if kind == "C" then
@@ -1384,12 +1445,14 @@ function Data.ReceiveGlobalCensus(dist, sender, text)
 	if self then return true end
 	if ver == 2 then
 		local group, faction, rows = body:match("^([^~]+)~(%a+)~(.*)$")
-		if group ~= ns.group or faction ~= (ns.faction or "Alliance") then return false end
+		if group ~= ns.group or faction ~= (ns.faction or "Alliance") then return Refused("cg", "scope", sender) end
 		body = rows
 	elseif ScopedGroup(ns.group) then return false end
 	local trusted = GlobalTrusted(sender)
+	-- (1.5.5) A trusted row a guildmate handed over (RG): display only for a trusted holder (GlobalTake).
+	local rg = trusted and Hop() == "G"
 	local snapshotAt = GlobalNumber(made, 1, 4102444800)
-	if not snapshotAt or snapshotAt > now + 5 * 60 or now - snapshotAt > Data.KEEP then return false end
+	if not snapshotAt or snapshotAt > now + 5 * 60 or now - snapshotAt > Data.KEEP then return Refused("cg", "time", sender) end
 	local changed, count, bad = false, 0, false
 	for row in tostring(body):gmatch("[^;]+") do
 		if count >= Data.GLOBAL_MAX_ROWS then bad = true; break end
@@ -1397,16 +1460,21 @@ function Data.ReceiveGlobalCensus(dist, sender, text)
 		if not name then bad = true; break end
 		count = count + 1
 		if trusted then
-			if GlobalTake(name, total, online, avg10, observed, sender, now) then changed = true end
+			Tally("cg", "trusted")
+			if GlobalTake(name, total, online, avg10, observed, sender, now, nil, rg) then changed = true end
 		else
 			local r = GlobalRow(name, total, online, avg10, observed)
-			if r and TakeWitness(r, sender, now) then changed = true end
+			if r then
+				local took, agreed = TakeWitness(r, sender, now)
+				Tally("cg", agreed and "witnessed" or "lone")
+				if took then changed = true end
+			end
 		end
 	end
 	-- (1.4.0: the rows taken before a malformed one stay, and now say so.)
 	TrimGlobal()
 	if changed then Data.ChangedSoon() end
-	if bad or count == 0 then return false end
+	if bad or count == 0 then return Refused("cg", "row", sender) end
 	globalLastHeard = now
 	HeardAnswer(now, trusted, sender)
 	-- (1.5.4) The King's own snapshot (his relay's, every Relay.GLOBAL_EVERY, held by his quiet
@@ -1538,7 +1606,11 @@ Data.GROUP_SEND_GAP = 65            -- one atomic origin after the relay's 60-se
 Data.GROUP_SAY_MAX = 24             -- rows in one word
 Data.BETA_REALMS = { ClassicBetaPvP = true, ClassicBetaPvP2 = true }
 local groupHeard = {}   -- [key] = the newest look at that group heard on our channel (this session)
+-- (1.5.5) [key] = the newest look heard from a Church ledger relay: what a 1.5.4 client counts too.
+local groupHeardLedger = {}
 local portableCursor, portableSent, legacySent = 0, {}, -math.huge
+-- (1.5.5) The author's checked looks (QA, below): when each origin's was last said here, and heard.
+local attestCursor, attestSent, attestHeard = 0, {}, {}
 local groupTicker = false
 local groupWitness = {} -- [key] = { [person] = row }: the witnesses heard this session
 
@@ -1583,6 +1655,9 @@ function Data.BetaOnLaunch(noted, here)
 	if type(noted) ~= "string" or noted == "" then return true end
 	return Data.IsBetaGroup(noted)
 end
+-- A Forever family's ruleset ("ForeverRPPvP": "rppvp"), by its rules word in lower case (1.5.5: the
+-- [Olympus] dropdown's families too, Channels.lua).
+Data.RULES_KIND = { pve = "pve", pvp = "pvp", rp = "rp", rppvp = "rppvp", hardcore = "hardcore", hc = "hardcore" }
 -- The kind ("pvp", "pve", "rp", "rppvp", "hardcore") and region ("NA", "EU") of a group, from the
 -- first of its realms the signed realm table names; nil, nil while none is known.
 function Data.GroupInfo(group)
@@ -1599,7 +1674,7 @@ function Data.GroupInfo(group)
 		if fam then rules = fam:match("^Forever(%a+)$"); group = fam end
 	end
 	if rules then
-		local kind = ({ pve = "pve", pvp = "pvp", rp = "rp", rppvp = "rppvp", hardcore = "hardcore", hc = "hardcore" })[rules:lower()]
+		local kind = Data.RULES_KIND[rules:lower()]
 		local realms = {}
 		for _, r in ipairs(type(ns.GroupRealms) == "function" and ns.GroupRealms(group) or {}) do realms[#realms + 1] = r end
 		local pins = type(ns.SignedPins) == "function" and ns.SignedPins() or nil
@@ -1687,8 +1762,10 @@ local function PruneGroups(now)
 		return a.key < b.key
 	end)
 	for i = Data.GROUP_MAX * 2 + 1, #keys do groupWitness[keys[i].key] = nil end
-	for key, observed in pairs(groupHeard) do
-		if now - observed > Data.GROUP_KEEP or (not groupWitness[key] and not GroupStore()[key]) then groupHeard[key] = nil end
+	for _, heard in ipairs({ groupHeard, groupHeardLedger }) do
+		for key, observed in pairs(heard) do
+			if now - observed > Data.GROUP_KEEP or (not groupWitness[key] and not GroupStore()[key]) then heard[key] = nil end
+		end
 	end
 end
 
@@ -1728,11 +1805,15 @@ function Data.ApplyGroupSnapshot(s, now)
 			and (not held or e.observed > held.observed) then held = e end
 	end
 	if not held then return end
-	local counted, observed = 0, now
+	local counted, refreshed = 0, 0
 	for _, e in ipairs(s.guilds) do
-		if e.counted then counted, observed = counted + 1, math.min(observed, ObservationTime(e.g)) end
+		if e.counted then
+			counted = counted + 1
+			if ObservationTime(e.g) >= held.observed then refreshed = refreshed + 1 end
+		end
 	end
-	if not held.unscoped and counted >= held.guilds and s.characters > 0 and observed >= held.observed then return end
+	-- Enough newer guild reports reconcile the saved coverage. An extra older row cannot veto them.
+	if not held.unscoped and refreshed >= held.guilds and s.characters > 0 then return end
 	local snapshot = { group = group, faction = held.faction, observed = held.observed, source = held.src,
 		witnesses = held.w, characters = held.characters, people = held.people, guilds = held.guilds,
 		age = math.max(0, now - held.observed), unscoped = held.unscoped,
@@ -1753,8 +1834,12 @@ local function GroupLater(a, b)
 	if a.characters ~= b.characters then return a.characters > b.characters end
 	return a.people > b.people
 end
--- Another group's row heard from `sender`: taken (true when what this client counts changed).
-local function TakeGroup(row, sender, trusted, now)
+-- Another group's row heard from `sender`: taken (true when what this client counts changed), and how
+-- it was heard (Data.CensusStats): "author", "trusted", "witnessed", "heard" (a lone witness) or "unproven".
+-- (1.5.5) A trusted row of the author's characters is kept as his (src "author", Data.CensusTrusted),
+-- the newest observation winning, its observed time as it came. src: a checked look's (QA) "author",
+-- whoever carried it. row.rg: a trusted row a guildmate handed over (RG), never said again (GroupCensusPayload).
+local function TakeGroup(row, sender, trusted, now, src)
 	local key = GroupKey(row.faction, row.group)
 	if row.group == GroupField(ns.group) and row.faction == OurFaction() then return false end -- our own: we see it live
 	local store = GroupStore()
@@ -1765,20 +1850,25 @@ local function TakeGroup(row, sender, trusted, now)
 		local heard = GroupStore("heard")
 		local old = heard[key]
 		if not old or old.observed < row.observed then
-			row.src, row.by, row.w = "heard", ns.FullName(sender), 0
+			row.src, row.by, row.w, row.rg = "heard", ns.FullName(sender), 0, nil
 			heard[key] = row
 		end
-		return false
+		return false, "unproven"
 	end
 	local function Keep(r, src, w)
-		if type(held) == "table" and (tonumber(held.observed) or 0) >= r.observed then return false end
+		if type(held) == "table" and (tonumber(held.observed) or 0) >= r.observed then
+			-- (1.5.5) The same look again on a stamped hop: no longer a hand-over alone.
+			if held.rg and not r.rg and tonumber(held.observed) == r.observed and held.src == src then held.rg = nil end
+			return false
+		end
 		store[key] = { group = r.group, faction = r.faction, characters = r.characters, people = r.people, guilds = r.guilds,
-			observed = r.observed, src = src, by = ns.FullName(sender), w = w }
+			observed = r.observed, src = src, by = ns.FullName(sender), w = w, rg = r.rg or nil }
 		local h = GroupStore("heard")[key]
 		if type(h) == "table" and (tonumber(h.observed) or 0) <= r.observed then GroupStore("heard")[key] = nil end
 		return true
 	end
 	if trusted then
+		src = src or (AuthorIdentity(sender) and "author" or "relay")
 		-- (1.5.4) While a look is still counted, a newer trusted one covering under half its guilds
 		-- does not replace it: a client that saw only its own guild there is not the family's count.
 		-- (The review of the 1.5.4 candidate.) Refused before it is noted as heard (groupHeard: a
@@ -1787,10 +1877,14 @@ local function TakeGroup(row, sender, trusted, now)
 		-- while it still counts itself (a one-guild look heard first kept out the 19-guild one).
 		local counted = type(held) == "table" and now - (tonumber(held.observed) or 0) <= Data.GROUP_COUNT
 		local heldGuilds = counted and (tonumber(held.guilds) or 0) or 0
-		if row.guilds * 2 < heldGuilds then return false end
+		local how = src == "author" and "author" or "trusted"
+		if row.guilds * 2 < heldGuilds then return false, how end
 		groupHeard[key] = math.max(groupHeard[key] or 0, row.observed)
+		-- (1.5.5) A Church ledger relay's look is one a 1.5.4 client counts too: only such a look keeps a
+		-- trusted holder from saying the family's row for them (GroupCensusPayload).
+		if LedgerRelay(sender) then groupHeardLedger[key] = math.max(groupHeardLedger[key] or 0, row.observed) end
 		if counted and heldGuilds * 2 < row.guilds and now - row.observed <= Data.GROUP_COUNT then held = nil end -- (Keep's age check)
-		return Keep(row, "relay", 1)
+		return Keep(row, src, 1), how
 	end
 	local who = PersonKey(sender)
 	if not who then return false end
@@ -1820,7 +1914,7 @@ local function TakeGroup(row, sender, trusted, now)
 			end
 		end
 	end
-	if best and best ~= held and Keep(best, "witnessed", 2) then return true end
+	if best and best ~= held and Keep(best, "witnessed", 2) then return true, "witnessed" end
 	-- A lone witness: listed grey (its newest), never counted.
 	if not (type(held) == "table" and held.observed >= row.observed) then
 		local heard = GroupStore("heard")
@@ -1830,7 +1924,7 @@ local function TakeGroup(row, sender, trusted, now)
 				guilds = row.guilds, observed = row.observed, src = "heard", by = ns.FullName(sender), w = 1 }
 		end
 	end
-	return false
+	return false, best and "witnessed" or "heard"
 end
 
 -- What this client sends: its rows of the OTHER groups (ours everyone here sees live), its own looks
@@ -1846,17 +1940,30 @@ end
 -- Alliance network and the reverse, so each side's totals held the other's (the dev, 11-08: "só
 -- para diferenciar, para não cruzar os dados"). The other side's rows stay kept, for its own
 -- characters' client (Data.Groups).
+-- (1.5.5) The author's client says every family row of our side it counts (its own looks, and the
+-- relays', the witnessed and his own it took), each with its original observed time: the trusted
+-- distributor. Any other trusted client (a councillor, the King, a keeper) also says the author's rows
+-- it took, for the clients that count only the Church's ledger relays (1.5.4 and older): what it heard
+-- from the author keeps it quiet no more, only what it heard from a ledger relay (groupHeardLedger),
+-- which those clients counted. No trusted client says a row it took over a guildmate's hand-over (rg).
+local AUTHOR_SAYS = { own = true, relay = true, witnessed = true, author = true }
 function Data.GroupCensusPayload(now)
 	now = now or ns.Now()
 	local trusted = GlobalTrusted(ns.me)
+	local author = trusted and AuthorIdentity(ns.me)
 	local rows, byOrigin = {}, {}
 	local side = OurFaction()
 	for _, e in pairs(GroupStore()) do
 		local row = type(e) == "table" and e.faction == side and GroupRow(e.group, e.faction, e.characters, e.people, e.guilds, e.observed)
 		local key = row and GroupKey(row.faction, row.group)
-		if row and (not ScopedGroup(row.group) or (trusted and e.group == row.group and e.src == "own")) and not e.unscoped
-			and row.group ~= GroupField(ns.group) and Listed(row.group)
-			and row.observed > (groupHeard[key] or 0) + Data.FRESH then
+		local say, heard = row and not ScopedGroup(row.group), groupHeard
+		if row and not say and trusted and e.group == row.group and not e.rg then
+			local counted = now - row.observed <= Data.GROUP_COUNT
+			if author then say = AUTHOR_SAYS[e.src] == true and counted
+			else say, heard = e.src == "own" or (e.src == "author" and counted), groupHeardLedger end
+		end
+		if say and not e.unscoped and row.group ~= GroupField(ns.group) and Listed(row.group)
+			and row.observed > (heard[key] or 0) + Data.FRESH then
 			if not byOrigin[key] or GroupLater(row, byOrigin[key]) then byOrigin[key] = row end
 		end
 	end
@@ -1878,11 +1985,15 @@ function Data.SayGroupCensus()
 	if not GlobalTrusted(ns.me) and not GlobalMember() then return false end
 	local now = ns.Now()
 	local payload, origin, index, observed
-	if Data.PortablePayload then payload, origin, index, observed = Data.PortablePayload(now, true) end
+	-- (1.5.5) The author's checked look of an origin first, when one is due here (Data.AttestPayload).
+	local attest
+	if Data.AttestPayload then payload, origin, index, observed = Data.AttestPayload(now, true) end
+	attest = payload ~= nil
+	if not payload and Data.PortablePayload then payload, origin, index, observed = Data.PortablePayload(now, true) end
 	if not payload and now - legacySent >= Data.GROUP_SAY_EVERY then payload = Data.GroupCensusPayload(now) end
 	if not payload then return false end
 	local trusted = GlobalTrusted(ns.me)
-	local key = "census-groups" .. (origin and ":" .. origin or "")
+	local key = (attest and "census-attest" or "census-groups") .. (origin and ":" .. origin or "")
 	local accepted = ns.Comm.SendChunked(payload, false, "CHANNEL", nil, { owner = Data, key = key,
 		permit = function(_, guardKey, dist, target)
 			if guardKey ~= key or dist ~= "CHANNEL" or target ~= nil then return false, "lane" end
@@ -1890,7 +2001,10 @@ function Data.SayGroupCensus()
 			if not trusted and not GlobalMember() then return false, "member" end
 			return true
 		end }) == true
-	if accepted then
+	if accepted and attest then
+		attestSent[origin] = { at = now, observed = observed }
+		attestCursor = index
+	elseif accepted then
 		if origin then
 			portableSent[origin] = { at = now, observed = observed }
 			portableCursor = index
@@ -1908,11 +2022,13 @@ function Data.ReceiveGroupCensus(dist, sender, text)
 	if text:sub(1, 5) == "CX~3~" then return Data.ReceivePortable(sender, text) end
 	if text:sub(1, 5) == "CX~2~" then return Data.ReceiveGroupDetails(sender, text) end
 	local ver, made, body = text:match("^CX~(%d+)~S~(%d+)~(.*)$")
-	if tonumber(ver) ~= Data.GROUP_PROTOCOL then return false end
+	if tonumber(ver) ~= Data.GROUP_PROTOCOL then return Refused("cx", "format", sender) end
 	local now = ns.Now()
 	local at = GlobalNumber(made, 1, 4102444800)
-	if not at or at > now + 5 * 60 or now - at > Data.GROUP_KEEP then return false end
+	if not at or at > now + 5 * 60 or now - at > Data.GROUP_KEEP then return Refused("cx", "time", sender) end
 	local trusted = GlobalTrusted(sender)
+	-- (1.5.5) A trusted row a guildmate handed over (RG): counted here, never said again (rg).
+	local rg = trusted and Hop() == "G"
 	local changed, count = false, 0
 	for part in tostring(body):gmatch("[^;]+") do
 		if count >= Data.GROUP_SAY_MAX then break end
@@ -1923,11 +2039,16 @@ function Data.ReceiveGroupCensus(dist, sender, text)
 			-- A Forever family's row without an original observer: a trusted sender's word alone,
 			-- anyone else's reported only (1.5.2: forwarders are not independent witnesses).
 			row.unproven = ScopedGroup(row.group) ~= nil and not trusted
-			if Listed(row.group) and TakeGroup(row, sender, trusted, now) then changed = true end
+			row.rg = rg or nil
+			if Listed(row.group) then
+				local took, how = TakeGroup(row, sender, trusted, now)
+				if how then Tally("cx", how) end
+				if took then changed = true end
+			end
 		end
 	end
 	PruneGroups(now)
-	if count == 0 then return false end
+	if count == 0 then return Refused("cx", "row", sender) end
 	if changed then Data.ChangedSoon() end
 	return true
 end
@@ -2106,11 +2227,14 @@ function Data.ReceiveGroupDetails(sender, text)
 	local rows = DetailRows(body)
 	if not rows then return false end
 	-- The old format omits its original observer and must not turn relays into votes.
-	if ScopedGroup(group) then return true end
+	-- (1.5.5) But for the author's own capsule of a family (SayGroupDetails), trusted on its hop: his count.
+	local trusted = GlobalTrusted(sender)
+	local label = trusted and AuthorIdentity(sender) and "author" or "relay"
+	if ScopedGroup(group) and label ~= "author" then return true end
 	local who = PersonKey(sender)
 	if not who or who == PersonKey(ns.me) then return true end
 	local key, store = GroupKey(faction, group), DetailStore()
-	local old, trusted = store[key], GlobalTrusted(sender)
+	local old = store[key]
 	local witnesses = detailWitness[key] or {}
 	detailWitness[key] = witnesses
 	body = DetailBody(rows)
@@ -2151,7 +2275,7 @@ function Data.ReceiveGroupDetails(sender, text)
 		end
 		if confirmed then
 			accepted[name] = { name = best.name, total = best.total, online = best.online, avg10 = best.avg10, observed = best.observed,
-				source = trusted and "relay" or "witnessed", witnesses = trusted and 1 or 2 }
+				source = trusted and label or "witnessed", witnesses = trusted and 1 or 2 }
 			newest = math.max(newest, best.observed)
 		end
 	end
@@ -2166,7 +2290,7 @@ function Data.ReceiveGroupDetails(sender, text)
 	if bounded then
 		for name, r in pairs(bounded) do r.source, r.witnesses = accepted[name].source or (old and old.source), accepted[name].witnesses end
 		store[key] = { group = group, faction = faction, observed = newest, rows = bounded,
-			source = trusted and "relay" or "witnessed", by = old and old.by }
+			source = trusted and label or "witnessed", by = old and old.by }
 		Data.ChangedSoon()
 	end
 	PruneDetails(now)
@@ -2193,8 +2317,11 @@ function Data.SayGroupDetails()
 	PruneDetails(ns.Now())
 	local keys = {}
 	-- (1.5.4: our side's capsules alone, as GroupCensusPayload says only our side's rows.)
+	-- (1.5.5) The author's client says its own capsules of the Forever families too (his count of each).
+	local author = GlobalTrusted(ns.me) and AuthorIdentity(ns.me)
 	for key, e in pairs(DetailStore()) do
-		if e.faction == OurFaction() and not ScopedGroup(e.group) and not e.unscoped and Listed(e.group) and e.group ~= GroupField(ns.group) then keys[#keys + 1] = key end
+		if e.faction == OurFaction() and (not ScopedGroup(e.group) or (author and e.source == "own")) and not e.unscoped
+			and Listed(e.group) and e.group ~= GroupField(ns.group) then keys[#keys + 1] = key end
 	end
 	if #keys == 0 then return false end
 	table.sort(keys)
@@ -2260,6 +2387,48 @@ local function PortableKeep(observer, row, wire, own)
 	end
 	PortableTrim(ns.Now())
 end
+-- (1.5.5) The author's signed look (QA): a look of his own account's (CX 3, as CapturePortable makes
+-- it) signed with his account key (Debts.lua's ns.db.arenaKey, one per WoW account, the same on every
+-- character of it), whose public half is ns.AUTHOR_ATTEST_PK. It proves itself, so it counts as the
+-- author's (src "author") whoever carries it, a provisional relay or an old client's guildmate among
+-- them: the one route that reaches every client of a family whatever relay serves it.
+--   QA~1~<sig>~<look>   sig: base64url (86 characters) of the Ed25519 signature of "OLYQA1|" .. look
+-- About 320 bytes: two pieces (Comm.SendChunked). Checked off the frame (Ed25519.Run), once per word.
+-- An empty constant signs nothing and takes nothing. Every client keeps the newest checked look of
+-- each origin (ns.db.groupAttest, account-wide: a player carries it to the other family) and says it
+-- once each GROUP_SAY_EVERY there, unless it heard one of that origin as new within the window.
+local function AttestKey()
+	local pk, Ed = ns.AUTHOR_ATTEST_PK, ns.Ed25519
+	if type(pk) ~= "string" or pk == "" or type(Ed) ~= "table" or type(Ed.FromB64) ~= "function" then return nil end
+	local raw = Ed.FromB64(pk)
+	return raw ~= nil and #raw == 32 and raw or nil
+end
+local function AttestStore()
+	if type(ns.db) ~= "table" then return {} end
+	ns.db.groupAttest = type(ns.db.groupAttest) == "table" and ns.db.groupAttest or {}
+	return ns.db.groupAttest
+end
+local function AttestKeep(row, wire, text, own)
+	local store, origin = AttestStore(), GroupKey(row.faction, row.group)
+	local old = store[origin]
+	local at = type(old) == "table" and tonumber(old.observed) or 0
+	if at > row.observed or (at == row.observed and old.own and not own) then return end
+	store[origin] = { group = row.group, faction = row.faction, observed = row.observed, wire = wire, text = text, own = own == true or nil }
+end
+-- Our own look signed, when this client holds the author's account key, and not signed already.
+local function SignLook(row, wire)
+	local k = type(ns.db) == "table" and ns.db.arenaKey
+	if not AttestKey() or type(k) ~= "table" or k.pk ~= ns.AUTHOR_ATTEST_PK then return false end
+	local old = AttestStore()[GroupKey(row.faction, row.group)]
+	if type(old) == "table" and old.own and old.wire == wire then return false end
+	local D = ns.Debts
+	if type(D) ~= "table" or type(D.Sign) ~= "function" then return false end
+	local ok, sig = pcall(D.Sign, "OLYQA1|" .. wire)
+	if not ok or type(sig) ~= "string" or #sig ~= 64 then return false end
+	AttestKeep(row, wire, "QA~1~" .. ns.Ed25519.ToB64(sig) .. "~" .. wire, true)
+	Tally("qa", "signed")
+	return true
+end
 function Data.CapturePortable(row)
 	if not ScopedGroup(row.group) then return false end
 	local observer = ns.FullName(ns.me)
@@ -2275,7 +2444,9 @@ function Data.CapturePortable(row)
 		if bytes + extra > Data.PORTABLE_MAX_BYTES then break end
 		parts[#parts + 1], bytes = line, bytes + extra
 	end
-	PortableKeep(observer, row, head .. table.concat(parts, ";"), true)
+	local wire = head .. table.concat(parts, ";")
+	PortableKeep(observer, row, wire, true)
+	SignLook(row, wire) -- (1.5.5)
 	return true
 end
 -- (1.5.4) One look carries an origin: this account's own, else the one covering the most guilds, then
@@ -2317,33 +2488,167 @@ function Data.PortablePayload(now, sending)
 		end
 	end
 end
-function Data.ReceivePortable(sender, text)
-	if #text > Data.PORTABLE_MAX_BYTES then return false end
+-- (1.5.5) The next checked look of the author's to say here (QA, above): the text, its origin, its
+-- place in the turn and its observed time; nil when none is due. Never our own origin's.
+function Data.AttestPayload(now, sending)
+	now = now or ns.Now()
+	if not AttestKey() then return nil end
+	local store, keys = AttestStore(), {}
+	for origin, e in pairs(store) do
+		if type(e) ~= "table" or type(e.text) ~= "string" or now - (tonumber(e.observed) or 0) > Data.GROUP_KEEP then
+			store[origin] = nil
+		elseif e.faction == OurFaction() and Listed(e.group) and e.group ~= GroupField(ns.group) then
+			keys[#keys + 1] = origin
+		end
+	end
+	if #keys == 0 then return nil end
+	table.sort(keys)
+	for offset = 1, #keys do
+		local index = (attestCursor + offset - 1) % #keys + 1
+		local origin = keys[index]
+		local e = store[origin]
+		if not sending then return e.text end
+		local sent, heard = attestSent[origin], attestHeard[origin]
+		local due = not sent or now - sent.at >= Data.GROUP_SAY_EVERY or e.observed > sent.observed
+		local covered = heard ~= nil and now - heard.at < Data.GROUP_SAY_EVERY and heard.observed >= e.observed
+		if due and not covered then return e.text, origin, index, e.observed end
+	end
+end
+-- A look as the wire carries it, checked: { observer, row, rows (its guilds, or nil), faction, wire }.
+local function ParseLook(text)
+	if type(text) ~= "string" or #text > Data.PORTABLE_MAX_BYTES then return nil end
 	local observer, origin, faction, c, p, n, o, body = text:match("^CX~3~S~([^~]+)~([^~]+)~(%a+)~(%d+),(%d+),(%d+),(%d+)~(.*)$")
-	if not observer or #observer > 100 or observer:find("[|;,%c]") then return false end
+	if not observer or #observer > 100 or observer:find("[|;,%c]") then return nil end
 	local row = GroupRow(origin, faction, c, p, n, o)
-	if not row or not Listed(row.group) then return false end
+	if not row or not Listed(row.group) then return nil end
 	local rows = body ~= "" and DetailRows(body) or nil
-	if body ~= "" and not rows then return false end
-	PortableKeep(observer, row, text)
+	if body ~= "" and not rows then return nil end
+	return { observer = observer, row = row, rows = rows, faction = faction, wire = text }
+end
+-- A look taken: kept to carry on, and counted as its proof allows (TakeGroup). src: a checked look's.
+local function TakeLook(look, direct, trusted, src)
+	local row, rows, observer, faction = look.row, look.rows, look.observer, look.faction
+	PortableKeep(observer, row, look.wire)
 	if row.group == GroupField(ns.group) and faction == OurFaction() then return true end
-	local direct = ns.FullName(sender):lower() == ns.FullName(observer):lower()
 	row.unproven = not direct
-	TakeGroup(row, observer, direct and GlobalTrusted(sender), ns.Now())
+	row.rg = (trusted and src == nil and Hop() == "G") or nil -- (a guildmate's hand-over: never said again)
+	TakeGroup(row, observer, trusted, ns.Now(), src)
 	if rows then
 		local key, store = GroupKey(faction, row.group), DetailStore()
 		local old = store[key]
-		if not old or old.source == "heard" or old.unscoped then
+		-- (1.5.5) The guilds in the author's own look are his word too (as his capsule, ReceiveGroupDetails).
+		local label = trusted and (src == "author" or AuthorIdentity(observer)) and "author" or "heard"
+		if not old or old.source == "heard" or old.unscoped or (label == "author" and old.source == "author") then
 			local newest = 0
-			for _, r in pairs(rows) do r.source = "heard"; newest = math.max(newest, r.observed) end
-			if not old or old.unscoped or newest > old.observed then
-				store[key] = { group = row.group, faction = faction, observed = newest, rows = rows, source = "heard", by = observer }
+			for _, r in pairs(rows) do r.source = label; newest = math.max(newest, r.observed) end
+			if not old or old.unscoped or newest > old.observed or (label == "author" and old.source == "heard") then
+				store[key] = { group = row.group, faction = faction, observed = newest, rows = rows, source = label, by = observer }
 			end
 		end
 	end
 	PruneGroups(ns.Now()); PruneDetails(ns.Now())
 	Data.ChangedSoon() -- reported-only origins and details are visible too
 	return true
+end
+-- (1.5.5) A look is direct when its observer sends it, or when the author's client carries a look its
+-- own family's author character made (both his, on the observer's own family: Relay.IsLaunchAuthor or
+-- the signed list), on a trusted hop. The author's client carrying anyone else's look would launder it:
+-- unproven, as any forwarder's.
+local function AuthorLook(sender, look)
+	if not (AuthorIdentity(look.observer) and AuthorIdentity(sender) and GlobalTrusted(sender)) then return false end
+	local family = ScopedGroup(look.row.group)
+	return family == nil or ns.ForeverFamily(ns.RealmOf(ns.FullName(look.observer)) or "") == family
+end
+function Data.ReceivePortable(sender, text)
+	local look = ParseLook(text)
+	if not look then return Refused("cx", "look", sender) end
+	local direct = ns.FullName(sender):lower() == ns.FullName(look.observer):lower()
+	local trusted, how = direct and GlobalTrusted(sender), direct and "direct" or "unproven"
+	if not direct and AuthorLook(sender, look) then direct, trusted, how = true, true, "author" end
+	Tally("cx3", how)
+	return TakeLook(look, direct, trusted)
+end
+
+-- (1.5.5) A checked look of the author's (QA, above) heard: kept for saying, and taken as his.
+Data.ATTEST_MEMO = 64 -- checked words remembered (SHA-256 of the word -> valid or not)
+-- Checks of ours in Ed25519's queue at once: its slots are the arena's signatures' too, so a flood of
+-- forged words (a new signature each) takes two of them at most; the rest wait to be heard again.
+Data.ATTEST_JOBS = 2
+local attestMemo, attestOrder, attestJobs = {}, {}, 0
+local function AttestMemo(id, value)
+	if attestMemo[id] == nil then
+		attestOrder[#attestOrder + 1] = id
+		while #attestOrder > Data.ATTEST_MEMO do attestMemo[table.remove(attestOrder, 1)] = nil end
+	end
+	attestMemo[id] = value
+end
+local function TakeAttest(look, text)
+	local row, now = look.row, ns.Now()
+	local origin = GroupKey(row.faction, row.group)
+	local heard = attestHeard[origin]
+	if not heard or now - heard.at >= Data.GROUP_SAY_EVERY or row.observed >= heard.observed then
+		attestHeard[origin] = { at = now, observed = row.observed }
+	end
+	AttestKeep(row, look.wire, text)
+	return TakeLook(look, true, true, "author")
+end
+function Data.ReceiveAttest(dist, sender, text)
+	if dist ~= "CHANNEL" or type(text) ~= "string" or type(sender) ~= "string"
+		or sender == "" or #sender > 100 or sender:find("[%c~]") then return false end
+	if OwnWord(sender) then return true end
+	local pk, Ed = AttestKey(), ns.Ed25519
+	if not pk or type(Ed.Run) ~= "function" then return Refused("qa", "key", sender) end
+	local sig64, wire = text:match("^QA~1~([%w%-_]+)~(CX~3~.+)$")
+	local sig = sig64 and #sig64 == 86 and Ed.FromB64(sig64) or nil
+	local look = sig and #sig == 64 and ParseLook(wire) or nil
+	if not look then return Refused("qa", "format", sender) end
+	local id = ns.Sign.SHA256(text)
+	local known = attestMemo[id]
+	if known == true then return TakeAttest(look, text) end
+	if known == false then return Refused("qa", "signature", sender) end
+	if known == "wait" then return true end
+	-- Every slot of ours (ATTEST_JOBS) or of Ed25519's queue taken: refused now, checked when heard again.
+	if attestJobs >= Data.ATTEST_JOBS then return Refused("qa", "busy", sender) end
+	attestJobs = attestJobs + 1
+	local settled = false
+	local started = Ed.Run(function() return Ed.Verify(pk, "OLYQA1|" .. wire, sig) end, function(ok, valid)
+		settled, attestJobs = true, math.max(0, attestJobs - 1)
+		local good = ok == true and valid == true
+		AttestMemo(id, good)
+		if not good then return Refused("qa", "signature", sender) end
+		Tally("qa", "verified")
+		TakeAttest(look, text)
+	end)
+	if not started then
+		attestJobs = math.max(0, attestJobs - 1)
+		return Refused("qa", "busy", sender)
+	end
+	if not settled then AttestMemo(id, "wait") end
+	return true
+end
+
+-- (1.5.5) What the census took, left unproven and refused since login, for /oly bug (the relay's
+-- BugLines "census:" line): a copy, with the last refusals newest first and the whole as one line.
+--   cg: trusted, witnessed, lone, refused (global rows)       cx: author, trusted, witnessed, heard, unproven, refused
+--   cx3: direct, author, unproven (looks)                     qa: verified, refused, signed (the author's checked looks)
+function Data.CensusStats()
+	local out, now = { last = {} }, ns.Now()
+	for kind, counts in pairs(censusStats) do
+		local copy = {}
+		for k, v in pairs(counts) do copy[k] = v end
+		out[kind] = copy
+	end
+	local last = {}
+	for i = #censusRefusals, 1, -1 do
+		local r = censusRefusals[i]
+		out.last[#out.last + 1] = { kind = r.kind, why = r.why, from = r.from, age = math.max(0, math.floor(now - r.t)) }
+		last[#last + 1] = r.kind .. ":" .. r.why
+	end
+	local g, x, l, q = out.cg, out.cx, out.cx3, out.qa
+	out.line = ("cg t%d w%d l%d r%d | cx a%d t%d w%d h%d u%d r%d | cx3 d%d a%d u%d | qa v%d r%d s%d"):format(
+		g.trusted, g.witnessed, g.lone, g.refused, x.author, x.trusted, x.witnessed, x.heard, x.unproven, x.refused,
+		l.direct, l.author, l.unproven, q.verified, q.refused, q.signed) .. (#last > 0 and (" | last " .. table.concat(last, ",")) or "")
+	return out
 end
 
 local function SaySoon()
@@ -2389,6 +2694,8 @@ ns.On("INIT", function()
 	-- Every server's numbers: foreign origins leave promptly in bounded turns after login;
 	-- unchanged origins repeat at most once per half hour. Own looks are kept at logout/sampling.
 	if ns.Comm and ns.Comm.Handle then ns.Comm.Handle("CX", Data.ReceiveGroupCensus) end
+	-- (1.5.5) The author's checked looks (QA): taken by every 1.5.5 client, ignored by older ones.
+	if ns.Comm and ns.Comm.Handle then ns.Comm.Handle("QA", Data.ReceiveAttest) end
 	PruneGroups(now)
 	PruneDetails(now)
 	ns.After(Data.GROUP_SAY_AFTER, "census groups", SaySoon)

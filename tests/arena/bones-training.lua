@@ -4,6 +4,16 @@ local test, eq = H.test, H.eq
 local FW = assert(loadfile(H.ROOT .. "tests/arena/lib/farkle-world.lua"))(H)
 local BoardUI = assert(loadfile(H.ROOT .. "tests/arena/lib/board-ui.lua"))(H)
 
+local function LearnerTurn(w, a, B)
+	local stop = w.clock + 90
+	while true do
+		local v = w:As(a, a.ns.FarkleTable.View, B._.S.id)
+		if v.expect and v.expect.who == 1 and not w:As(a, B.Busy, B._.S.id) then return end
+		w:Run(0.05)
+		assert(w.clock < stop, "the innkeeper's opening did not finish")
+	end
+end
+
 local function Training(dropFinished)
 	local w = FW.New({ seed = 7, compliance = "shipped" })
 	local a = w:Player(H.World.NAMES.fighterA, { companion = {} })
@@ -24,6 +34,7 @@ local function Training(dropFinished)
 	end
 	As(B.StartPractice, 10000, true)
 	if Parts().help and Parts().help:IsShown() then Click(Parts().help.ok) end
+	LearnerTurn(w, a, B)
 	local encoded = a.ns.FarkleRules.Encode({ 1, 1, 1, 1, 1, 1 })
 	w:QueueRoll(a.name, encoded)
 	Click(Parts().primary)
@@ -89,6 +100,7 @@ test("1.1.6 Bones training: old completion cannot mutate a closed board or a new
 	As(B.StartPractice, 10000, true)
 	local p = B._.parts()
 	if p.help and p.help:IsShown() then assert(As(a.K.UserClick, p.help.ok)) end
+	LearnerTurn(w, a, B)
 	w:QueueRoll(a.name, a.ns.FarkleRules.Encode({ 1, 2, 3, 4, 5, 6 }))
 	assert(As(a.K.UserClick, p.primary))
 	w:Run(0.4)

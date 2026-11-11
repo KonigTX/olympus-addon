@@ -2984,6 +2984,8 @@ function UI.BasePersonDetails(p)
 		end
 	end
 	if not covered and ns.IsTreasurer(p.name, p.guild) then Add("|cffffd200" .. ns.COIN .. L.TREASURER_TITLE .. "|r", "treasurer", "derived", at, "derived") end
+	-- (1.5.5) The Quaestor, the Treasurer's executor, by the signed list's name alone (ns.IsQuaestorName).
+	if not covered and ns.IsQuaestorName(full) then Add("|cffffd200" .. ns.COIN .. L.QUAESTOR_TITLE .. "|r", "quaestor", "signed", at, "derived") end
 	if councillor then
 		-- "High Councillor - <title> (<department>)", as the signed titles list gives them.
 		local t = ns.CouncilTitle(full) or {}

@@ -196,12 +196,13 @@ channels; the same charter and Join controls work for each side.
   report right now), the army's average level (each guild's, weighted by its size), every server
   (the characters and people of all of them, by ruleset, by region and by faction, then each
   server, yours first; another server's numbers arrive through players who also play there, counted
-  when it is what you saw yourself, when two players agree or when a moderator says it, and listed
-  grey otherwise; the beta's realms never count) and the levels online. Forwarded observations
-  preserve the original observer and date across normal members and reloads. Repeating the same
-  original through several holders never creates independent witnesses. Without authenticated
-  original evidence, these foreign counts are visible as reports, outside the accepted total;
-  this transport does not provide portable identity certificates. A family shared across regions
+  when it is what you saw yourself, when two players agree, when a moderator says it or (1.5.5) when
+  the addon's author does, and listed grey otherwise; the beta's realms never count) and the levels
+  online. Forwarded observations preserve the original observer and date across normal members and
+  reloads. Repeating the same original through several holders never creates independent
+  witnesses. Without authenticated original evidence, these foreign counts are visible as reports,
+  outside the accepted total; the one portable proof is the author's own look signed with his
+  account key (1.5.5), which counts whoever carries it. A family shared across regions
   has an unknown aggregate region; the relay's location is not assigned to all its members.
   An ordinary carrier sends the complete aggregate in one logical chunk, with only the whole
   guild-detail rows that fit beside it. The local scoped snapshot sends at most 180 guild rows
@@ -2562,10 +2563,12 @@ The addon itself talks only through the game's own addon messages: it has no ser
 and what it sends stays in the game. One exception is the Olympus Companion app, only if you
 install it: its own bridge addon takes your character's name and BattleTag and the Olympus and
 guild chat lines your client shows to Olympus's server, for its staff alone (the Companion's rows
-below). Olympus Link, the Discord role, is its own addon (Olympus_Link), not part of this one:
-nothing of it goes out unless you install it and choose to link a character, or to confirm other
-players' links, and its own documentation says what then goes where. Your name is on every message
-(the game adds it). What goes where:
+below). On Olympus's server, members of the Olympus Discord signed in to the Companion can see the
+census, the public rankings (with character names) and the Most Wanted list. Olympus Link, the
+Discord role, is its own addon (Olympus_Link), not part of this one: nothing of it goes out unless
+you install it and choose to link a character, or to confirm other players' links, and its own
+documentation says what then goes where. Your name is on every message (the game adds it). What
+goes where:
 
 | What | Who receives it | When |
 |---|---|---|
@@ -2575,7 +2578,7 @@ players' links, and its own documentation says what then goes where. Your name i
 | The census names people: your guild's leader and officers (above) and its five highest-level members (name, level and class), online or not, with the addon or not; the Realm's level race shows them | everyone on the Olympus channel | in every census report of your guild, from the member it elects: nobody named is asked |
 | Zones in that census: members per zone (numbers only), a leader's or officer's zone | everyone on the Olympus channel | only if the member sending it shares their zone and layer; a leader's or officer's zone only if they share theirs too |
 | The army's guild counts, repeated (1.4.0): each Olympus guild's name, size, online count, average level and when it was seen, as your client holds them | everyone on the Olympus channel | only when a client that holds less asks and no moderator or two other players answered first, at most every 3 minutes; never in quiet presence. Kept: another player's row a day (as one witness), a row two players agree on a week |
-| Other servers' totals (1.4.0): for each realm group you played (or that two players or a moderator told you of), its characters, people, number of guilds and when they were seen; never your current server's, never the beta's on a launch realm | everyone on the Olympus channel | after login and about every half hour, only what is newer than what was said lately. Kept a week in your saved variables (account-wide) |
+| Other servers' totals (1.4.0): for each realm group you played (or that two players, a moderator or the addon's author told you of), its characters, people, number of guilds and when they were seen; never your current server's, never the beta's on a launch realm. 1.5.5: also the author's own signed look of a realm group (his character's name, its totals and the guilds that fit, his signature), as he signed it | everyone on the Olympus channel | after login and about every half hour, only what is newer than what was said lately. Kept a week in your saved variables (account-wide) |
 | A guild verification (launch): a verifier's approval or revocation of a guild and its guild master (the guild's and his name, the time; your name, as on every message) | everyone on the Olympus channel (logged) | only from the King's, a High Councillor's or the author's client, when they approve or revoke. Kept in your saved variables: an approval until revoked or replaced (400 at most), a revocation 30 days |
 | A verification ask: how many verifications and guild starts your client holds, the newest one's time and a sum of the starts (no names) | everyone on the Olympus channel | after login, then every half hour; never in quiet presence |
 | A verifier's answer: every verification it holds (guild, guild master, time, who approved) and each guild's start (the first time a verifier's client saw it) | everyone on the Olympus channel | only from a verifier's client, when a client that holds less asks, at most every 3 minutes; never in quiet presence. Kept: a guild's start 90 days after it was last seen, your own client's first sighting of each guild 30 days |
@@ -2680,6 +2683,7 @@ players' links, and its own documentation says what then goes where. Your name i
 | Whether you are in an Olympus guild, whether you accepted the Olympus Companion Accord, your faction, your census realm group and, for a realm Olympus knows, whether it is a PvP realm (the Companion's `membership` section; Olympus names no realm yet, so none is known) | the private Olympus Companion Bridge addon, only if you installed it with the Olympus Companion app: it saves them in its own file on your computer (`OlympusCompanionDB`), so the Companion knows what it may show you. Any addon in your game can read them through `OlympusBridge` too | saved at logout or `/reload`, before either Accord and outside Olympus too: it names nobody (no character, BattleTag or guild) |
 | The Olympus and guild chat lines your client receives (the Companion's chat record, `OlympusBridge.RegisterChatRecorder`, 1.2.6): each line's chat ([Olympus], [Captains], [Lords], a room you are in, or a fight or Bones room; Guild is your guild's own chat as the game gives it, guildmates without Olympus included), its sender, its sanitized words, and whether it is your own | Olympus's staff, through your own Olympus Companion: the private Olympus Companion Bridge addon, only if you installed it with the Olympus Companion app, saves them in its own file on your computer, and the Companion sends them to Olympus's server, where only the staff see them and keep them, to confirm what was said (several players' Companions agreeing on a line) and to moderate; never other players or the public. Any addon in your game can read them through `OlympusBridge` too | every accepted line your client receives, your own once one of its sends left (never one that reached nobody, a squad leader's alone included), including those a muted channel, the Olympus channels' flood guard or your own block terms hide locally; never a line a chat warning refused, nor one Olympus kept off for moderation (net-off, a timeout, a deleted line's late copy), nor a pinned line (its own row above); only once you accepted the Olympus Accord, and only from the chats and rooms you have on; saved at logout or `/reload` |
 | What your own pages show you, for the Companion's people tabs (the `realm`, `roster`, `rankings` boards, `wanted`, `church`, `games` and `profile` sections, 1.2.6): the Realm's guilds as their rows show them (size, online while fresh, average level, Lord and whether he is online, or when an old report last had him online, Captains and inactive counts, the King's name); your own guild's members as the game's roster gives every member (name, level, class, rank, online, hours since last online); the ranking boards every member's pages list (the games' and the Treasury's donors only while the King shows them, the Church's while its public ranking is open) with your own place; the Wanted list (its first 100, with your census realm group and, for a realm Olympus knows, whether it is a PvP realm, so the Companion can show a PvP realm's list to PvE players saying where it comes from); the Church's public rows and, if you hold a Church place, your own numbers (counts only, never your recruits' names); the games' public events and results and your own record; your own profile (name, guild, rank, role, level, class, race, frame, title, nickname, honours) | the private Olympus Companion Bridge addon, only if you installed it with the Olympus Companion app: it saves them in its own file on your computer (`OlympusCompanionDB`) for the app to show you. Any addon in your game can read them through `OlympusBridge`, as it can read the same pages | only once you accepted the Olympus Accord and while you are in an Olympus guild (the census's `guilds` and `stats` sections too), saved at logout or `/reload`; your own guild's members only, never another guild's; never another player's BattleTag, chat text or chat-strike lines, a staff or High Council view, treasury items or a GUID |
+| The whole Church ranking as your Church tab's Ranking page shows it (the Companion's `churchRanking` section): the Apostles' and the missionaries' rankings for this week, the last 30 days and all time, each row a place, a name and points; the boards your client holds (on the King's, those his Ranking page last fetched from a keeper), 1000 places a board at most | the private Olympus Companion Bridge addon, only if you installed it with the Olympus Companion app: it saves it in its own file on your computer (`OlympusCompanionDB`), and the Companion shows it on that computer alone and never sends it to Olympus's server or over your network. Any addon in your game can read it through `OlympusBridge` too | only on the author's, the King's or a signed High Councillor's client while moderation does not hide him, once the Olympus Accord is accepted and while he is in an Olympus guild, whether the Church's public ranking is open or closed; saved at logout or `/reload`; never a recruit's or a registration's name |
 | What the tabs of affairs show you (the Companion's `crafting`, `crafters`, `treasury`, `decrees`, `agenda`, `notices`, `watch` and `chatRooms` sections, 1.2.6): the crafting board's open cards and your own open deals (item, quantity, state, the other party), the crafters' directory, the treasury's public numbers while the King shows the balance, the decrees, the week, the musters and your own letters from the King, The Watch's counts and lists (on a moderation team client or for the desk's staff alone), the chat rooms you are in with their member and unread counts | the private Olympus Companion Bridge addon, only if you installed it with the Olympus Companion app: it saves them in its own file on your computer (`OlympusCompanionDB`) for the Companion to show, and the Companion may pass the musters and the Crown's and the High Council's decrees on as notifications to the members they were for (your letters are marked as yours alone). Any addon in your game can read them through `OlympusBridge` too | only once you accepted the Olympus Accord, saved at logout or `/reload`; only what your own client already shows on those pages, to whom it shows it; never chat text, a chat-strike line, a crafting deal's terms or chat, a treasury item, a reporter's name or note, a moderator's reason, a GUID or a BattleTag |
 
 **Record mode (the Guinness attempt).** `/oly record on` turns it on for one character of an
@@ -3548,6 +3552,8 @@ python3 scripts/council-sign.py check     # the author: read dist/CouncilList.lu
 scripts/package.sh                        # dist/Olympus-<version>.zip (Olympus, Arena and SiteAggregate)
 scripts/package.sh --test N               # test build N with all three folders and rollback steps
 scripts/package.sh --release116           # 1.1.6: the release without scripts/bets-only.txt's files, in dist/release116/
+luajit scripts/ship-lists.lua [--group G] <CouncilList.lua> dist/SignedLists.lua  # 1.5.6: the signed lists for a zip (signs nothing)
+OLY_SIGNED_LISTS=dist/SignedLists.lua scripts/package.sh  # 1.5.6: a package carrying them (OLY_REQUIRE_LISTS=1: refused without)
 WOW_HOST=user@pc scripts/deploy.sh        # copy all bundled addon folders to a Windows PC over SSH
 OLY_TREE=dist/test1 WOW_HOST=user@pc scripts/deploy.sh  # deploy a test build's three folders instead
 WOW_HOST=user@pc scripts/logs.sh          # read the log and captured errors from that PC
@@ -3648,6 +3654,23 @@ command signs the whole council again and prints the titles list to paste; the a
 `dist/CouncilList.lua` into his game and `/reload`s, and anyone in Olympus can paste the printed
 `HT1~` text with `/oly approved paste`. `/oly status` says where each identity comes from
 (`identities: King signed ...`), never a name.
+
+Since 1.5.6 a release carries the signed lists too, so a list reaches every client that updates
+(the Twelve Apostles came in one titles list that only a paste and the relays carried, and it
+reached almost nobody). `scripts/ship-lists.lua` copies lists already signed (it signs nothing)
+from a `CouncilList.lua` or from the printed `HS1~`/`HT1~` text into a file under `dist/`, the
+newest names and titles of each realm group (`--group` keeps the groups named), each one checked
+with the key in `Olympus/Sign.lua`; it prints realm groups, times and counts, never a name.
+`scripts/package.sh` puts that file in the zip alone (`OLY_SIGNED_LISTS`), checked again with the
+key the package carries, as `Olympus/SignedLists.lua` named in the zip's `Olympus.toc` after
+`Core.lua`; `OLY_REQUIRE_LISTS=1` refuses a package without it. The repository never holds the file
+or names it (it names players), and every client takes the lists at login with the checks of any
+list (`Workshop.TakeShipped`): a newer list relayed or pasted since still wins.
+
+```bash
+luajit scripts/ship-lists.lua --group "<realm group>" <CouncilList.lua> dist/SignedLists.lua
+OLY_SIGNED_LISTS=dist/SignedLists.lua OLY_REQUIRE_LISTS=1 scripts/package.sh
+```
 
 `<Name-Realm>` is his character as the server writes it (first name and surname, then his
 realm), on a realm of the list's group. The script refuses anything the addon would not take,

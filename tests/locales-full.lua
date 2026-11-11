@@ -159,3 +159,29 @@ test("languages: the API's contract 11 privacy lines, including the reserved Que
 		assert(not L.API_CONSENT_TEXT_BASIC:find(QUEEN_WORD[code], 1, true), file .. ": its basic line does not offer it")
 	end
 end)
+
+-- 2026-11-09 (the author: "Pode abrir"): members of the Olympus Discord who sign in to the Companion
+-- read the census, the public rankings and the Most Wanted list from Olympus's server without a
+-- character link. The privacy page's opening words (CONSENT_INTRO, not versioned: nobody is asked
+-- again) say so in every language, right before the channel's audience (its one %s). The Olympus
+-- Accord's letter is left as accepted: a new version of it would turn Olympus off for every account
+-- until it accepted again, the author's call.
+local DISCORD_READS = {
+	enUS = "On Olympus's server, members of the Olympus Discord signed in to the Companion can see the census, the public rankings (with character names) and the Most Wanted list.",
+	ptBR = "No servidor do Olympus, membros do Discord do Olympus conectados ao Companion podem ver o censo, os rankings públicos (com nomes de personagens) e a lista de Mais Procurados.",
+	deDE = "Auf dem Server von Olympus können Mitglieder des Olympus-Discords, die im Companion angemeldet sind, den Zensus, die öffentlichen Ranglisten (mit Charakternamen) und die Meistgesucht-Liste sehen.",
+	esES = "En el servidor de Olympus, los miembros del Discord de Olympus con sesión iniciada en el Companion pueden ver el censo, las clasificaciones públicas (con nombres de personajes) y la lista de Los más buscados.",
+	esMX = "En el servidor de Olympus, los miembros del Discord de Olympus con sesión iniciada en el Companion pueden ver el censo, las clasificaciones públicas (con nombres de personajes) y la lista de Los más buscados.",
+	frFR = "Sur le serveur d'Olympus, les membres du Discord d'Olympus connectés au Companion peuvent voir le recensement, les classements publics (avec les noms des personnages) et la liste des plus recherchés.",
+	itIT = "Sul server di Olympus, i membri del Discord di Olympus collegati al Companion possono vedere il censimento, le classifiche pubbliche (con i nomi dei personaggi) e la lista dei più ricercati.",
+	ruRU = "На сервере Olympus участники Discord Olympus, вошедшие в Companion, могут видеть перепись, публичные рейтинги (с именами персонажей) и список «Самые разыскиваемые».",
+}
+test("languages: the privacy page says in every language that Olympus Discord members signed in to the Companion can see the census, the public rankings with character names and the Most Wanted list on Olympus's server", function()
+	for code, sentence in pairs(DISCORD_READS) do
+		local intro = Load(code).L.CONSENT_INTRO
+		assert(intro:find(sentence .. " %s", 1, true), code .. ": its own words, right before the channel's audience: " .. intro)
+		eq(select(2, intro:gsub("%%s", "")), 1, code .. ": its one %s")
+	end
+	eq(english.L.ACCORD_DATE, "21 October 2026", "the Olympus Accord's letter as accepted")
+	eq(ns.ACCORD_VERSION, 1, "no new version: nobody is asked to accept again")
+end)

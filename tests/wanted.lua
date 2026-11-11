@@ -4001,11 +4001,18 @@ test("wanted 1.2.3 bounty: an office comes only from what the client trusts (the
 		eq(Office("Master-Realm"), "G")
 		w.authority("Master-Realm", "council"); eq(Office("Master-Realm"), "H", "a guild master who is a councillor: the highest")
 		eq(B.DeathPoints(Office("Master-Realm"), 58), 108)
-		-- Where no King is pinned: the master of the King's guild (Borders' rule).
+		-- Off Forever, where no King is pinned: the master of the King's guild (Borders' rule).
+		-- The inherited Core predicate closes over the outer harness, so give this client's
+		-- authority fixture its own gate, as its IsKingCharacter and authorized ranks above do.
+		local kingIsMaster = true
 		c.KingCharacter = function() return nil end
+		c.KingUnpinned = function() return kingIsMaster and c.KingCharacter() == nil end
 		c.IsKingGuild = function(guild) return guild == "Olympus" end
 		ranks[c.Fold(c.FullName("Founder-Realm")) .. "@Olympus"] = 0
 		eq(Office("Founder-Realm", "Olympus"), "K")
+		kingIsMaster = false
+		eq(Office("Founder-Realm", "Olympus"), "G", "on Forever an unpinned King never crowns the guild master")
+		kingIsMaster = true
 		c.KingCharacter = function() return "Someone" end
 		eq(Office("Founder-Realm", "Olympus"), "G", "a King pinned: the master is a guild master")
 		-- A centurion or a correspondent from his master's own list (a stale list gives nobody).

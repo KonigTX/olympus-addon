@@ -2888,3 +2888,88 @@ test("1.5.2 Church catch-up: one silent keeper is bounded by the per-source reas
 	eq(w:As(c.recv, c.recv.Count.CatchUp, false), true)
 	eq(#w:Sent(c.recv, "NL", "WHISPER", "q"), 2)
 end)
+
+---------------------------------------------------------------------------
+-- 1.5.5 (the author, 2026-11-10: "continua sem contar nenhuma pontuação para mim. Dos membros da igreja"):
+-- his client held the signed titles list that names the Twelve Apostles (pasted on 11-09); the relay took it
+-- to almost nobody, so the Apostles' own clients and their guildmates' still held the launch list, which names
+-- none. An Apostle whose own client does not know he is one says nothing over GUILD, so no guildmate read
+-- the guild's log (a Church person's presence heard, Count.HeardPresence, was the only reason); and the
+-- author's client, a keeper but no Church person, never read its own guild's either. Nothing was counted
+-- anywhere: every Apostle at 0 on his Church tab, five of them in his own guild.
+---------------------------------------------------------------------------
+
+-- The list a client held before the Apostles were signed: this world's, an hour older, no ^apostles^ entry.
+local function ListWithoutApostles(w)
+	local t = w.titles
+	local at = t.at - 3600
+	local blob = t.blob:gsub(";%^apostles%^[^;~]*", ""):gsub("^HT1~%d+~", "HT1~" .. at .. "~")
+	return { at = at, depts = t.depts, blob = blob }
+end
+
+-- The author, an Apostle (Aldric) and a plain member (Wes) in one guild; the King away. `launch` names the
+-- clients that still hold the launch list (no Apostle in it); the others hold the one that names Aldric. The
+-- author's client is away while `away` says so. Aldric invites a player, who joins an hour later and stays.
+local function OneGuild(launch, away)
+	local w = World.New({ apostles = { A1 }, head = false })
+	local old = ListWithoutApostles(w)
+	local c = { author = w:Client(World.AUTHOR), a1 = w:Client(A1), wes = w:Client("Wes Brook"), king = w:Client(World.KING) }
+	for name in pairs(launch) do c[name].c.CouncilTitles = function() return old end end
+	c.king.online, c.author.online = false, not away
+	w:Run(3600)
+	w:Presence()
+	w:LogEvent(World.GUILD, "invite", A1, "New Guy", 3)
+	w:LogEvent(World.GUILD, "join", "New Guy", nil, 2)
+	Join(w, World.GUILD, "New Guy")
+	return w, c
+end
+-- An hour of the clients' ticks: a read is due each READ_EVERY.
+local function AnHour(w) for _ = 1, 13 do w:Tick(); w:Run(300) end end
+local function ApostleRow(w, cl)
+	for _, row in ipairs(w:As(cl, cl.Count.Ranking, "a", "m")) do
+		if row.key == Key(A1) then return row end
+	end
+end
+
+test("1.5.5 Church (regression): a keeper's client reads its own guild's log, as a Church person's does: the author's alone counts his guild's Apostle's recruit", function()
+	local w, c = OneGuild({ a1 = true, wes = true })
+	-- His guild's three hundred addon users online: a member's draw (2 in 300) would almost never pick him.
+	c.author.peers = 300
+	c.author.Count.chance = function() return 0.5 end
+	AnHour(w)
+	eq(w:As(c.a1, c.a1.Church.Role, A1), nil, "the Apostle's own client does not know he is one")
+	eq(#w:Sent(c.a1, "NK"), 0, "so it says nothing over GUILD")
+	eq(c.a1.queries, 0, "nor reads the log")
+	-- (Failed before: the author is a keeper, W, but no Church person, and no Church person was heard in his
+	-- guild: his client never read its log, and his ledger stayed empty.)
+	eq(c.author.queries > 0, true, "the author's client read its guild's log on its own")
+	eq(StateOf(w, c.author, "New Guy", A1), "credited", "his own read of the log: a keeper is a witness he vouches for")
+	eq(Records(w, c.author), 1)
+	eq(ApostleRow(w, c.author).score, c.author.Count.POINTS_JOIN, "his Church tab: the Apostle's ten points")
+	eq(c.wes.queries, 0, "a member whose list names no Church person, and who heard none, still does not read")
+end)
+
+test("1.5.5 Church (regression): a member whose own list names a Church person of his guild reads its log (drawn) though that person's client never said so; his report waits for a keeper", function()
+	-- Aldric's client still holds the launch list; Wes's names him (the list the release carries); the author,
+	-- a keeper of this guild, is away.
+	local w, c = OneGuild({ a1 = true }, true)
+	AnHour(w)
+	eq(#w:Sent(c.a1, "NK"), 0, "no Church presence from the Apostle")
+	eq(w:As(c.wes, c.wes.Count.Claimed, A1), false, "nor heard by Wes")
+	-- (Failed before: no presence heard, no read.)
+	eq(c.wes.queries > 0, true, "Wes's client read the log: its roster holds an Apostle of its own list")
+	eq(w:As(c.wes, c.wes.Count.Stats).pairs, 1, "the Apostle's invite and the join: one pair")
+	eq(c.a1.queries, 0, "the Apostle's own client still reads nothing: its list names nobody")
+	-- The game keeps the newest events only: they are gone from the log when the author logs in. Wes's report,
+	-- kept in his outbox, reaches him; his roster saw the recruit join, so he vouches for his guildmate.
+	w.log[World.GUILD] = {}
+	c.author.online = true
+	w:Presence({ c.author })
+	Settle(w, 30)
+	eq(StateOf(w, c.author, "New Guy", A1), "credited", "Wes's read, vouched for in the author's own guild")
+	eq(ApostleRow(w, c.author).score, c.author.Count.POINTS_JOIN)
+	-- A member of a guild where his list names nobody and nobody was heard: no read, as before.
+	local lone = w:Client("Lone Wolf", { guild = "Olympus Lone" })
+	eq(w:As(lone, lone.Count.MaybeRead, w.clock + 400), false, "no Church person in his guild")
+	eq(lone.queries, 0)
+end)

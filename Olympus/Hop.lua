@@ -1221,7 +1221,8 @@ function Hop.King(strict)
 		return { name = ns.KingName(pin), mapID = where and where.mapID, zoneUID = where and where.zoneUID,
 			t = where and where.t, realm = at and ns.RealmOf(at) }
 	end
-	for name, g in pairs(ns.rdb.guilds or {}) do
+	-- (1.5.5) The King's guild's master is never the King on Forever's live realms (ns.KingIsMaster).
+	for name, g in pairs(ns.KingIsMaster() and ns.rdb.guilds or {}) do
 		if ns.IsKingGuild(name) and type(g) == "table" and g.leader
 			and now - (g.t or 0) <= ns.Data.FRESH and g.leaderOnline then
 			local full = ns.FullName(g.leader, g.realm or ns.realm)
@@ -1240,7 +1241,7 @@ end
 -- <Olympus> reports its leader online, but the census does not confirm him yet (a few
 -- minutes after login, Data.KnownRank): not "offline".
 local function KingUnconfirmed()
-	for name, g in pairs(ns.rdb.guilds or {}) do
+	for name, g in pairs(ns.KingIsMaster() and ns.rdb.guilds or {}) do -- (1.5.5: as in Hop.King)
 		if ns.IsKingGuild(name) and type(g) == "table" and g.leader and g.leaderOnline
 			and ns.Now() - (g.t or 0) <= ns.Data.FRESH then
 			return true

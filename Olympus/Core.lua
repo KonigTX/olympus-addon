@@ -2,7 +2,7 @@ local ADDON, ns = ...
 local L = ns.L
 
 ns.NAME = "Olympus"
-ns.VERSION = "1.5.5"
+ns.VERSION = "1.5.6"
 ns.PREFIX = "OLYMPUS"        -- addon message prefix (max 16 chars)
 ns.CHANNEL = "OlympusNet"    -- hidden chat channel shared by every Olympus guild (Alliance)
 ns.CHANNEL_HORDE = "OlympusNetH" -- the Horde's: the two factions never see each other's guilds
@@ -253,6 +253,15 @@ end
 ns.ForeverFamily = ForeverFamily
 function ns.GroupOf(realm, db)
 	return ForeverFamily(realm) or Learned(db or ns.db, realm) or SEED[realm] or realm
+end
+-- (1.5.5) This client plays on WoW: Forever's live realms (a CAMWOW family), not the beta's nor any other
+-- realm. There the King leads no guild (ns.KingIsMaster), his main guild has a name of its own
+-- (ns.KING_GUILD_FOREVER) and the Treasurer is the signed list's alone (ns.TreasurerPins). Kept per realm.
+local foreverMemo = { realm = false }
+function ns.OnForever()
+	local realm = ns.realm or ns.CurrentRealm()
+	if foreverMemo.realm ~= realm then foreverMemo.realm, foreverMemo.on = realm, ForeverFamily(realm) ~= nil end
+	return foreverMemo.on
 end
 
 -- What kind of realm each known realm is, "pvp" or "pve", by its name in "Name-Realm" form (the
@@ -1015,6 +1024,10 @@ ns.KING_NAME = "Asmon"
 -- author's signed titles list names them: ns.SignedPins, ns.AuthorCharacters.)
 ns.AUTHOR = "Faladoriel Skylance"
 ns.AUTHOR_REALM = "ClassicBetaPvP" -- his realm group, where only he carries that name
+-- (1.5.5) The public half (base64url) of the author's account key (Debts.lua's ns.db.arenaKey on his
+-- WoW account: one key, the same on every character of it). His client signs its own looks at a realm
+-- group's census with it, and every client checks them (Data.lua's QA). Empty: nothing signed or taken.
+ns.AUTHOR_ATTEST_PK = "qkuKwc3r9As9NZIoRP19pCMdpaGC6J0EtdhwE1_dcg0"
 -- A name of the realm group of `realm` (a name without a realm is ours). Forever's names are
 -- one across a realm group only: the same name on another group is someone else.
 local function OfGroup(name, realm)
@@ -1088,13 +1101,13 @@ function ns.IsAuthorName(name)
 	end
 	return false
 end
--- (1.5.5) The Olympus Speedrunner (a name heard, or ours): the character the signed list we hold names in a
--- ^speedrunner^ entry, either side's (a name is one per realm group whatever its side), by its name on
--- its realm group, whatever its case. The code names nobody; no list, or a newer one without him: nobody.
-function ns.IsSpeedrunnerName(name)
+-- (1.5.5) A name heard, or ours, that the signed list we hold names in a `kind` entry (ns.ReadPins),
+-- either side's (a name is one per realm group whatever its side), by its name on its realm group,
+-- whatever its case. The code names nobody; no list, or a newer one without him: nobody.
+local function SignedName(kind, name)
 	if type(name) ~= "string" or name == "" then return false end
 	local p = ns.SignedPins and ns.SignedPins()
-	local s = p and p.speedrunner
+	local s = p and p[kind]
 	if type(s) ~= "table" or not (s.Alliance or s.Horde) then return false end
 	local full = ns.FullName(name)
 	local realm = ns.RealmOf(full)
@@ -1110,6 +1123,23 @@ function ns.IsSpeedrunnerName(name)
 	end
 	return false
 end
+-- (1.5.5, the dev's call) The Quaestor: the Treasurer's executor, who does the Treasurer's work without
+-- being the one who decides (Rome's quaestors kept the treasury for the magistrates). The characters the
+-- signed list names in a ^quaestor^ entry (ns.PINS_MAX.quaestor a side), as SignedName reads them. He
+-- wears the Treasurer's blue dragon (Borders.lua), carries the title (ns.L.QUAESTOR_TITLE) and is a
+-- trusted relay of his own side (Relay.Names, ns.QuaestorPins); none of the Treasurer's powers: no book,
+-- no keeper, no dues, no King's guild.
+function ns.IsQuaestorName(name) return SignedName("quaestor", name) end
+-- The Quaestors of one side (ours when nil), each "First Surname-Realm"; none without a signed list.
+function ns.QuaestorPins(side)
+	local p = ns.SignedPins and ns.SignedPins()
+	local q = p and p.quaestor
+	return type(q) == "table" and q[side or ns.faction or "Alliance"] or NO_PINS
+end
+-- (1.5.5) The Olympus Speedrunner (a name heard, or ours): the character the signed list we hold names in a
+-- ^speedrunner^ entry, either side's (a name is one per realm group whatever its side), by its name on
+-- its realm group, whatever its case. The code names nobody; no list, or a newer one without him: nobody.
+function ns.IsSpeedrunnerName(name) return SignedName("speedrunner", name) end
 -- The Treasurer of Olympus, chosen by Asmongold's chat on September 23, 2026: exactly this
 -- character, in the guild named Olympus. Look-alikes in other guilds exist: both must match,
 -- and his realm group (Forever's PvP realms), where only he carries that name.
@@ -1125,6 +1155,10 @@ local codeTreasurer
 function ns.TreasurerPins()
 	local signed = Signed("treasurer")
 	if signed then return signed, true end
+	-- (1.5.5, the dev: "fern's char is the treasurer, pyralis is something else") The code's pins are the
+	-- beta's Treasurer's: on Forever's live realms nobody is the Treasurer, nor a relay as him (Relay.Names),
+	-- until the signed list names one for our side.
+	if ns.OnForever() then return NO_PINS, false end
 	local chars = type(ns.TREASURER_CHARACTERS) == "table" and ns.TREASURER_CHARACTERS or NO_PINS
 	local m = codeTreasurer
 	if not m or m.primary ~= ns.TREASURER or m.realm ~= ns.TREASURER_REALM or m.chars ~= chars or m.n ~= #chars or m.here ~= ns.realm then
@@ -1148,8 +1182,14 @@ function ns.TreasurerRealm()
 	local pin = ns.TreasurerFull()
 	return pin and ns.RealmOf(pin) or nil
 end
+-- (1.5.5) His guild: <Olympus>, the beta's main guild; on Forever's live realms the King's main guild
+-- (ns.IsKingGuild: <OLYMPUS PRIME>), whose master the signed Treasurer is there.
+local function TreasuryGuild(guild)
+	if ns.OnForever() then return ns.IsKingGuild(guild) end
+	return guild:lower() == "olympus"
+end
 function ns.IsTreasurer(name, guild)
-	if type(name) ~= "string" or type(guild) ~= "string" or guild:lower() ~= "olympus" then return false end
+	if type(name) ~= "string" or type(guild) ~= "string" or not TreasuryGuild(guild) then return false end
 	local pin = ns.TreasurerFull()
 	return pin ~= nil and ns.ShortName(name) == ns.ShortName(pin) and OfGroup(name, ns.RealmOf(pin))
 end
@@ -1206,11 +1246,25 @@ ns.CROWN_ICON = "Interface\\GroupFrame\\UI-Group-LeaderIcon"
 -- are of the Crown. The Alliance's is <Olympus>; the Horde's is set here once Asmongold founds
 -- it (a guild name is one per realm, so it can't be "Olympus" there).
 ns.KING_GUILD = { Alliance = "olympus", Horde = "mudhutters" } -- (the Horde's: <Mudhutters>, 0.9.4)
+-- (1.5.5, the dev: "asmon isnt the gm of any guild, fern is the gm of the main guild") On WoW: Forever's live
+-- realms (ns.OnForever) the Alliance's main guild is <OLYMPUS PRIME>. Its officers are of the Crown as the
+-- beta's <Olympus> officers were, its guild master too, but he is no King there (ns.KingIsMaster): the King
+-- is the character the author's signed list names, alone. A side not named here keeps its ns.KING_GUILD.
+ns.KING_GUILD_FOREVER = { Alliance = "olympus prime" }
+-- Our side's King's guild here, in lower case, or nil.
+function ns.KingGuildKey()
+	local side = ns.faction or "Alliance"
+	local forever = ns.OnForever() and ns.KING_GUILD_FOREVER[side]
+	return forever or ns.KING_GUILD[side]
+end
 function ns.IsKingGuild(guild)
 	if type(guild) ~= "string" then return false end
-	local want = ns.KING_GUILD[ns.faction or "Alliance"]
+	local want = ns.KingGuildKey()
 	return want ~= nil and guild:lower() == want
 end
+-- (1.5.5) The King's guild's master is the King (or stands for him where none is named, ns.KingUnpinned):
+-- everywhere but Forever's live realms, where the King leads no guild and its master is only of the Crown.
+function ns.KingIsMaster() return not ns.OnForever() end
 
 -- The King himself, by his character's name, like the Treasurer: sender names are set by the
 -- server, so nobody else can speak as him, and no census vote (anyone on the channel can
@@ -1302,10 +1356,11 @@ function ns.LaunchListHeld()
 end
 -- No King named here, and no launch list here either: only then does the guild master of the King's
 -- guild stand for him (King.IsKing, its soft word, Borders, Wanted: each asks
--- `ns.KingCharacter() == nil and not ns.LaunchListHeld()`), as wherever no King was pinned before.
+-- `ns.KingCharacter() == nil and not ns.LaunchListHeld()`, 1.5.5: this), as wherever no King was pinned before.
 -- Where the author's launch list reaches, the King is the character it names for our side, or nobody
--- until it does: never whoever founds a guild of that name first.
-function ns.KingUnpinned() return ns.KingCharacter() == nil and not ns.LaunchListHeld() end
+-- until it does: never whoever founds a guild of that name first. (1.5.5) Nor ever on Forever's live
+-- realms (ns.KingIsMaster): the main guild's master there is not the King, list or none.
+function ns.KingUnpinned() return ns.KingIsMaster() and ns.KingCharacter() == nil and not ns.LaunchListHeld() end
 -- Learned only from a message he sent (King.lua: the sender name is the server's), never from
 -- a name written inside a report, which anyone could forge to lock him out.
 function ns.LearnKingRealm(sender)
@@ -1566,7 +1621,11 @@ end
 -- (1.5.5, the owner's call) ^speedrunner^<Alliance|Horde>^<First Surname-Realm>: the Olympus Speedrunner, who
 -- holds the level race's gold comet (Honors.Holdings) whatever the race does: a title and a frame alone, no
 -- authority of any kind (ns.IsSpeedrunnerName). Clients before 1.5.5 leave the entry out unread, as above.
-ns.PINS_MAX = { king = 1, queen = 1, treasurer = 4, author = 8, speedrunner = 1 } -- names a side, each kind
+-- (1.5.5, the dev's call) ^quaestor^<Alliance|Horde>^<First Surname-Realm>,...: the Quaestors, the Treasurer's
+-- executors: the Treasurer's blue dragon, their title and a trusted relay of their side (ns.IsQuaestorName,
+-- ns.QuaestorPins), none of his powers. On Forever's live realms a side the list names no Treasurer for has
+-- none (ns.TreasurerPins): the code's pins are the beta's alone.
+ns.PINS_MAX = { king = 1, queen = 1, treasurer = 4, author = 8, speedrunner = 1, quaestor = 2 } -- names a side, each kind
 ns.REALM_KINDS = { pvp = true, pve = true, rp = true, rppvp = true, hardcore = true }
 ns.REALM_REGIONS = { NA = true, EU = true }
 ns.REALMS_MAX = 40 -- realms a region
@@ -1587,7 +1646,7 @@ end
 -- where it names nobody valid. Anything PinName, ns.PINS_MAX, the kinds or the regions leave out is
 -- left out.
 function ns.ReadPins(text)
-	local out = { king = {}, queen = {}, treasurer = {}, author = {}, speedrunner = {}, realms = {} }
+	local out = { king = {}, queen = {}, treasurer = {}, author = {}, speedrunner = {}, quaestor = {}, realms = {} }
 	local regions = {}
 	for entry in tostring(text or ""):gmatch("[^;]+") do
 		local kind, slot, list = entry:match("^%^(%l+)%^(%a+)%^([^%^]*)$")
@@ -1673,10 +1732,12 @@ function ns.PinsStatus()
 	local queen = ns.QueenCharacter() and "signed" or "none"
 	local treasurer, tSigned = ns.TreasurerPins()
 	local authors, aSigned = ns.AuthorCharacters()
+	local quaestors = #ns.QuaestorPins() -- (1.5.5: our side's)
 	local realms = 0
 	for _ in pairs(p and p.realms or NO_PINS) do realms = realms + 1 end
-	return ("King %s  |  Queen %s  |  Treasurer %s (%d)  |  author %s (%d, this character: %s)  |  realms %d  |  signed list: %s"):format(
-		king, queen, tSigned and "signed" or "code", #treasurer, aSigned and "signed" or "code", #authors,
+	return ("King %s  |  Queen %s  |  Treasurer %s (%d)  |  Quaestor %s  |  author %s (%d, this character: %s)  |  realms %d  |  signed list: %s"):format(
+		king, queen, tSigned and "signed" or (#treasurer > 0 and "code" or "none"), #treasurer,
+		quaestors > 0 and ("signed (" .. quaestors .. ")") or "none", aSigned and "signed" or "code", #authors,
 		ns.IsAuthorName(ns.me) and "yes" or "no", realms, p and "held" or "none here")
 end
 
@@ -1836,8 +1897,8 @@ end
 function ns.KingGuildName()
 	local mine = GetGuildInfo and GetGuildInfo("player")
 	if ns.IsKingGuild(mine) then return mine end
-	local want = ns.KING_GUILD[ns.faction or "Alliance"] or ""
-	return want:sub(1, 1):upper() .. want:sub(2)
+	-- (1.5.5: each word capitalised, "Olympus Prime" on Forever's live realms.)
+	return ((ns.KingGuildKey() or ""):gsub("(%a)(%a*)", function(a, b) return a:upper() .. b end))
 end
 
 -- The King's own screen (0.9.9, the author's, for Asmon's stream): the King's client, or the
@@ -1849,12 +1910,13 @@ function ns.KingsScreen()
 end
 
 -- Who sees the High Council in the census, its marks there and its titles (0.9.9, the author's
--- call): until launch the councillors themselves, the author's own client (the one holding the
--- signed lists, CouncilList.lua) and the King's (names hidden, below); everyone once the signed
--- titles list says it is public. The game's own chat shows the mark to everyone (1.1.5,
+-- call): until launch the councillors themselves, the author's own client (by his author name or
+-- its local signed lists, CouncilList.lua) and the King's (names hidden, below); everyone once the
+-- signed titles list says it is public. The game's own chat shows the mark to everyone (1.1.5,
 -- Borders.lua; the Olympus chats did from 0.9.8 to 1.1.5).
 function ns.CouncilVisible()
-	if ns.COUNCIL_SIGNED ~= nil or ns.COUNCIL_TITLES ~= nil or ns.IsHighCouncillor(ns.me) or ns.KingsScreen() then return true end
+	if ns.COUNCIL_SIGNED ~= nil or ns.COUNCIL_TITLES ~= nil or ns.IsAuthorName(ns.me)
+		or ns.IsHighCouncillor(ns.me) or ns.KingsScreen() then return true end
 	local t = ns.CouncilTitles()
 	return t ~= nil and t.public == true
 end
@@ -2143,6 +2205,7 @@ end
 -- ns.GuildSanctioned. Off: no feature is gated, every guild is in.
 -- VERIFY_HOLD: an overdue guild's master's own powers wait for his verification (ns.MasterHeld:
 -- Data.AuthorizedRank, GuildCharter, Nominees, Decree, Bank). Nothing of the members is touched.
+-- (1.5.5) Only in a realm group where someone can verify (Verify.VerifierHere): none on ForeverPvP yet.
 -- These stand-ins answer while Verify.lua is not loaded (a client updated without a restart).
 ns.VERIFY_GATE = false
 ns.VERIFY_HOLD = true
@@ -2597,6 +2660,9 @@ StandIn("RoleBriefings", { "Slash", "Open", "OpenKind", "Letters" }) -- durable 
 StandIn("SelfTest", { "Slash" })
 -- Guild verification (Verify.lua, /oly verify).
 StandIn("Verify", { "Slash" })
+-- 1.5.5: the relay's tree to the registrants and the fallback relays (RelayTree.lua, RelayFallback.lua).
+StandIn("RelayTree", {})
+StandIn("RelayFallback", {})
 
 -- Blizzard's gamepad UI (WoW: Forever's controller mode) is on.
 function ns.GamepadUI()
@@ -2909,6 +2975,7 @@ local function Help()
 	print(L.HELP_BORDERS)
 	print(L.HELP_NAMEPLATES)
 	print(L.HELP_CHATMARKS)
+	print(L.HELP_MENUS)
 	print(L.HELP_LETTERS)
 	if ns.RoleBriefings and ns.RoleBriefings.LIVE == true then print(L.RB_HELP) end
 	print(L.HELP_ISSUE)
@@ -3095,6 +3162,9 @@ local function Slash(input)
 			-- 1.1.5: Olympus's marks before names in the game's own chat (Borders.lua): on or off;
 			-- test [mark|off], the author's own lines for this session.
 			ns.Borders.ChatSlash(rest)
+		elseif cmd == "menus" then
+			-- 1.5.5: Olympus's lines in the game's right-click menus for a player (PlayerMenu.lua): on or off.
+			ns.PlayerMenu.Slash(rest)
 		elseif cmd == "nameplates" then
 			-- The marks left of the names on friendly players' nameplates (Nameplates.lua), alone: on or off.
 			local on = rest:lower()
