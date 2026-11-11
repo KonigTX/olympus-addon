@@ -4275,6 +4275,38 @@ end
 -- (marked simulated), FarkleRules.HouseMove. Nothing is sent.
 ---------------------------------------------------------------------------
 
+-- In a lesson, show each scoring set before the lone 1s and 5s. Runs and other picks
+-- that cannot be split for the same points stay together; the decision itself is unchanged.
+local function HouseLessonGroups(dice, pick)
+	local faces, byFace, groups = {}, {}, {}
+	for _, p in ipairs(pick) do
+		local face = dice[p]
+		faces[#faces + 1] = face
+		byFace[face] = byFace[face] or {}
+		byFace[face][#byFace[face] + 1] = p
+	end
+	for face = 1, 6 do
+		local positions = byFace[face]
+		if positions and #positions >= 3 then groups[#groups + 1] = positions end
+	end
+	for face = 1, 6 do
+		local positions = byFace[face]
+		if positions and #positions < 3 then
+			for _, p in ipairs(positions) do groups[#groups + 1] = { p } end
+		end
+	end
+	local total = 0
+	for _, group in ipairs(groups) do
+		local part = {}
+		for _, p in ipairs(group) do part[#part + 1] = dice[p] end
+		local points = R().Score(part)
+		if not points then return { pick } end
+		total = total + points
+	end
+	if total ~= R().Score(faces) then return { pick } end
+	return groups
+end
+
 local function HouseStep(t)
 	if t.closed or not t.game or t.game.over then t.houseDue = nil; return end
 	if t.inn and select(2, FT.Innkeeper()) ~= t.inn then
@@ -4286,26 +4318,40 @@ local function HouseStep(t)
 	if who ~= 2 then t.houseDue = nil; return end
 	local gen = t.gen
 	local function Later(sec, fn)
-		ns.After(sec, "farkle house", function()
+		local function Continue()
 			if t.gen ~= gen or t.closed then return end
 			if t.inn and select(2, FT.Innkeeper()) ~= t.inn then
-				return ns.After(1, "Bones keeper waits", function() HouseStep(t) end)
+				return ns.After(1, "Bones keeper waits", Continue)
 			end
-			if FT.busy(t.id) then return ns.After(0.2, "farkle house", function() HouseStep(t) end) end
+			if FT.busy(t.id) then return ns.After(0.2, "farkle house", Continue) end
 			fn()
-		end)
+		end
+		ns.After(sec, "farkle house", Continue)
 	end
 	if phase == "keep" then
 		local pick, act = R().HouseMove(g)
 		if not pick then t.houseDue = nil; return end
-		Emit(t, { t = "consider", seat = 2, mask = pick })
-		return Later(FT.HOUSE_PAUSE.think, function()
+		local function Keep()
 			-- a decision the House makes writes the player's own level (the design: his "You feel" lines count here)
 			local lvl = NewsFor(t, 2)
 			t.houseDue = nil
 			Apply(t, { t = "K", p = 2, mask = pick, act = act, lvl = lvl }, "house")
 			t.news = nil
-		end)
+		end
+		if t.learn then
+			local groups, shown, index = HouseLessonGroups(g.turn.dice, pick), {}, 0
+			local function Consider()
+				index = index + 1
+				for _, p in ipairs(groups[index]) do shown[#shown + 1] = p end
+				local mask = {}
+				for i, p in ipairs(shown) do mask[i] = p end
+				Emit(t, { t = "consider", seat = 2, mask = mask })
+				return Later(1.4, index < #groups and Consider or Keep)
+			end
+			return Later(1, Consider)
+		end
+		Emit(t, { t = "consider", seat = 2, mask = pick })
+		return Later(FT.HOUSE_PAUSE.think, Keep)
 	end
 	if phase == "roll" or phase == "decide" then
 		local left = g.turn.left
@@ -4354,7 +4400,7 @@ function FT.Practice(opts)
 	local first = opts.first
 	if first ~= 1 and first ~= 2 then
 		local o = FT.Opts()
-		if not FT.TrainingComplete() and not A().Sim() then first = 1
+		if opts.learn == true or not FT.TrainingComplete() then first = 2
 		else first = o.practiceFirst == 1 and 2 or 1 end
 		o.practiceFirst = first
 	end

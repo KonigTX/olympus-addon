@@ -74,10 +74,33 @@ local function Lesson(o)
 	if not o.plain then check(Click(w, a, P(a).setup.tips), "Show tips") end
 	check(Click(w, a, P(a).setup.start), "the setup's Start button")
 	w:Run(0)
+	Until(w, function() local v = View(w, a) return v.expect and v.expect.who == 1 and Idle(a) end, 90)
 	return w, a
 end
 
 print("1.1.6: Bones' lesson, the rules' tips")
+
+test("Bones lesson demonstration: the first-use guide pauses the House until the player closes it", function()
+	for _, gamepad in ipairs({ false, true }) do
+		H.WithGamepadUI(gamepad, function()
+			local w = FW.New({ seed = 7, compliance = "shipped" })
+			local a = Seat(w, N.fighterA)
+			w:As(a, function() a.ns.FarkleTable.Opts().innkeeperLearned = nil end)
+			eq(w:As(a, a.ns.Arena.LoadUI), true)
+			check(w:As(a, Board(a).StartPractice, 2000, true), "the first lesson starts")
+			local id = X(a).S.id
+			check(P(a).help:IsShown(), "the first-use guide is visible")
+			eq(w:As(a, Board(a).Busy, id), true, "the guide pauses House moves")
+			Step(w, 8)
+			eq(a.ns.FarkleTable.Get(id).game.step, 0, "no demonstration runs behind the guide")
+			Click(w, a, P(a).help.ok)
+			Until(w, function() return a.ns.FarkleTable.Get(id).game.step > 0 end, 10)
+			eq(a.ns.FarkleTable.Get(id).game.events[1]:sub(1, 2), "R2", "the House demonstrates after the guide closes")
+			Until(w, function() local v = View(w, a) return v.expect and v.expect.who == 1 and Idle(a) end, 90)
+			NoErrors(w)
+		end)
+	end
+end)
 
 test("1.1.6 Bones lesson: the chance of BONES! with n dice, from the rules: 67% with one die down to 3% with six", function()
 	local w = FW.New()

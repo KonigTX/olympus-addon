@@ -776,7 +776,7 @@ local function Busy()
 	end
 	return Now() < busyUntil
 end
-Board.Busy = function(id) return win ~= nil and win:IsShown() and S.id == id and Busy() end
+Board.Busy = function(id) return win ~= nil and win:IsShown() and S.id == id and ((help and help:IsShown()) or Busy()) end
 
 do -- (the events' own locals)
 local Handlers = {}

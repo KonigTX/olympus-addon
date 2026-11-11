@@ -93,6 +93,7 @@ test("census scope relay: a queue-sized current-group snapshot crosses relays an
 		eq(R.rdb.guilds["Other Adventurers"], nil, "a non-federation roster is excluded")
 		C_ChatInfo = api
 		rdeliver("WHISPER", "Hildryn Payne-CAMWOWUS2Realm7PvE", "RY~")
+		rdeliver("WHISPER", "Hildryn Payne-CAMWOWUS2Realm7PvE", "RJ~1~0~0") -- (1.5.5: a mesh peer, tests/relay-mesh.lua)
 		eq(R.Relay.Pick(), "Max Ran", "the snapshot's origin is its own relay")
 		local payload = R.Data.GlobalCensusPayload()
 		eq(#R.Codec.Chunk(payload, "17"), 34, "exercise the live report's 34-part size")
@@ -203,6 +204,12 @@ end
 local function TransferWord(R, head, pieces)
 	return (head .. ("x"):rep(R.Codec.CHUNK * pieces)):sub(1, R.Codec.CHUNK * pieces)
 end
+-- (1.5.5) A peer's RJ: a mesh peer, the only relay sent RX (tests/relay-mesh.lua). meshFor: the mesh's
+-- window as long as this, for a test about the verification's own window.
+local function Mesh(R, peer, meshFor)
+	if meshFor then R.Relay.MESH_FOR = meshFor end
+	R.Relay.HandleMesh("WHISPER", peer, "RJ~1~0~0")
+end
 local function OfferTransfer(R, word, id, origin)
 	for _, p in ipairs(R.Codec.Chunk(word, id)) do
 		R.Relay.HandleIn("WHISPER", origin or R.me, "RL~P~" .. p)
@@ -271,6 +278,7 @@ end)
 test("relay transfer hardening: verification expires between batches, but only an entirely waiting transfer is dropped", function()
 	WithTransfer(function(R, _, sent, Run)
 		R.Relay.HandleAck("WHISPER", "Hildryn Payne-Realm", "RY~")
+		Mesh(R, "Hildryn Payne-Realm", R.Relay.VERIFIED_FOR)
 		R.clock = R.clock + R.Relay.VERIFIED_FOR - 2
 		local word = TransferWord(R, "CG~2~S~1~ForeverPvE~Alliance~", 34)
 		OfferTransfer(R, word, "810")
@@ -281,6 +289,7 @@ test("relay transfer hardening: verification expires between batches, but only a
 	end)
 	WithTransfer(function(R, _, sent, Run)
 		R.Relay.HandleAck("WHISPER", "Hildryn Payne-Realm", "RY~")
+		Mesh(R, "Hildryn Payne-Realm", R.Relay.VERIFIED_FOR)
 		R.clock = R.clock + R.Relay.VERIFIED_FOR - 2
 		for i = 1, R.Comm.QueueRoom() do assert(R.Comm.Whisper("Busy-Realm", "X1~" .. i, nil, true)) end
 		OfferTransfer(R, TransferWord(R, "CG~2~S~1~ForeverPvE~Alliance~", 34), "811")
@@ -329,12 +338,13 @@ test("relay transfer hardening: flood bounds count whole transfers globally and 
 				local name = "Peer " .. i
 				R.rdb.council.names[name:lower()] = name
 				R.Relay.HandleAck("WHISPER", name .. "-Realm", "RY~")
+				Mesh(R, name .. "-Realm")
 			end
-			local first = TransferWord(R, "TR~First~", 34)
+			local first = TransferWord(R, "CX~1~S~First~", 34)
 			OfferTransfer(R, first, "830")
 			Run(1) -- flood only after the first batch has actually started
 			for i = 1, 20 do
-				OfferTransfer(R, TransferWord(R, "TR~Mail " .. i .. "~", 34), tostring(830 + i))
+				OfferTransfer(R, TransferWord(R, "CX~" .. (i % 3 + 1) .. "~S~Mail " .. i .. "~", 34), tostring(830 + i))
 				local origin = "Origin " .. i
 				R.rdb.council.names[origin:lower()] = origin
 				OfferTransfer(R, TransferWord(R, "CG~2~S~1~ForeverPvE~Alliance~" .. i, 34), tostring(860 + i), origin .. "-Realm")
@@ -363,10 +373,11 @@ test("relay transfer hardening: a full bound never evicts the sole in-flight tra
 		WithTransfer(function(R, _, sent, Run)
 			R.Relay[bound] = 1
 			R.Relay.HandleAck("WHISPER", "Hildryn Payne-Realm", "RY~")
-			local first = TransferWord(R, "TR~First~", 34)
+			Mesh(R, "Hildryn Payne-Realm")
+			local first = TransferWord(R, "CX~1~S~First~", 34)
 			OfferTransfer(R, first, "910")
 			Run(1)
-			OfferTransfer(R, TransferWord(R, "TR~Second~", 34), "911")
+			OfferTransfer(R, TransferWord(R, "CX~2~S~Second~", 34), "911")
 			Run(100)
 			local got, count = TransferWords(R, sent, "RX")["Hildryn Payne"] or {}, 0
 			for _ in pairs(got) do count = count + 1 end
@@ -379,6 +390,8 @@ end)
 test("relay transfer hardening: shrinking replacements replace whole waiting copies without splicing an active tail", function()
 	WithTransfer(function(R, _, sent, Run)
 		R.Relay.HandleAck("WHISPER", "Hildryn Payne-Realm", "RY~")
+		Mesh(R, "Hildryn Payne-Realm")
+		R.Relay.MESH_CROSS_EVERY = 0 -- (1.5.5: each of its snapshots may cross; this test is about the drip)
 		local first = TransferWord(R, "CG~2~S~1~ForeverPvE~Alliance~", 34)
 		OfferTransfer(R, first, "901")
 		Run(1)

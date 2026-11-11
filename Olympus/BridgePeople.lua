@@ -8,8 +8,10 @@ local ADDON, ns = ...
 -- audience as the page: our own guild's members for our own guild alone, the Church's numbers of
 -- this character alone, the games' rankings only while the King made them public. Never another
 -- player's BattleTag, chat text or chat-strike line, a staff or council view, treasury items, the
--- Church's or the Watch's detail meant for fewer people, nor a GUID. Nothing before this account
--- accepted the Olympus Accord, nor for anyone but a member (BridgeKit.Open).
+-- Church's or the Watch's detail meant for fewer people, nor a GUID; the one exception is
+-- churchRanking (2026-11-09), the whole Church ranking on the author's, the King's or a signed High
+-- Councillor's own client, which the Companion keeps on that computer alone. Nothing before this
+-- account accepted the Olympus Accord, nor for anyone but a member (BridgeKit.Open).
 -- Big lists are rows of "~" strings beside their `fields` (BridgeKit.Row): a guild of 1000 members
 -- stays inside the registry's value budget (SECTION_LIMITS.values) that way.
 if type(OlympusBridge) ~= "table" or type(OlympusBridge.RegisterSection) ~= "function" or type(ns.BridgeKit) ~= "table" then return end
@@ -66,7 +68,8 @@ OlympusBridge.RegisterSection("realm", 1, function()
 		if #out.guilds >= REALM_GUILDS then break end
 		local g = type(e) == "table" and e.g
 		if type(g) == "table" and type(e.name) == "string" then
-			if not out.king and type(g.leader) == "string" and ns.IsKingGuild(e.name) then out.king = Text(g.leader) end
+			-- (1.5.5: never on Forever's live realms, whose main guild's master is not the King: ns.KingIsMaster.)
+			if not out.king and type(g.leader) == "string" and ns.IsKingGuild(e.name) and ns.KingIsMaster() then out.king = Text(g.leader) end
 			local on, days, at = g.leaderOnline, g.leaderDays, nil
 			if type(V) == "table" and type(V.PresenceNow) == "function" then
 				local okP, pOn, pDays, _, pAt = pcall(V.PresenceNow, e, g.leader, g.leaderOnline, g.leaderDays)
@@ -213,6 +216,55 @@ OlympusBridge.RegisterSection("church", 1, function()
 	if Church.IsPerson(ns.me) == true then out.own = ChurchOwn(Church, Count) end
 	return out
 end)
+
+---------------------------------------------------------------------------
+-- churchRanking (2026-11-09, the author: "Sim, só local"), local only: the whole Church ranking on the
+-- client of the author, the King or a signed High Councillor whom moderation does not hide
+-- (Church.SwitchAllowed, the public switch's own gate), whether the public ranking is open or closed.
+-- Each board is the Ranking page's list and window as this client holds it (ChurchCount.RankingView:
+-- a keeper's own ledger, a council relay's own copy, else the last answer a keeper gave its page): the
+-- Apostles' and the missionaries' (never the correspondents', a fullness list), this week (w), the last
+-- 30 days (m) and all time (a), a board it holds no answer for left out. A row is the page's: its place,
+-- the name as the page shows it, the points to the tenth; the first CHURCH_RANKING_ROWS places of a
+-- board. `at` is when its oldest board's numbers were true (the page's "as of"), now when it holds none.
+-- The Companion keeps it on this computer and never sends it (the relay takes no section of this name).
+-- data = { at, boards = { { list = "apostles"|"missionaries", window = "w"|"m"|"a", rows = { { place, name, points } } } } }
+---------------------------------------------------------------------------
+
+local CHURCH_RANKING_ROWS = 1000
+local CHURCH_LISTS = { { "a", "apostles" }, { "m", "missionaries" } }
+local CHURCH_WINDOWS = { "w", "m", "a" }
+
+local function RankingBoard(list, window, rows)
+	local b = { list = list, window = window, rows = {} }
+	for i, r in ipairs(rows) do
+		if #b.rows >= CHURCH_RANKING_ROWS then break end
+		if type(r) == "table" and type(r.name) == "string" then
+			b.rows[#b.rows + 1] = { place = Whole(r.rank) > 0 and Whole(r.rank) or i, name = Text(ns.DisplayName(ns.FullName(r.name))),
+				points = Tenth(r.score) }
+		end
+	end
+	return b
+end
+
+OlympusBridge.RegisterSection("churchRanking", 1, function()
+	if not Open() then return nil end
+	local Church, Count = ns.Church, ns.ChurchCount
+	if type(Church) ~= "table" or Church.missing or type(Count) ~= "table" or Count.missing then return nil end
+	if Church.SwitchAllowed(ns.me) ~= true then return nil end -- (an error leaves the section nil)
+	local boards, at = {}, nil
+	for _, list in ipairs(CHURCH_LISTS) do
+		for _, window in ipairs(CHURCH_WINDOWS) do
+			local rows, asOf, remote = Count.RankingView(list[1], window)
+			asOf = tonumber(asOf)
+			if type(rows) == "table" and (remote ~= true or asOf) then
+				boards[#boards + 1] = RankingBoard(list[2], window, rows)
+				if asOf and (not at or asOf < at) then at = asOf end
+			end
+		end
+	end
+	return { at = at and Whole(at) or Now(), boards = boards }
+end, { values = 1 + #CHURCH_LISTS * #CHURCH_WINDOWS * (2 + 3 * CHURCH_RANKING_ROWS) })
 
 ---------------------------------------------------------------------------
 -- games: the Games tab and the Arena window, for a member while the arena is on

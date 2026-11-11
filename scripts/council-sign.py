@@ -18,13 +18,15 @@
   python3 scripts/council-sign.py queen --remove [Alliance|Horde]
   python3 scripts/council-sign.py speedrunner "<Name-Realm>" [Alliance|Horde] # the Olympus Speedrunner (1.5.5), then sign
   python3 scripts/council-sign.py speedrunner --remove [Alliance|Horde]
+  python3 scripts/council-sign.py quaestor "<Name-Realm>" [Alliance|Horde]    # a Quaestor, the Treasurer's executor (1.5.5), then sign
+  python3 scripts/council-sign.py quaestor --remove "<Name-Realm>"
   python3 scripts/council-sign.py treasurer "<Treasurer-Realm>[,<Mail-Realm>,...]" [Alliance|Horde] # the Treasurer first
   python3 scripts/council-sign.py treasurer --remove [Alliance|Horde]
   python3 scripts/council-sign.py author "<Name-Realm>" [Alliance|Horde] # one of the author's own characters (1.3.4)
   python3 scripts/council-sign.py author --remove "<Name-Realm>"
   python3 scripts/council-sign.py realm "<Realm>" <pvp|pve|rp|rppvp|hardcore> <NA|EU>  # what a realm is (1.3.4)
   python3 scripts/council-sign.py realm --remove "<Realm>"
-  ... --group "<Realm>+<Realm>"   # with council, steward, guild, arbiter, apostle, king, queen, speedrunner, treasurer, author or realm:
+  ... --group "<Realm>+<Realm>"   # with council, steward, guild, arbiter, apostle, king, queen, speedrunner, quaestor, treasurer, author or realm:
                                   # the realm group the lists are for, kept in the council file ("realm")
   python3 scripts/council-sign.py check [CouncilList.lua]                 # (or --check) read back what was signed
   python3 scripts/council-sign.py seal "RS1~..."                         # reviewed monthly Records request; prints its signed seal
@@ -116,6 +118,7 @@ file:
   "king": {"Alliance": "First Surname-Realm", "Horde": "First Surname-Realm"},
   "queen": {"Alliance": "First Surname-Realm", "Horde": "First Surname-Realm"},
   "speedrunner": {"Alliance": "First Surname-Realm"},
+  "quaestor": {"Alliance": ["First Surname-Realm"]},
   "treasurer": {"Alliance": ["Treasurer Name-Realm", "Mail Character-Realm"]},
   "author": ["First Surname-Realm", {"name": "First Surname-Realm", "faction": "Horde"}],
   "realms": [{"name": "Realm", "kind": "pvp", "region": "NA"}]
@@ -125,6 +128,8 @@ out unread and still take, show and pass on the whole list:
   ^king^<faction>^<Name-Realm>   ^queen^<faction>^<Name-Realm>   ^treasurer^<faction>^<Name-Realm>,...   ^author^<faction>^<Name-Realm>,...
   ^realms^<NA|EU>^<Realm>=<pvp|pve|rp|rppvp|hardcore>,...
   ^speedrunner^<faction>^<Name-Realm>   (1.5.5: the Olympus Speedrunner, the level race's gold comet and its title, no authority)
+  ^quaestor^<faction>^<Name-Realm>,...  (1.5.5: the Quaestors, the Treasurer's executors: the Treasurer's blue dragon, their title
+                                         and a trusted relay of their side; none of the Treasurer's powers; 2 a faction)
 Every name needs its realm (a name without one would count on every realm of the group), a realm of
 the list's group. One King and one Queen a faction; the Queen is a presentation identity only and
 receives no King, council, officer or moderation authority. The Treasurer first, then his mail characters (where the dues'
@@ -192,7 +197,7 @@ MAX_GUILDS, MAX_GUILD_CHARS, MAX_GUILD_BYTES = 20, 24, 72 # the approved guilds 
 MAX_ARBITERS = 5 # the arena's signed arbiters per faction (Core.lua: ns.ReadArbiters, 1.2)
 MAX_APOSTLES = 12 # the Church's Twelve Apostles per faction (Church.lua: Church.ReadApostles, 1.1.6)
 # The launch identities (1.3.4, Core.lua: ns.ReadPins, ns.PINS_MAX, ns.REALM_KINDS, ns.REALM_REGIONS, ns.REALMS_MAX).
-MAX_PINS = {"king": 1, "queen": 1, "treasurer": 4, "author": 8, "speedrunner": 1}
+MAX_PINS = {"king": 1, "queen": 1, "treasurer": 4, "author": 8, "speedrunner": 1, "quaestor": 2}
 REALM_KINDS, REGIONS, MAX_REALMS_EACH = ("pvp", "pve", "rp", "rppvp", "hardcore"), ("NA", "EU"), 40
 GROUP = None # --group "<Realm>+<Realm>": the realm group a signing is for (written to the council file's "realm")
 MAX_LEADER_GUILDS, MAX_LEADERS_EACH, MAX_LEADERS_TOTAL = 128, 25, 512 # Authority.lua
@@ -567,6 +572,28 @@ def read_speedrunner(v, realm):
     if not isinstance(v, dict): sys.exit('speedrunner is {"Alliance": "First Surname-Realm", "Horde": "..."}, not %r' % (v,))
     return {faction_of(f, "a Speedrunner"): pin_name(n, "the %s Speedrunner" % f, realm) for f, n in v.items()}
 
+# The council file's "quaestor" (1.5.5): {"Alliance": ["First Surname-Realm", ...]}, each side's Quaestors (the
+# Treasurer's executors: the Treasurer's blue dragon, their title and a trusted relay of their side, none of his
+# powers; Core.lua: ns.IsQuaestorName), MAX_PINS["quaestor"] a side, nobody twice. Clients before 1.5.5 leave the
+# entry out unread.
+def read_quaestor(v, realm):
+    if v is None: return {}
+    if not isinstance(v, dict): sys.exit('quaestor is {"Alliance": ["First Surname-Realm"], "Horde": [...]}, not %r' % (v,))
+    out = {}
+    for f, names in v.items():
+        faction_of(f, "a Quaestor")
+        if isinstance(names, str): names = [names]
+        if not isinstance(names, list) or not names: sys.exit("the %s Quaestors are a list of names" % f)
+        if len(names) > MAX_PINS["quaestor"]: sys.exit("more than %d Quaestors for the %s" % (MAX_PINS["quaestor"], f))
+        clean, seen = [], set()
+        for n in names:
+            n = pin_name(n, "a %s Quaestor" % f, realm)
+            if n.lower() in seen: sys.exit("a Quaestor twice: %r" % n)
+            seen.add(n.lower())
+            clean.append(n)
+        out[f] = clean
+    return out
+
 # The council file's "treasurer" (1.3.4): {"Alliance": ["Treasurer-Realm", "Mail Character-Realm", ...]}:
 # the Treasurer first, then his mail characters, MAX_PINS["treasurer"] in all, nobody twice.
 def read_treasurer(v, realm):
@@ -653,6 +680,9 @@ def group_conflicts(data, realm):
     for f, n in (data.get("king") if isinstance(data.get("king"), dict) else {}).items(): look(n, "king --remove %s" % f)
     for f, n in (data.get("queen") if isinstance(data.get("queen"), dict) else {}).items(): look(n, "queen --remove %s" % f)
     for f, n in (data.get("speedrunner") if isinstance(data.get("speedrunner"), dict) else {}).items(): look(n, "speedrunner --remove %s" % f)
+    for f, ns_ in (data.get("quaestor") if isinstance(data.get("quaestor"), dict) else {}).items():
+        for n in (ns_ if isinstance(ns_, list) else [ns_]):
+            look(n, "quaestor --remove \"%s\"" % (n.strip() if isinstance(n, str) else n))
     for f, ns_ in (data.get("treasurer") if isinstance(data.get("treasurer"), dict) else {}).items():
         for n in (ns_ if isinstance(ns_, list) else [ns_]): look(n, "treasurer --remove %s" % f)
     lead = data.get("leadership")
@@ -665,7 +695,7 @@ def group_conflicts(data, realm):
 
 def read_council(data):
     fields(data, "the council", ("realm", "public", "departments", "members", "stewards", "guilds", "arbiters", "apostles", "leadership",
-        "king", "queen", "treasurer", "author", "realms", "speedrunner"))
+        "king", "queen", "treasurer", "author", "realms", "speedrunner", "quaestor"))
     realm = data.get("realm", REALM)
     if not isinstance(realm, str): sys.exit("not a realm group the addon takes: %r" % (realm,))
     group_conflicts(data, realm)
@@ -686,7 +716,7 @@ def read_council(data):
     pins = {"king": read_king(data.get("king"), realm), "queen": read_queen(data.get("queen"), realm),
         "treasurer": read_treasurer(data.get("treasurer"), realm),
         "author": read_author(data.get("author"), realm), "realms": read_realms(data.get("realms")),
-        "speedrunner": read_speedrunner(data.get("speedrunner"), realm)}
+        "speedrunner": read_speedrunner(data.get("speedrunner"), realm), "quaestor": read_quaestor(data.get("quaestor"), realm)}
     return (realm, public, loose, depts, read_stewards(data.get("stewards"), realm), read_guilds(data.get("guilds")),
         read_arbiters(data.get("arbiters"), realm), leaders_epoch, leaders_factions, leaders, issued, expires,
         read_apostles(data.get("apostles"), realm), pins)
@@ -758,6 +788,8 @@ def sign_council_data(data):
     entries += ["^author^%s^%s" % (faction, ",".join(pins["author"][faction])) for faction in FACTIONS if pins["author"].get(faction)]
     # (1.5.5) The Olympus Speedrunner of each side, after the author's characters.
     entries += ["^speedrunner^%s^%s" % (faction, pins["speedrunner"][faction]) for faction in FACTIONS if pins.get("speedrunner", {}).get(faction)]
+    # (1.5.5) The Quaestors of each side, after the Speedrunner.
+    entries += ["^quaestor^%s^%s" % (faction, ",".join(pins["quaestor"][faction])) for faction in FACTIONS if pins.get("quaestor", {}).get(faction)]
     entries += ["^realms^%s^%s" % (region, ",".join("%s=%s" % r for r in pins["realms"][region])) for region in REGIONS if pins["realms"].get(region)]
     titles_text = "HT1~%d~%s~%d~%s" % (at + 1, realm, 1 if public else 0, ";".join(entries))
     fits(names_text, MAX_BLOB, "the name list")
@@ -984,6 +1016,40 @@ def speedrunner(args, path=COUNCIL):
     else: data.pop("speedrunner", None)
     return finish(data, path)
 
+# quaestor <Name-Realm> [faction] | quaestor --remove <Name-Realm> (1.5.5): one of that side's Quaestors, the
+# Treasurer's executors (MAX_PINS["quaestor"] a side), added, or taken off whichever side names him.
+def quaestor(args, path=COUNCIL):
+    remove = bool(args) and args[0] == "--remove"
+    if remove: args = args[1:]
+    if len(args) not in (1, 2) or (remove and len(args) != 1): sys.exit(__doc__)
+    faction = faction_of(args[1] if len(args) == 2 else "Alliance", "a Quaestor")
+    name = pin_name(args[0], "a %s Quaestor" % faction, None)
+    data = load_council(path)
+    listed = data.get("quaestor") or {}
+    if not isinstance(listed, dict): sys.exit("quaestor is not an object in %s" % path)
+    def names_of(f):
+        v = listed.get(f) or []
+        return [v] if isinstance(v, str) else (v if isinstance(v, list) else [])
+    def same(n): return isinstance(n, str) and n.strip().lower() == name.lower()
+    if remove:
+        found = False
+        for f in list(listed):
+            kept = [n for n in names_of(f) if not same(n)]
+            if len(kept) != len(names_of(f)):
+                found = True
+                if kept: listed[f] = kept
+                else: del listed[f]
+        if not found: sys.exit("not a Quaestor in %s: %r" % (path, name))
+    else:
+        if any(same(n) for f in FACTIONS for n in names_of(f)): sys.exit("already a Quaestor: %r" % name)
+        named = names_of(faction)
+        if len(named) >= MAX_PINS["quaestor"]:
+            sys.exit("the %s has %d Quaestors already: take one off first (quaestor --remove \"<Name-Realm>\")" % (faction, len(named)))
+        listed[faction] = named + [name]
+    if listed: data["quaestor"] = listed
+    else: data.pop("quaestor", None)
+    return finish(data, path)
+
 # treasurer "<Treasurer-Realm>[,<Mail-Realm>,...]" [faction] | treasurer --remove [faction] (1.3.4):
 # that side's Treasurer, then his mail characters (where the dues' mail goes), the whole list each time.
 def treasurer(args, path=COUNCIL):
@@ -1092,7 +1158,7 @@ def check_out(path=OUT):
             continue
         print("  public:", parts[3] == "1")
         stewards, guilds, arbiters, leaders, apostles = {}, {}, {}, {}, {}
-        pinned = {"king": {}, "queen": {}, "treasurer": {}, "author": {}, "realms": {}, "speedrunner": {}}
+        pinned = {"king": {}, "queen": {}, "treasurer": {}, "author": {}, "realms": {}, "speedrunner": {}, "quaestor": {}}
         for entry in parts[4].split(";"):
             if entry.startswith("^steward^"):
                 _, _, faction, names = entry.split("^", 3)
@@ -1106,7 +1172,7 @@ def check_out(path=OUT):
             elif entry.startswith("^apostles^"):
                 _, _, faction, names = entry.split("^", 3)
                 apostles[faction] = names
-            elif entry.startswith(("^king^", "^queen^", "^treasurer^", "^author^", "^realms^", "^speedrunner^")):
+            elif entry.startswith(("^king^", "^queen^", "^treasurer^", "^author^", "^realms^", "^speedrunner^", "^quaestor^")):
                 _, kind, slot, names = entry.split("^", 3)
                 pinned[kind][slot] = names
             elif entry.startswith("^leaders^"):
@@ -1132,6 +1198,8 @@ def check_out(path=OUT):
                 pinned["treasurer"].get(faction) or "none (the code's pins, on the beta's group alone)"))
             print("  the %s author's characters (signed): %s" % (faction, pinned["author"].get(faction) or "none"))
             print("  the %s Olympus Speedrunner (signed, a title and a frame alone): %s" % (faction, pinned["speedrunner"].get(faction) or "none"))
+            print("  the %s Quaestors (signed, the Treasurer's executors: his dragon, a title and a relay, none of his powers): %s" % (faction,
+                pinned["quaestor"].get(faction) or "none"))
         for region in REGIONS:
             print("  the realms of %s: %s" % (region, pinned["realms"].get(region) or "none"))
     sets = {}
@@ -1201,8 +1269,8 @@ def show_signed(signed):
 if __name__ == "__main__":
     sys.argv = take_group(sys.argv)
     if GROUP is not None and (len(sys.argv) < 2 or sys.argv[1] not in ("council", "steward", "guild", "arbiter", "apostle",
-            "king", "queen", "speedrunner", "treasurer", "author", "realm")):
-        sys.exit("--group goes with a command that signs the council (council, steward, guild, arbiter, apostle, king, queen, speedrunner, treasurer, author, realm)")
+            "king", "queen", "speedrunner", "quaestor", "treasurer", "author", "realm")):
+        sys.exit("--group goes with a command that signs the council (council, steward, guild, arbiter, apostle, king, queen, speedrunner, quaestor, treasurer, author, realm)")
     if len(sys.argv) >= 2 and sys.argv[1] == "keygen": keygen()
     elif len(sys.argv) >= 3 and sys.argv[1] == "sign":
         text, sig = sign(sys.argv[2], *sys.argv[3:4])
@@ -1241,6 +1309,7 @@ if __name__ == "__main__":
     elif len(sys.argv) >= 2 and sys.argv[1] == "king": show_signed(king(sys.argv[2:]))
     elif len(sys.argv) >= 2 and sys.argv[1] == "queen": show_signed(queen(sys.argv[2:]))
     elif len(sys.argv) >= 2 and sys.argv[1] == "speedrunner": show_signed(speedrunner(sys.argv[2:]))
+    elif len(sys.argv) >= 3 and sys.argv[1] == "quaestor": show_signed(quaestor(sys.argv[2:]))
     elif len(sys.argv) >= 2 and sys.argv[1] == "treasurer": show_signed(treasurer(sys.argv[2:]))
     elif len(sys.argv) >= 3 and sys.argv[1] == "author": show_signed(author(sys.argv[2:]))
     elif len(sys.argv) >= 3 and sys.argv[1] == "realm": show_signed(realm_entry(sys.argv[2:]))

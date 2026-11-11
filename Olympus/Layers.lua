@@ -277,7 +277,7 @@ end
 -- whatever realm the server names), or the leader of his guild the census names.
 local function FromKing(sender)
 	if ns.IsKingCharacter(sender) then return true end
-	for name, g in pairs(ns.rdb.guilds or {}) do
+	for name, g in pairs(ns.KingIsMaster() and ns.rdb.guilds or {}) do -- (1.5.5: never on Forever's live realms)
 		if ns.IsKingGuild(name) and type(g) == "table" and g.leader then
 			local full = ns.FullName(g.leader, g.realm or ns.realm)
 			if full == sender and ns.Data.KnownRank(full, name, true) == 0 then return true end

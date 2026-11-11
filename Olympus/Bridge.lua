@@ -219,7 +219,9 @@ end
 -- Sections: one versioned, read-only door per kind of data for the Companion (Daniel: more
 -- "ports" than the census). A module's exporter returns only what this character's own client
 -- already shows on Olympus's own pages, to the audience that page has: a staff-only section (The
--- Watch's, BridgeAffairs.lua) exists only on the clients whose page shows it, and personal rows
+-- Watch's, BridgeAffairs.lua) exists only on the clients whose page shows it (the whole Church ranking,
+-- BridgePeople.lua's churchRanking, on the author's, the King's and a signed High Councillor's alone,
+-- and the Companion keeps that one on their computer, never sending it), and personal rows
 -- carry this character's own (his crafting deals, his letters from the King, and "self",
 -- BridgeSections.lua: his character and BattleTag once his Olympus Accord is accepted). This
 -- registry copies it into fresh plain tables, within fixed limits, and the private sidecar

@@ -16,7 +16,7 @@ local generation, mode = 0, "inactive"
 local hooked = setmetatable({}, { __mode = "k" })
 local function Method(obj, key) return obj and type(obj[key]) == "function" end
 
-local function Context()
+local function Context(requireNPC)
 	if not ns.IsMember or not ns.IsMember() then return nil, "membership" end
 	if not InCombatLockdown or InCombatLockdown() then return nil, "combat" end
 	local FT = ns.FarkleTable
@@ -24,7 +24,7 @@ local function Context()
 	-- (1.2.1: the player hid the offer, the privacy page's line or /oly farkle keeper off, and did
 	-- not ask for the innkeeper on the Bones page since.)
 	if FT.KeeperOffer and not FT.KeeperOffer() and not (FT.KeeperWanted and FT.KeeperWanted()) then return nil, "off" end
-	local name, id = FT.Innkeeper(true)
+	local name, id = FT.Innkeeper(requireNPC ~= false)
 	if not name or not id then return nil, "npc" end
 	return name, id
 end
@@ -297,7 +297,9 @@ function G.Listen()
 		pcall(ns.RegisterEvent, event, function() -- gp:innkeeper-gossip
 			if not ns.Gate.Allowed(GATE) then return end
 			if event == "GOSSIP_CLOSED" then Closed()
-			elseif event == "PLAYER_REGEN_DISABLED" or not Context() then G.Park() end
+			-- After confirmation, validate membership and the inn while the native panel closes.
+			-- The server has already released the gossip NPC at this point.
+			elseif event == "PLAYER_REGEN_DISABLED" or not Context(pendingPractice == nil) then G.Park() end
 		end)
 	end
 end

@@ -1024,6 +1024,7 @@ function ChatWindow.HeaderOf(v, e, deleted)
 			v.whisper = tell or nil
 			v.tip = who .. "  <" .. ns.Codec.Plain(e.guild or "?") .. ">"
 		end
+		if not mine and tier == "A" then v.who = ns.Channels.GroupTag(tier, e.sender) .. v.who end
 		v.headed = true
 	end
 	return v.who, v.when, v.whisper, v.tip
@@ -1434,7 +1435,9 @@ local function DrawLines(all)
 	-- (The count of the lines the block terms hide is a strip over the lines: DrawHiddenCount.)
 	if #all == 0 then
 		nr = nr + 1
-		y = y + 8 + Row(nr, Grey(L.CHATWIN_EMPTY:format(Label(tier))), y + 8, width)
+		local empty = tier == "A" and ns.splitNames and ns.Channels.GroupView() ~= "all"
+			and L.CHATWIN_GROUP_EMPTY or L.CHATWIN_EMPTY:format(Label(tier))
+		y = y + 8 + Row(nr, Grey(empty), y + 8, width)
 	elseif #list == 0 then
 		nr = nr + 1
 		y = y + 8 + Row(nr, Grey(L.SEARCH_NO_MATCH), y + 8, width)
@@ -1683,6 +1686,19 @@ function ChatWindow.CloseSubMenu()
 end
 
 function ChatWindow.SubMenuOptions(entry)
+	if entry.kind == "groups" then
+		local options = {}
+		for _, kind in ipairs(ns.Channels.GROUP_ORDER) do
+			options[#options + 1] = { label = L["CHATWIN_GROUP_" .. kind:upper()],
+				selected = ns.Channels.GroupView() == kind,
+				onClick = function()
+					ns.Channels.SetGroupView(kind)
+					ChatWindow.Changed()
+					ChatWindow.Render()
+				end }
+		end
+		return options
+	end
 	if entry.kind == "moderation" then return ChatWindow.ModerationOptions(entry) end
 	if entry.kind == "report" then return ChatWindow.ReportOptions(entry) end
 	if entry.kind == "line" then return ChatWindow.LineOptions(entry) end
@@ -1888,7 +1904,7 @@ function ChatWindow.FillMenu(menu, items, maxWidth)
 	local y, width = -MENU_PAD, 80
 	for i, item in ipairs(items) do
 		local row = ChatWindow.MenuRow(menu, i)
-		local on = item.id ~= nil and tier == item.id
+		local on = item.selected == true or (item.id ~= nil and tier == item.id)
 		if item.children then
 			for _, child in ipairs(item.children) do if child.id ~= nil and child.id == tier then on = true end end
 		end
@@ -2073,6 +2089,15 @@ local function DrawTop(choices, on)
 	local A = ns.Answers
 	frame.answers:SetShown(not room and lines and A ~= nil and type(A.Allowed) == "function" and A.Allowed() == true)
 	PlaceInput(frame)
+	local groups = frame.groups
+	groups:SetShown(lines and tier == "A" and ns.splitNames == true)
+	if groups:IsShown() then
+		groups.text:SetText(L["CHATWIN_GROUP_" .. ns.Channels.GroupView():upper()])
+		groups:SetWidth(math.max(64, math.min(100, math.ceil(TextWidth(groups.text)) + ARROW_W + 20)))
+		groups:ClearAllPoints()
+		groups:SetPoint("TOPRIGHT", frame, "TOPRIGHT", right, s.top)
+		right = right - groups:GetWidth() - TOP_GAP
+	end
 	local sw = frame.switch
 	if lines and (ns.Channels.TIERS[tier] or Dynamic(tier)) and #choices > 1 then
 		local searchLeft = s.left + math.ceil(TextWidth(frame.searchLabel)) + 12
@@ -2962,6 +2987,13 @@ local function Draw()
 		-- (Read once, for the count and the lines. 1.2.3: with this era's memo of whom a moderator's
 		-- word hides, Channels.History: a line already asked about is not asked again.)
 		all = C.History(tier, ChatWindow.offMemo)
+		if tier == "A" and ns.splitNames and C.GroupView() ~= "all" then
+			local visible = {}
+			for _, entry in ipairs(all) do
+				if C.GroupVisible(tier, entry.sender, Own(entry)) then visible[#visible + 1] = entry end
+			end
+			all = visible
+		end
 	end
 	if on then
 		if logical then y = y - ChatWindow.DrawTopicStatus(y) else frame.topicStatus:Hide() end
@@ -3346,6 +3378,29 @@ end
 
 -- The channels' switch on the top row: the channel shown and its arrow; a click lists the channels
 -- the rank reads (its own list, Olympus's frames: no game dropdown), a click there picks one.
+function ChatWindow.MakeGroups(p)
+	local button = Framed("Button", p)
+	button:SetHeight(SEARCH_H)
+	button.text = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	button.text:SetPoint("LEFT", button, "LEFT", 8, 0)
+	button.arrow = button:CreateTexture(nil, "OVERLAY")
+	button.arrow:SetSize(ARROW_W, ARROW_W)
+	button.arrow:SetPoint("RIGHT", button, "RIGHT", -4, 0)
+	button.arrow:SetTexture(ARROW_FILE)
+	button:SetScript("OnClick", function()
+		ns.SafeCall("chat rulesets", ChatWindow.OpenSubMenu, { kind = "groups" }, button)
+	end)
+	button:SetScript("OnEnter", function(self)
+		Tip(self, function(tip)
+			tip:AddLine(L.CHATWIN_GROUP_TITLE, 1, 0.82, 0)
+			tip:AddLine(L.CHATWIN_GROUP_TIP, 1, 1, 1, true)
+		end)
+	end)
+	button:SetScript("OnLeave", function(self) Untip(self) end)
+	button:Hide()
+	p.groups = button
+end
+
 local function MakeSwitch(p)
 	local b = Framed("Button", p)
 	b:SetHeight(SEARCH_H)
@@ -3908,6 +3963,7 @@ local function Build(h)
 
 	-- On the same row, right of the search: the channels' switch, and the gear at the row's end.
 	MakeSwitch(p)
+	ChatWindow.MakeGroups(p)
 	MakeGear(p)
 	MakeRoomButtons(p)
 	MakeMatchContext(p)
@@ -4484,8 +4540,9 @@ end
 ns.On("CHAT_CHANGED", function(t)
 	if t == nil then ChatWindow.Changed() elseif t == tier then MarkDirty() end
 end)
-ns.On("CHAT_LINE", function(t)
+ns.On("CHAT_LINE", function(t, sender)
 	if not Shown() or not ns.Channels.TIERS[t] then return end
+	if not ns.Channels.GroupVisible(t, sender, false) then return end
 	if t ~= tier then
 		unread[t] = (unread[t] or 0) + 1
 	elseif not stick then

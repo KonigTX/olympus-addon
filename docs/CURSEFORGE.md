@@ -1820,10 +1820,12 @@ The addon itself talks only through the game's own addon messages: it has no ser
 and what it sends stays in the game. One exception is the Olympus Companion app, only if you
 install it: its own bridge addon takes your character's name and BattleTag and the Olympus and
 guild chat lines your client shows to Olympus's server, for its staff alone (the Companion's rows
-below). Olympus Link, the Discord role, is its own addon (Olympus_Link), not part of this one:
-nothing of it goes out unless you install it and choose to link a character, or to confirm other
-players' links, and its own documentation says what then goes where. Your name is on every message
-(the game adds it). What goes where:
+below). On Olympus's server, members of the Olympus Discord signed in to the Companion can see the
+census, the public rankings (with character names) and the Most Wanted list. Olympus Link, the
+Discord role, is its own addon (Olympus_Link), not part of this one: nothing of it goes out unless
+you install it and choose to link a character, or to confirm other players' links, and its own
+documentation says what then goes where. Your name is on every message (the game adds it). What
+goes where:
 
 | What | Who receives it | When |
 |---|---|---|

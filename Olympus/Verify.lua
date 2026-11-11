@@ -34,6 +34,12 @@ local L = ns.L
 -- standing; his public card, his Legates and correspondents, his guild decrees and his guild bank
 -- grant wait too). Nothing is taken from the members; nobody is removed.
 --
+-- (1.5.5, the dev: "Postpone the hold on PvP") All of this runs only in a realm group where someone can
+-- verify: our side's King or a councillor of the signed list, the author's characters left out
+-- (Verify.VerifierHere). Elsewhere (ForeverPvP today) every guild waits, pending: no deadline, no notice to
+-- its guild master, no hold. The signed list that brings the first verifier there starts it with a fresh
+-- GRACE from the moment it arrives (Verify.ListTaken, Verify.HoldFrom).
+--
 -- The verifiers (the King, the High Council, the author) see the pending and overdue guilds in The
 -- Watch (Guilds), are told once of each new pending guild (and of each new guild master to check),
 -- and once more REMIND_LEFT before its deadline (and before a later deadline again, as the 1.5.4
@@ -173,6 +179,62 @@ function Verify.Exempt(guild)
 	return ns.IsKingGuild(guild) == true
 end
 
+-- (1.5.5, the dev: "Postpone the hold on PvP") Someone of this realm group who can verify (Verify.Trusted):
+-- our side's King (the signed list's; the code's on the beta's group) or a councillor of the signed list we
+-- hold. The author's own characters never count here. Where nobody is, no deadline runs (Verify.Status):
+-- every guild waits, pending, its guild master is told nothing and held in nothing. Kept a second.
+local verifierMemo, verifierAt = nil, nil
+-- The signed council's names we hold (Workshop.CouncilNames: the list ns.IsHighCouncillor reads).
+local function CouncilNames()
+	local W = ns.Workshop
+	if type(W) ~= "table" or W.missing or type(W.CouncilNames) ~= "function" then return {} end
+	return W.CouncilNames()
+end
+function Verify.VerifierHere(now)
+	now = now or Verify.Clock()
+	if verifierAt == now then return verifierMemo end
+	local function Counts(name)
+		if type(name) ~= "string" or name == "" then return false end
+		local full = ns.FullName(name)
+		return not ns.IsAuthorName(full) and Verify.Trusted(full)
+	end
+	local found = Counts((ns.KingFullName()))
+	if not found then
+		for _, name in ipairs(CouncilNames()) do
+			if Counts(name) then found = true break end
+		end
+	end
+	verifierMemo, verifierAt = found, now
+	return found
+end
+
+-- The hold's fresh grace (1.5.5): Workshop.TakeCouncil and TakeTitles ask Verify.ListState right before they
+-- keep a newer signed list (nil: none held here yet; else whether it names a verifier here) and tell
+-- Verify.ListTaken right after. A list held that named none, then one that names the first verifier: from
+-- that moment (rdb.verify.holdFrom, Verify.HoldFrom) every deadline here counts at the earliest, GRACE (7
+-- days) for every guild. A realm group that had its verifiers from the start (the beta, ForeverPvE) keeps
+-- its deadlines as they were; a client that held no list at all keeps them too (its own first sighting
+-- gives each guild its grace, Verify.Start).
+function Verify.ListState()
+	if ns.CouncilTitles() == nil and #CouncilNames() == 0 then return nil end
+	verifierAt = nil
+	return Verify.VerifierHere()
+end
+function Verify.ListTaken(before)
+	verifierAt = nil
+	if before ~= false or not Verify.VerifierHere() then return false end
+	local s = Store()
+	if not s then return false end
+	s.holdFrom = Verify.Clock()
+	Changed()
+	ns.Log("guild verification: a verifier here now; deadlines count from %d at the earliest", s.holdFrom)
+	return true
+end
+function Verify.HoldFrom()
+	local s = Store()
+	return s and tonumber(s.holdFrom) or nil
+end
+
 -- A guild's census row, by its name in any case.
 local function Row(guild)
 	local guilds = ns.rdb and ns.rdb.guilds
@@ -243,9 +305,15 @@ function Verify.Status(guild, now)
 	local since, shared = Verify.Start(guild, now)
 	if since > now then since = now end
 	info.since, info.shared = since, shared
+	-- (1.5.5) Nobody here who can verify (Verify.VerifierHere): no deadline runs, the guild waits.
+	if not Verify.VerifierHere(now) then
+		info.waiting, info.deadline, info.left = true, now + Verify.GRACE, Verify.GRACE
+		return "pending", info
+	end
 	-- (1.5.4) The deadline alone counts from RESET_AT at the earliest (see the top): since stays the
-	-- guild's start, as it is kept and relayed.
-	info.deadline = math.max(since, Verify.RESET_AT) + Verify.GRACE
+	-- guild's start, as it is kept and relayed. (1.5.5) And from the first verifier's arrival here, when
+	-- one came after the rest (Verify.HoldFrom).
+	info.deadline = math.max(since, Verify.RESET_AT, Verify.HoldFrom() or Verify.RESET_AT) + Verify.GRACE
 	info.left = info.deadline - now
 	if info.left > 0 then return "pending", info end
 	return "overdue", info
@@ -259,7 +327,8 @@ function ns.GuildSanctioned(guild)
 end
 
 -- Whether an overdue guild's master's own powers wait (ns.VERIFY_HOLD, Core.lua): Data.AuthorizedRank,
--- GuildCharter, Nominees, Decree and Bank ask it. Never the King's guild. Asked often: kept a second.
+-- GuildCharter, Nominees, Decree and Bank ask it. Never the King's guild, nor (1.5.5) where nobody can
+-- verify (Verify.Status: no guild is overdue there). Asked often: kept a second.
 function ns.MasterHeld(guild)
 	if ns.VERIFY_HOLD ~= true or type(guild) ~= "string" or guild == "" then return false end
 	local now = Verify.Clock()
@@ -807,6 +876,7 @@ function Verify.Mine(now)
 	local guild, _, rank = GetGuildInfo("player")
 	local status, info = Verify.Status(guild, now)
 	if status == nil or status == "verified" or status == "exempt" then return nil end
+	if info.waiting then return nil end -- (1.5.5: nobody here could verify him yet)
 	local master = rank == 0
 	if not master then return nil end
 	return "master", guild, status, info
@@ -946,6 +1016,7 @@ function Verify.PrintStatus()
 		local e = info.entry
 		return ns.Print(L.VERIFY_STATUS_VERIFIED:format(guild, Shown(e.gm), Shown(e.by), date("%Y-%m-%d", e.at)))
 	end
+	if info.waiting then return ns.Print(L.VERIFY_STATUS_WAITING:format(guild)) end -- (1.5.5)
 	if status == "pending" then return ns.Print(L.VERIFY_STATUS_GRACE:format(guild, Verify.Duration(info.left))) end
 	return ns.Print(L.VERIFY_STATUS_LATE:format(guild))
 end

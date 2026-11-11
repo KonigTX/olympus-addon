@@ -1579,7 +1579,7 @@ end)
 
 print("FarkleTable: practice, self-test, tester log, storage")
 
-test("Bones first lesson opening: a reset learner starts before the House despite stored alternation", function()
+test("Bones first lesson opening: the House demonstrates before a reset learner despite stored alternation", function()
 	local w = FW.New({ compliance = "shipped" })
 	local a = w:Player(P1, { bonesTrained = false })
 	w:Stand(a.name, FW.INN, true)
@@ -1587,10 +1587,92 @@ test("Bones first lesson opening: a reset learner starts before the House despit
 	FT(w, a).Opts().innkeeperLearned = nil
 	local id = assert(FT(w, a).Practice({ target = 5000 }))
 	local t = Get(a, id)
-	eq(t.first, 1, "first lesson starts with the learner after reset")
+	eq(t.first, 2, "first lesson starts with the House after reset")
 	eq(t.target, 2000)
 	eq(t.game.scores[1], 0); eq(t.game.scores[2], 0)
 	eq(t.game.over, false)
+	NoErrors(w)
+end)
+
+test("Bones lesson opening: requested lessons start with the House, explicit first seats and plain practice keep their order", function()
+	local w = FW.New()
+	local a = w:Player(P1)
+	local F = FT(w, a)
+	for _, first in ipairs({ 1, 2 }) do
+		local id = assert(F.Practice({ learn = true, first = first }))
+		eq(Get(a, id).first, first, "an explicit first seat takes priority")
+	end
+	local lesson = assert(F.Practice({ learn = true }))
+	eq(Get(a, lesson).first, 2, "a requested lesson demonstrates first")
+	local plain = assert(F.Practice())
+	eq(Get(a, plain).first, 1, "plain practice alternates after the House")
+	eq(Get(a, plain).learn, nil)
+	local nextPlain = assert(F.Practice())
+	eq(Get(a, nextPlain).first, 2, "plain practice still alternates")
+	NoErrors(w)
+end)
+
+test("Bones lesson demonstration: scoring groups light gradually, then the original House decision scores once", function()
+	local cases = {
+		{ dice = { 2, 1, 2, 1, 2, 6 }, masks = { "135", "1352", "13524" } },
+		{ dice = { 1, 1, 1, 5, 2, 6 }, masks = { "123", "1234" } },
+		{ dice = { 1, 2, 3, 4, 5, 6 }, masks = { "123456" } },
+	}
+	for _, case in ipairs(cases) do
+		local w = FW.New()
+		local a = w:Player(P1)
+		local F, R = FT(w, a), a.ns.FarkleRules
+		local id = assert(F.Practice({ learn = true, first = 2 }))
+		local t = Get(a, id)
+		assert(w:As(a, R.Apply, t.game, { t = "R", p = 2, k = 6, value = Roll(a, case.dice) }))
+		local pick, act = w:As(a, R.HouseMove, t.game)
+		local before, seen, kept = t.game.step, {}, 0
+		a.ns.On("FARKLE_EVENT", function(x, info)
+			if x ~= id then return end
+			if info.t == "consider" then seen[#seen + 1] = { mask = table.concat(info.mask), at = w.clock }
+			elseif info.t == "K" then kept = kept + 1 end
+		end)
+		for i, mask in ipairs(case.masks) do
+			w:Run(1.4)
+			eq(#seen, i, "only the next group has been shown")
+			eq(seen[i].mask, mask, "sets before individual scoring dice")
+			eq(t.game.step, before, "highlighting neither keeps nor scores dice")
+			if i == 1 then eq(seen[i].at >= 1, true, "time to look at the throw before the first group") end
+			if i > 1 then eq(seen[i].at - seen[i - 1].at >= 1.39, true, "time to read each group") end
+			if case == cases[1] and i == 1 then
+				local paused = true
+				a.ns.FarkleTable.busy = function() return paused end
+				w:Run(3)
+				eq(#seen, 1, "a guide or animation pauses the demonstration")
+				eq(t.game.step, before, "no decision happens while paused")
+				paused = false
+			end
+		end
+		w:Run(1.4)
+		eq(kept, 1, "the House keeps once after its demonstration")
+		eq(t.game.step, before + 1, "all groups are scored in one decision")
+		eq(t.game.events[before + 1], R.Code({ t = "K", p = 2, mask = pick, act = act }), "the original decision is preserved")
+		eq(#seen, #case.masks, "no duplicate demonstration while waiting")
+		NoErrors(w)
+	end
+end)
+
+test("Bones plain practice: the House considers its whole pick at its ordinary pace", function()
+	local w = FW.New()
+	local a = w:Player(P1)
+	local F, R = FT(w, a), a.ns.FarkleRules
+	local id = assert(F.Practice({ first = 2 }))
+	local t = Get(a, id)
+	assert(w:As(a, R.Apply, t.game, { t = "R", p = 2, k = 6, value = Roll(a, { 2, 1, 2, 1, 2, 6 }) }))
+	local masks, kept = {}, 0
+	a.ns.On("FARKLE_EVENT", function(x, info)
+		if x == id and info.t == "consider" then masks[#masks + 1] = table.concat(info.mask)
+		elseif x == id and info.t == "K" then kept = kept + 1 end
+	end)
+	w:Run(0.4)
+	eq(#masks, 1); eq(masks[1], "12345"); eq(kept, 0)
+	w:Run(0.6)
+	eq(kept, 1); eq(#masks, 1)
 	NoErrors(w)
 end)
 

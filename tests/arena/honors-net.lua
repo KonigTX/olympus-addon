@@ -434,6 +434,120 @@ local function Heard(w, c, guild, sender, top, faction)
 	end)
 end
 
+-- Counts use the real merged census; guild-master authority still needs its own two reports.
+local function GuildCensus()
+	local w, cast = W3.New()
+	local c = cast.spectator
+	local D = OwnCensus(w, c)
+	c.rdb.guilds, c.rdb.censusGlobal = {}, {}
+	c.ns.Comm.loginAt = w.clock - D.CROWN_AFTER - 1
+	cast.A.guild, cast.B.guild = "OLYMPUS VI", "Olympus Highest"
+	rawset(c.ns, "Church", { IsLedgerRelay = function(name) return name == cast.king.name end })
+	local serial = 0
+	local function Report(guild, leader, total, avg)
+		for _ = 1, 2 do
+			serial = serial + 1
+			w:As(c, function()
+				assert(D.Receive({ guild = guild, faction = "Alliance", total = total, online = 2, zones = {},
+					leader = leader, officers = {}, avgLevel = avg, from = c.realm, st = w.clock - 60 },
+					("Guild Reporter%d-%s"):format(serial, c.realm)))
+			end)
+		end
+	end
+	Report(cast.A.guild, cast.A.short, 1000, 59)
+	Report(cast.B.guild, cast.B.short, 980, 30)
+	w:Run(D.NOTIFY_GAP + 1)
+	local function Snapshot(rows)
+		w:As(c, function()
+			assert(D.ReceiveGlobalCensus("CHANNEL", cast.king.name,
+				("CG~1~S~%d~"):format(w.clock) .. table.concat(rows, ";")))
+		end)
+		w:Run(D.NOTIFY_GAP + 1)
+	end
+	return w, cast, c, HN(w, c), D, Snapshot, Report
+end
+
+test("1.5.6 best guild: newer merged averages put the old raw winner outside twenty and revoke its chosen owl", function()
+	local w, cast, c, net, D, Snapshot = GuildCensus()
+	eq(net.Inputs().guild.guild, cast.A.guild, "the old direct reports initially favour VI")
+	w:As(c, function()
+		c.ns.Arena.Inject("CHANNEL", cast.A.name, "AP~L1~" .. table.concat({ "-", "WA", "1", "2", "60", "0.0", "-", "0",
+			"guild-top-leader", "guild-top-leader", c.ns.Arena.B36(w.clock) }, "~"))
+	end)
+	eq(net.Verified(cast.A.name, cast.A.guid).frame, "guild-top-leader", "cache the old chosen owl")
+	local rows = {
+		("OLYMPUS VI,705,2,166,%d"):format(w.clock),
+		("Olympus Highest,980,2,500,%d"):format(w.clock),
+	}
+	for i = 1, 20 do rows[#rows + 1] = ("Olympus Newer %02d,950,2,%d,%d"):format(i, 500 - i, w.clock) end
+	Snapshot(rows)
+	local s = w:As(c, D.Summary)
+	local higher = 0
+	for _, e in ipairs(s.guilds) do if (D.AvgTenths(e.g) or 0) > 166 then higher = higher + 1 end end
+	eq(higher, 21, "the displayed VI average is outside the top twenty")
+	eq(net.Inputs().guild.guild, cast.B.guild, "the same merged census picks the actual highest qualified guild")
+	eq(net.Inputs().guild.avgLevel, 50)
+	eq(c.rdb.guilds[cast.A.guild].avgLevel, 59, "the raw historical report is not rewritten")
+	eq(c.rdb.guilds[cast.A.guild].total, 1000, "the raw count is not fabricated from the snapshot")
+	eq(#net.Holdings(cast.A.name, cast.A.guid), 0, "VI's former leader no longer holds the owl")
+	eq(net.Verified(cast.A.name, cast.A.guid).frame, "rank", "DATA_CHANGED invalidates the cached owl")
+	eq(net.Verified(cast.A.name, cast.A.guid).title, nil)
+	local held = net.Holdings(cast.B.name, cast.B.guid)
+	eq(#held, 1); eq(held[1].key, "guild-top-leader")
+	W3.NoErrors(w)
+end)
+
+test("1.5.6 best guild: a higher qualified snapshot without a proven guild master awards nobody below it", function()
+	local w, cast, c, net, D, Snapshot = GuildCensus()
+	Snapshot({ ("Olympus Unproven,1000,2,600,%d"):format(w.clock) })
+	eq(net.Inputs().guild, nil, "an unknown winning guild master never promotes the next known one")
+	eq(#net.Holdings(cast.A.name, cast.A.guid), 0)
+	eq(#net.Holdings(cast.B.name, cast.B.guid), 0)
+	-- Even a named leader is not enough: the winning guild's own rank proof remains required.
+	c.rdb.guilds["Olympus Unproven"] = { total = 1000, online = 2, avgLevel = 60, leader = cast.B.short,
+		faction = "Alliance", from = c.realm, realm = c.realm, t = w.clock, st = w.clock }
+	w:As(c, D.ChangedNow)
+	eq(net.Inputs().guild, nil, "a census name without two independent rank reports grants no honour")
+	W3.NoErrors(w)
+end)
+
+test("1.5.6 best guild: legacy direct reports without a faction remain Alliance, never become Horde", function()
+	local w, cast, c, net, D = GuildCensus()
+	cast.B.guild = "Olympus Legacy"
+	for i = 1, 2 do
+		w:As(c, function()
+			assert(D.Receive({ guild = cast.B.guild, total = 950, online = 2, zones = {}, leader = cast.B.short,
+				officers = {}, avgLevel = 60, from = c.realm, st = w.clock }, ("Legacy Reporter%d-%s"):format(i, c.realm)))
+		end)
+	end
+	w:As(c, D.ChangedNow)
+	eq(c.rdb.guilds[cast.B.guild].faction, nil, "the supported legacy row remains as received")
+	eq(net.Inputs().guild.guild, cast.B.guild, "the visible Alliance winner retains its supported default")
+	eq(#net.Holdings(cast.B.name, cast.B.guid), 1)
+	c.ns.faction = "Horde"
+	w:As(c, D.ChangedNow)
+	eq(net.Inputs().guild, nil, "missing legacy faction never grants a Horde honour")
+	W3.NoErrors(w)
+end)
+
+test("1.5.6 best guild: an initially empty contest emits no unrelated honours change", function()
+	local w, cast = W3.New()
+	local c = cast.spectator
+	local D = OwnCensus(w, c)
+	c.rdb.guilds, c.rdb.censusGlobal = {}, {}
+	local changed = 0
+	w:As(c, function()
+		c.ns.On("HONORS_CHANGED", function(name) if name == nil then changed = changed + 1 end end)
+		D.ChangedNow()
+	end)
+	w:Run(c.ns.HonorsNet.BEST_SOON + 1)
+	eq(changed, 0, "there was no winner to gain or lose")
+	w:As(c, D.ChangedNow)
+	w:Run(c.ns.HonorsNet.BEST_SOON + 1)
+	eq(changed, 0, "another empty look remains silent")
+	W3.NoErrors(w)
+end)
+
 test("1.2.1 the level race: two senders of her guild heard through the census within Data.NOTIFY_GAP (the first one's row replaced before the burst's DATA_CHANGED) are both kept on her claim, which is vouched; her own report, a level below or a refused report vouch nothing; the place after CONFIRM_AFTER", function()
 	local w, cast = W3.New({ more = { { "young", "Brisa Vale", { level = 19 } } } })
 	local viewer, young = cast.spectator, cast.young
@@ -696,6 +810,57 @@ local function Frames(w, c)
 	end
 	return rec
 end
+
+test("1.5.6 best guild: an owl drawn before the first coalesced look is removed when its winner disappears", function()
+	local w, cast, c, net, D, Snapshot = GuildCensus()
+	cast.A.rank, cast.A.rankName = 0, "Guild Master"
+	w:As(c, function()
+		c.ns.Arena.Inject("CHANNEL", cast.A.name, "AP~L1~" .. table.concat({ "-", "WA", "1", "2", "60", "0.0", "-", "0",
+			"guild-top-leader", "guild-top-leader", c.ns.Arena.B36(w.clock) }, "~"))
+	end)
+	local r = Frames(w, c)
+	c.target = cast.A.name
+	r.B.Refresh("target", true)
+	eq(r.Shown("target"), "Interface\\AddOns\\Olympus\\media\\honors\\owl-gold")
+	local changed = 0
+	w:As(c, function() c.ns.On("HONORS_CHANGED", function(name) if name == nil then changed = changed + 1 end end) end)
+	Snapshot({ ("Olympus Unproven,1000,2,600,%d"):format(w.clock) })
+	w:Run(c.ns.HonorsNet.BEST_SOON + 1)
+	eq(changed, 1, "the displayed winner is the baseline even before its first timer")
+	eq(net.Verified(cast.A.name, cast.A.guid).frame, "rank")
+	eq(r.Shown("target"), "Interface\\AddOns\\Olympus\\media\\borders\\bronze-winged")
+	W3.NoErrors(w)
+end)
+
+test("1.5.6 best guild: another guild's winning report removes the old owl already drawn for an ordinary viewer", function()
+	local w, cast, c, net, D, _, Report = GuildCensus()
+	w:Run(c.ns.HonorsNet.BEST_SOON + 3)
+	cast.A.rank, cast.A.rankName = 0, "Guild Master"
+	w:As(c, function()
+		c.ns.Arena.Inject("CHANNEL", cast.A.name, "AP~L1~" .. table.concat({ "-", "WA", "1", "2", "60", "0.0", "-", "0",
+			"guild-top-leader", "guild-top-leader", c.ns.Arena.B36(w.clock) }, "~"))
+	end)
+	local r = Frames(w, c)
+	c.target = cast.A.name
+	r.B.Refresh("target", true)
+	local owl = "Interface\\AddOns\\Olympus\\media\\honors\\owl-gold"
+	eq(r.Shown("target"), owl)
+	eq(c.rank ~= 0, true, "the viewer is not a guild master")
+	local globalChanges = 0
+	w:As(c, function() c.ns.On("HONORS_CHANGED", function(name) if name == nil then globalChanges = globalChanges + 1 end end) end)
+	local oldRow, oldAt = c.rdb.guilds[cast.A.guild], c.rdb.guilds[cast.A.guild].t
+	Report(cast.B.guild, cast.B.short, 980, 60)
+	w:Run(D.NOTIFY_GAP)
+	eq(c.rdb.guilds[cast.A.guild], oldRow); eq(oldRow.t, oldAt, "the target's guild report did not change")
+	eq(globalChanges, 0, "the ranking change waits for its coalesced look")
+	w:Run(c.ns.HonorsNet.BEST_SOON + 1)
+	eq(globalChanges, 1, "the new winner invalidates everyone's drawn honours once")
+	eq(net.Verified(cast.A.name, cast.A.guid).frame, "rank")
+	eq(r.Shown("target"), "Interface\\AddOns\\Olympus\\media\\borders\\bronze-winged", "the old owl is removed without retargeting")
+	w:Run(20)
+	eq(globalChanges, 1, "the invalidation does not loop")
+	W3.NoErrors(w)
+end)
 
 test("1.2 the fights part: Borders and Nameplates show the verified honour's frame (its shape's one texture) and its mark; a non-holder's pick, his rank's; hidden with the gamepad UI and for anyone net-off; a file the client can't load falls back to the rank's frame", function()
 	local w, cast = W3.New()
