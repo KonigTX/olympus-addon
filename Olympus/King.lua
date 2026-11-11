@@ -106,7 +106,8 @@ function King.IsKing()
 	if SignedLaunchKing() then return ns.IsKingCharacter(ns.me) end
 	local guild, _, rank = GetGuildInfo("player")
 	if not (ns.IsKingGuild(guild) and rank == 0) then return false end
-	return (ns.KingCharacter() == nil and not ns.LaunchListHeld()) or ns.IsKingCharacter(ns.me)
+	-- (1.5.5: ns.KingUnpinned, never on Forever's live realms, whose main guild's master is no King.)
+	return ns.KingUnpinned() or ns.IsKingCharacter(ns.me)
 end
 
 -- The author's test build (Dev.lua, never published) shows the tab without the powers:
@@ -171,7 +172,8 @@ local function KingSender(sender, guild, soft)
 		if ns.Hop and ns.Hop.HeardKing then ns.Hop.HeardKing(sender) end -- (his realm: his own word, 1.0.0)
 		return true
 	end
-	return soft == true and not ns.LaunchListHeld() and ns.Data.KnownRank(sender, guild, true) == 0
+	-- (1.5.5: ns.KingUnpinned, as above: the main guild's master on Forever's live realms is no King's word.)
+	return soft == true and ns.KingUnpinned() and ns.Data.KnownRank(sender, guild, true) == 0
 end
 
 -- The page refreshes at most once a second, whatever arrives.

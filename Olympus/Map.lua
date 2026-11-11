@@ -200,6 +200,85 @@ local function CanvasScale()
 	return (scale and scale > 0) and scale or 1
 end
 
+-- 1.5.5 (the dev's screen, 11-10, Elwynn Forest at UI scale 0.71: a point label over Goldshire drawn as a
+-- dark box left of the town, fading out to the right, no text, the printed name in sight; the zone's
+-- name under the map fine). Forever's world map draws its pins at frame levels of 2000 and up
+-- (Blizzard_MapCanvas/MapCanvas_PinFrameLevelsManager.lua:3, MAP_CANVAS_PIN_FRAME_LEVEL_DEFAULT), one
+-- level type after another in the order Blizzard_WorldMap.lua:259-303 adds them. The explored areas'
+-- art is one pin as big as the canvas, its overlays soft-edged textures (MapExplorationDataProvider.lua:
+-- 61-67, PIN_FRAME_LEVEL_MAP_EXPLORATION: 2002). The labels sat at the canvas's own level + 90 (the
+-- continent totals + 100), under that pin: the town's overlay covered the label's middle, its text,
+-- and its soft edge faded the rest. Now they sit right above the map's painted layers (ART_LEVELS: the
+-- explored art, the event overlay, the fog of war, the quest and scenario areas, the hover highlight)
+-- and under every icon pin (dungeon entrances, flight points, quests, the group's arrows, the pin
+-- library's circles: PIN_FRAME_LEVEL_DIG_SITE on). The levels are read from the map's own table and
+-- never written (MapCanvasMixin:GetPinFrameLevelsManager, Blizzard_MapCanvas.lua:1029-1031;
+-- GetFrameLevelStart and GetFrameLevelRange, MapCanvas_PinFrameLevelsManager.lua:130-144). Not pins of
+-- the map's own (AcquirePin, a data provider): those live in the map's pools and run in its updates,
+-- which the gamepad map runs in; the game places a pin with the same arithmetic as below.
+Map.ART_LEVELS = { "PIN_FRAME_LEVEL_MAP_EXPLORATION", "PIN_FRAME_LEVEL_EVENT_OVERLAY", "PIN_FRAME_LEVEL_GARRISON_PLOT",
+	"PIN_FRAME_LEVEL_FOG_OF_WAR", "PIN_FRAME_LEVEL_QUEST_BLOB", "PIN_FRAME_LEVEL_SCENARIO_BLOB", "PIN_FRAME_LEVEL_MAP_HIGHLIGHT" }
+Map.LEVEL_ABOVE_CANVAS = 90 -- (a map without that table: as before 1.5.5)
+Map.LEVEL_MAX = 9000        -- (MapCanvas_PinFrameLevelsManager.lua:4, MAX_FRAME_LEVEL)
+function Map.ArtLevel(canvas) -- gp:map-overlay
+	if not ns.Gate.Allowed("map-overlay") then return nil end
+	local level = ((canvas and canvas:GetFrameLevel()) or 0) + Map.LEVEL_ABOVE_CANVAS
+	local map = WorldMapFrame
+	if type(map) ~= "table" or type(map.GetPinFrameLevelsManager) ~= "function" then return level end
+	local ok, levels = pcall(map.GetPinFrameLevelsManager, map)
+	if not ok or type(levels) ~= "table" or type(levels.GetFrameLevelStart) ~= "function"
+		or type(levels.GetFrameLevelRange) ~= "function" then return level end
+	for _, kind in ipairs(Map.ART_LEVELS) do
+		local okStart, start = pcall(levels.GetFrameLevelStart, levels, kind)
+		local okRange, range = pcall(levels.GetFrameLevelRange, levels, kind)
+		if okStart and okRange and type(start) == "number" and type(range) == "number" then
+			level = math.max(level, start + range)
+		end
+	end
+	return math.min(level, Map.LEVEL_MAX)
+end
+
+-- The map's scale at its widest view, the zoom it opens at (MapCanvasMixin:GetScaleForMinZoom,
+-- Blizzard_MapCanvas.lua:944, its first zoom level: MapCanvas_ScrollContainerMixin.lua:742), or nil
+-- before the map has zoom levels (HasZoomLevels, :777).
+function Map.MinZoomScale() -- gp:map-overlay
+	if not ns.Gate.Allowed("map-overlay") then return nil end
+	local map = WorldMapFrame
+	if type(map) ~= "table" or type(map.HasZoomLevels) ~= "function" or type(map.GetScaleForMinZoom) ~= "function" then return nil end
+	local okHas, has = pcall(map.HasZoomLevels, map)
+	if not okHas or has ~= true then return nil end
+	local ok, scale = pcall(map.GetScaleForMinZoom, map)
+	if ok and type(scale) == "number" and scale > 0 and scale < math.huge then return scale end
+	return nil
+end
+
+-- A name label's scale on the canvas (1.5.5): its own size at the map's widest view, where it reads at
+-- the map window's own text size (the zone's name under the map, the Olympus button), and from there
+-- it grows with the map as it zooms in, as the printed name under it does: one size on the canvas at
+-- every zoom. (Until 1.5.5 it was one over the zoom it was laid out at: the size on screen of that
+-- zoom, which the printed name outgrew as the map zoomed in.) No zoom levels yet: the current zoom.
+function Map.NameScale(minZoom, canvasScale)
+	local base = minZoom
+	if type(base) ~= "number" or not (base > 0 and base < math.huge) then base = canvasScale end
+	if type(base) ~= "number" or not (base > 0 and base < math.huge) then base = 1 end
+	return 1 / base
+end
+-- Where a label of scale s is anchored: its centre on (x, y) of the canvas (0..1 across and down; w
+-- and h its size), as the map places a pin (MapCanvasMixin:ApplyPinPosition, Blizzard_MapCanvas.lua:
+-- 723-749): from the canvas's top left, in the label's own units, so divided by its scale.
+function Map.NamePoint(w, h, x, y, s)
+	return (w * x) / s, -(h * y) / s
+end
+-- Its size: the 1.5.2 box (NAME_WIDTH x NAME_HEIGHT), wider for a longer name (up to
+-- NAME_WIDTH_MAX, past it the end shortened), so the backing covers the printed name and the
+-- new one fits on it.
+Map.NAME_WIDTH, Map.NAME_WIDTH_MAX, Map.NAME_HEIGHT, Map.NAME_PAD = 210, 420, 28, 10
+function Map.NameWidth(textWidth)
+	local w = (tonumber(textWidth) or 0) + 2 * Map.NAME_PAD
+	if w ~= w then w = 0 end
+	return math.max(Map.NAME_WIDTH, math.min(Map.NAME_WIDTH_MAX, math.ceil(w)))
+end
+
 -- (1.1.5, the gamepad gate's "map-overlay", the author's call: none of it with the gamepad UI on, the
 -- continent totals neither: the gamepad map is the game's alone. Nothing laid out there; at a switch
 -- to it, the totals, the Olympus button and its menu hide; back, laid out again.)
@@ -216,6 +295,8 @@ function Map.LayoutOverlay()
 	end
 	if #here == 0 then return end
 	local w, h, scale = canvas:GetWidth(), canvas:GetHeight(), CanvasScale()
+	-- (1.5.5: above the map's painted layers, Map.ArtLevel; one over the name labels, as before.)
+	local level = (Map.ArtLevel(canvas) or (canvas:GetFrameLevel() + Map.LEVEL_ABOVE_CANVAS)) + 1
 	for i, d in ipairs(here) do
 		local f = overlay[i]
 		if not f then
@@ -223,7 +304,7 @@ function Map.LayoutOverlay()
 			f:SetParent(canvas)
 			overlay[i] = f
 		end
-		f:SetFrameLevel(canvas:GetFrameLevel() + 100)
+		f:SetFrameLevel(level)
 		-- Undo the canvas zoom so the circle keeps the same size on screen; SetPoint offsets
 		-- are in the frame's own (scaled) units, hence the * scale.
 		f:SetScale(1 / scale)
@@ -550,6 +631,38 @@ end
 local nameButton, nameTitle, nameHint, nameHit, nameEditor
 local nameLabels, nameEditing = {}, false
 Map.nameLabels = nameLabels
+-- (1.5.5) While labels show, a frame of Olympus's on the canvas looks every NAME_WATCH_EVERY seconds
+-- whether the map's widest view, the canvas or the map changed under them (the map maximized or made
+-- small again makes its zoom levels anew: Blizzard_MapCanvas.lua:73-75, OnFrameSizeChanged), and lays
+-- them out again then. Zooming needs nothing: the labels are sized on the canvas, which it scales.
+Map.NAME_WATCH_EVERY = 0.2
+local nameWatch, nameLaid
+local function WatchNames(canvas, on) -- gp:map-overlay
+	if not ns.Gate.Allowed("map-overlay") then return end
+	if not on then
+		if nameWatch then nameWatch:Hide() end
+		return
+	end
+	if not nameWatch then
+		nameWatch = CreateFrame("Frame", nil, canvas)
+		nameWatch:SetSize(1, 1)
+		nameWatch.wait = 0
+		nameWatch:SetScript("OnUpdate", function(self, elapsed)
+			if not ns.Gate.Allowed("map-overlay") then self:Hide() return end
+			self.wait = self.wait - (tonumber(elapsed) or 0)
+			if self.wait > 0 then return end
+			self.wait = Map.NAME_WATCH_EVERY
+			local laid, c = nameLaid, Canvas()
+			if not laid or not c then return end
+			if Map.MinZoomScale() ~= laid.min or c:GetWidth() ~= laid.w or c:GetHeight() ~= laid.h
+				or WorldMapFrame:GetMapID() ~= laid.map then
+				ns.SafeCall("map names", Map.LayoutNames)
+			end
+		end)
+		Map.nameWatch = nameWatch
+	end
+	nameWatch:Show()
+end
 local function NameButton(parent, text, width)
 	local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
 	b:SetSize(width, 24)
@@ -642,6 +755,8 @@ function Map.LayoutNames() -- gp:map-overlay
 	if not ns.Gate.Allowed("map-overlay") then return end
 	local N, canvas = ns.MapNames, Canvas()
 	for _, label in ipairs(nameLabels) do label:Hide() end
+	if nameWatch then nameWatch:Hide() end
+	nameLaid = nil
 	if nameHit then nameHit:Hide() end
 	if nameTitle then nameTitle:Hide() end
 	if nameHint then nameHint:Hide() end
@@ -715,18 +830,23 @@ function Map.LayoutNames() -- gp:map-overlay
 		nameHit:SetFrameLevel(canvas:GetFrameLevel() + 80)
 		nameHit:Show()
 	end
-	local w, h, scale = canvas:GetWidth(), canvas:GetHeight(), CanvasScale()
+	-- (1.5.5) Above the map's painted layers (Map.ArtLevel), sized on the canvas (Map.NameScale) and
+	-- centred on their point as the map centres a pin (Map.NamePoint).
+	local w, h = canvas:GetWidth(), canvas:GetHeight()
+	local minZoom = Map.MinZoomScale()
+	local scale = Map.NameScale(minZoom, CanvasScale())
+	local level = Map.ArtLevel(canvas) or (canvas:GetFrameLevel() + Map.LEVEL_ABOVE_CANVAS)
 	for i, entry in ipairs(labels) do
 		local f = nameLabels[i]
 		if not f then
 			f = CreateFrame("Button", nil, canvas)
-			f:SetSize(210, 28)
+			f:SetSize(Map.NAME_WIDTH, Map.NAME_HEIGHT)
 			f.bg = f:CreateTexture(nil, "BACKGROUND")
 			f.bg:SetAllPoints()
 			f.bg:SetColorTexture(0.12, 0.08, 0.03, 0.96)
 			f.text = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-			f.text:SetPoint("LEFT", 8, 0)
-			f.text:SetPoint("RIGHT", -8, 0)
+			f.text:SetPoint("LEFT", Map.NAME_PAD, 0)
+			f.text:SetPoint("RIGHT", -Map.NAME_PAD, 0)
 			f:SetScript("OnClick", function(self)
 				if not ns.Gate.Allowed("map-overlay") then return end
 				Map.OpenNameEditor(self.key)
@@ -735,13 +855,19 @@ function Map.LayoutNames() -- gp:map-overlay
 		end
 		f.key = entry.key
 		f.text:SetText(entry.text)
+		local text = f.text
+		local measure = text.GetUnboundedStringWidth or text.GetStringWidth
+		local okWidth, textWidth = pcall(measure, text)
+		f:SetSize(Map.NameWidth(okWidth and textWidth or nil), Map.NAME_HEIGHT)
 		f:EnableMouse(nameEditing)
-		f:SetFrameLevel(canvas:GetFrameLevel() + 90)
-		f:SetScale(1 / scale)
+		f:SetFrameLevel(level)
+		f:SetScale(scale)
 		f:ClearAllPoints()
-		f:SetPoint("CENTER", canvas, "TOPLEFT", w * entry.x * scale, -h * entry.y * scale)
+		f:SetPoint("CENTER", canvas, "TOPLEFT", Map.NamePoint(w, h, entry.x, entry.y, scale))
 		f:Show()
 	end
+	nameLaid = { min = minZoom, w = w, h = h, map = shown }
+	WatchNames(canvas, #labels > 0)
 end
 local function CreateNameControls(anchor) -- gp:map-overlay
 	if not ns.Gate.Allowed("map-overlay") then return end
@@ -778,6 +904,8 @@ local function ParkNames() -- gp:map-overlay!undo
 	if nameTitle then nameTitle:Hide() end
 	if nameHint then nameHint:Hide() end
 	if nameHit then nameHit:Hide() end
+	if nameWatch then nameWatch:Hide() end
+	nameLaid = nil
 	for _, f in ipairs(nameLabels) do f:Hide() end
 end
 

@@ -127,6 +127,10 @@ test("1.2.1 Bones selection: a step outside the inn in a lesson while a 2 is pic
 	check(Click(w, a, P(a).setup.start), "Start")
 	w:Run(0)
 	eq(a.ns.FarkleTable.Get(X(a).S.id).inn ~= nil, true, "the innkeeper's table")
+	Until(w, function()
+		local v = w:As(a, function() return a.ns.FarkleTable.View(X(a).S.id) end)
+		return v.expect and v.expect.who == 1 and Idle(a)
+	end, 90)
 	local one, two = PickOneAndTwo(w, a)
 	-- A step out of the inn's rest area as the table redraws (an arena change heard), and back.
 	w:Stand(a.name, FW.ROAD, false)

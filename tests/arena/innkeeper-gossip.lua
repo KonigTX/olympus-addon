@@ -279,6 +279,32 @@ test("Innkeeper gossip: the panel still shown a frame after the close: the lesso
 	end)
 end)
 
+test("Innkeeper gossip: a roster refresh while confirmed gossip closes keeps the first lesson, and membership loss cancels it", function()
+	for _, leaving in ipairs({ false, true }) do
+		WithGossip(function(g, t)
+			local guid = UnitGUID
+			local talking = true
+			local function NpcGUID(unit)
+				if unit == "npc" and not talking then return nil end
+				return guid(unit)
+			end
+			UnitGUID, t.a.globals.UnitGUID = NpcGUID, NpcGUID
+			t.a.globals.C_GossipInfo.CloseGossip = function()
+				talking = false
+				t.w:Fire(t.a, "GOSSIP_CLOSED")
+			end
+			eq(g.ShowRow(), true); eq(g.Open(), true); eq(g.Confirm(), true)
+			eq(#t.starts, 0, "native close is still pending")
+			if leaving then t.a.guild = nil end
+			t.w:Fire(t.a, leaving and "PLAYER_GUILD_UPDATE" or "GUILD_ROSTER_UPDATE", "player")
+			t.f:Hide()
+			for _, call in ipairs(t.pending) do call() end
+			eq(#t.starts, leaving and 0 or 1, "the confirmed request survives only while membership remains")
+			eq(g.State().mode, "inactive")
+		end)
+	end
+end)
+
 test("Innkeeper gossip: explicit confirmation closes NPC panel then launches first lesson", function()
 	WithGossip(function(g, t)
 		eq(g.ShowRow(), true); eq(g.Open(), true)

@@ -133,6 +133,18 @@ local function Modules(o)
 		end,
 		Local = function() return { invWeek = 7, invAll = 40, joins = 2, leaves = 1, members = 990 } end,
 		Mine = function() return { pub = true, regs = { a = { n = "Secret Recruit", at = NOW }, b = { n = "Other Recruit", at = NOW } }, inv = {} } end,
+		-- The Ranking page's rows (RankingView's shape: the rows, when they are as of, from another
+		-- client), o.apostles and o.missionaries of them; a window of o.noAnswer: no answer held. The
+		-- first row's name has a colour and the rows' separator in it.
+		RankingView = function(list, window)
+			if o.noAnswer and o.noAnswer[window] then return {}, nil, true end
+			local n = list == "a" and (o.apostles or 12) or (o.missionaries or 40)
+			return Rows(n, function(i)
+				return { rank = i, key = "k" .. i, name = i == 1 and "|cffffd200Gold~Name|r" or Name(list == "a" and "Apostle" or "Missionary", i),
+					role = list == "a" and "A" or "M", score = 500 - i + 0.25, own = 3, share = 1.5, levels = { 1, 0.5, 0 }, joins = 4, stays = 2,
+					net = 9, pub = false }
+			end), ({ w = NOW - 60, m = NOW - 600, a = NOW - 3600 })[window], true
+		end,
 	}
 	local person = o.churchPerson ~= false
 	m.Church = {
@@ -143,6 +155,8 @@ local function Modules(o)
 			return { apostle = { ap = { n = "Saint-Realm" } }, miss = { pa = { n = "Elder-Realm" } }, corrOf = {}, corr = {} }
 		end,
 		Place = function() return { role = "M", net = "ap", parent = "pa" } end,
+		-- The author, the King or a signed councillor whom moderation does not hide: o.publisher.
+		SwitchAllowed = function(name) return o.publisher == true and name == ME end,
 	}
 	m.HonorsNet = {
 		Holdings = function()
@@ -534,6 +548,54 @@ test("bridge people: church: the public rows while its switch is open, and a Chu
 	end)
 end)
 
+-- (2026-11-09, the author: "Sim, só local") churchRanking: the whole Church ranking, for the computer of
+-- the author, the King or a signed High Councillor alone. Its rows against the Ranking page itself, the
+-- roles and the public switch, on the Church's own modules: tests/arena/bridge-people-modules.lua.
+test("bridge people: churchRanking (local only): only where Church.SwitchAllowed holds, never before the Olympus Accord or for a non-member; every board the page holds, each row only its place, name and points, the first 1000 places; `at` its oldest board's time", function()
+	With({ publisher = true, missionaries = 1500 }, function()
+		local d = Data("churchRanking")
+		for k in pairs(d) do assert(({ at = true, boards = true })[k], "field " .. k) end
+		eq(d.at, NOW - 3600, "as of its oldest board (all time's answer)")
+		eq(#d.boards, 6, "the Apostles' and the missionaries', each window")
+		local i = 0
+		for _, list in ipairs({ "apostles", "missionaries" }) do
+			for _, window in ipairs({ "w", "m", "a" }) do
+				i = i + 1
+				local b, label = d.boards[i], list .. " " .. window
+				eq(b.list, list, label); eq(b.window, window, label)
+				for k in pairs(b) do assert(({ list = true, window = true, rows = true })[k], label .. ": field " .. k) end
+				eq(#b.rows, list == "apostles" and 12 or 1000, label .. ": every row, the first 1000 places at most")
+				for place, r in ipairs(b.rows) do
+					for k in pairs(r) do assert(({ place = true, name = true, points = true })[k], label .. ": row field " .. k) end
+					eq(r.place, place, label .. ": in the page's order")
+				end
+				eq(b.rows[1].name, "GoldName", label .. ": no colour code or row separator in a name")
+				eq(b.rows[2].name, Name(list == "apostles" and "Apostle" or "Missionary", 2), label)
+				eq(b.rows[2].points, 498.3, label .. ": points to the tenth, as the page shows them")
+			end
+		end
+	end)
+	With({ publisher = true, noAnswer = { w = true } }, function()
+		local d = Data("churchRanking")
+		eq(#d.boards, 4, "a window this client holds no answer for is left out")
+		for _, b in ipairs(d.boards) do assert(b.window ~= "w", b.list) end
+		eq(d.at, NOW - 3600)
+	end)
+	With({ publisher = true, noAnswer = { w = true, m = true, a = true } }, function()
+		local d = Data("churchRanking")
+		eq(#d.boards, 0, "nothing held yet: no board"); eq(d.at, NOW, "now")
+	end)
+	With({}, function() eq(B.GetSection("churchRanking"), nil, "a missionary's client (no author, King or councillor): nothing") end)
+	With({ publisher = true }, function()
+		ns.db.accord = nil
+		eq(B.GetSection("churchRanking"), nil, "no Accord: nothing")
+		ns.db.accord = { v = ns.ACCORD_VERSION, yes = true, at = 0 }
+		assert(B.GetSection("churchRanking"), "the Accord accepted")
+		GetGuildInfo = function() return "Horde Pals", "Member", 3 end
+		eq(B.GetSection("churchRanking"), nil, "not in an Olympus guild: nothing")
+	end)
+end)
+
 test("bridge people: games: the public events and results the pages list, newest first, at most 50, the live realm's alone; his own record, his places only while public; nothing while the arena is off", function()
 	With({}, function()
 		local d = Data("games")
@@ -665,7 +727,7 @@ local function Saved(v, indent, out)
 	return out
 end
 
-test("bridge people: every section together, for a guild of 1000 members, 256 guilds and full boards, stays under 2 MiB and nothing is cut by the registry", function()
+test("bridge people: every section together, for a guild of 1000 members, 256 guilds and full boards (the whole Church ranking's too, on a publisher's client), stays under 2 MiB and nothing is cut by the registry", function()
 	-- A roster at the game's cap, with long names and rank names.
 	local members = Rows(1000, function(i)
 		return { name = Name("Membername", i) .. "-Argentdawnx", level = i % 60 + 1, class = "WL", rankIndex = i % 10, rank = "Veteran Centurion",
@@ -673,7 +735,9 @@ test("bridge people: every section together, for a guild of 1000 members, 256 gu
 	end)
 	local roster = { guild = "Olympus II", members = members, lastStats = { numTotal = 1000 } }
 	setmetatable(roster, { __index = ns.Roster })
-	With({ guilds = 256, wanted = 200, honours = 60, modules = { Roster = roster } }, function()
+	-- (churchRanking at its fullest: the author's, the King's or a councillor's client, the twelve Apostles and the
+	-- missionaries past their boards' 1000 places.)
+	With({ guilds = 256, wanted = 200, honours = 60, modules = { Roster = roster }, publisher = true, apostles = 12, missionaries = 5000 }, function()
 		local file, total, sizes = { sections = {} }, 0, {}
 		for _, s in ipairs(B.Sections()) do
 			local got = B.GetSection(s.name)
@@ -699,6 +763,10 @@ test("bridge people: every section together, for a guild of 1000 members, 256 gu
 		eq(#d.games.data.events, 50)
 		eq(#d.profile.data.honors, 40)
 		eq(#d.church.data.public, 20)
+		eq(#d.churchRanking.data.boards, 6, "every board of the whole Church ranking")
+		for _, b in ipairs(d.churchRanking.data.boards) do
+			eq(#b.rows, b.list == "apostles" and 12 or 1000, b.list .. " " .. b.window .. ": its first 1000 places, whole")
+		end
 		local boards = d.rankings.data.boards
 		eq(#boards, 10, "every board")
 		for _, b in ipairs(boards) do assert(b.fields and b.rows, b.board) end

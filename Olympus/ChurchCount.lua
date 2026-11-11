@@ -5,8 +5,9 @@ local L = ns.L
 -- the points, the rankings and the public view. Places and their trust are Church.lua's.
 --
 -- How a recruit is counted, with nobody doing anything:
--- - Reading the guild's log. A Church person's own client, and about two drawn clients of each guild
---   where a Church person was heard over GUILD lately, read their own guild's event log every
+-- - Reading the guild's log. A Church person's own client, a keeper's (1.5.5: the author's too), and
+--   about two drawn clients of each guild where a Church person was heard over GUILD lately or (1.5.5)
+--   whose roster holds one by their own book, read their own guild's event log every
 --   READ_EVERY: QueryGuildEventLog(), then GUILD_EVENT_LOG_UPDATE, GetNumGuildEvents() and
 --   GetGuildEventInfo(i) -> type, player1, player2, rank, years, months, days, hours ago (Forever's
 --   Blizzard_Communities/GuildInfo.lua reads them the same way). Never in combat, never on the
@@ -401,14 +402,33 @@ function Count.Read()
 	return true
 end
 
--- Every READ_EVERY: a Church person's own client reads; another client reads with a chance that
--- makes about two reads per guild (its addon users counted), and only where a Church person was
--- heard over GUILD lately.
+-- (1.5.5) A Church person of our guild by this client's own book: one its roster holds now. His own
+-- client may never say so (one that holds a signed list older than the one naming him), and then no
+-- presence of his is heard (HeardPresence). Read from the book's own tables (Role per row is slower).
+function Count.PersonHere()
+	local R = ns.Roster
+	if not (R and R.complete == true and type(R.members) == "table") then return false end
+	local guild = OwnGuild()
+	if not guild or R.guild ~= guild then return false end
+	local S = Church.State()
+	for _, row in ipairs(R.members) do
+		local k = Key(row.full or row.name)
+		if k and (S.apostle[k] or (S.miss[k] and S.miss[k].valid) or S.corrOf[k]) then return true end
+	end
+	return false
+end
+
+-- Every READ_EVERY: a Church person's own client reads, and (1.5.5) a keeper's (the author's: a
+-- keeper, no Church person); another client reads with a chance that makes about two reads per guild
+-- (its addon users counted), and only where a Church person was heard over GUILD lately or (1.5.5)
+-- its own roster holds one (PersonHere). (Before 1.5.5 an Apostle whose client held an older list
+-- said nothing, so neither his guildmates' clients nor the author's read their log: nothing counted.)
 function Count.MaybeRead(now)
 	if now - lastReadTick < Count.READ_EVERY then return false end
 	lastReadTick = now
-	if not Church.IsPerson(ns.me) then
-		if not AnyClaim() then return false end
+	local keeper = Church.IsKeeper(ns.me) and not Church.IsKing(ns.me)
+	if not keeper and not Church.IsPerson(ns.me) then
+		if not AnyClaim() and not Count.PersonHere() then return false end
 		local peers = math.max(1, (ns.Comm.PeerCount and ns.Comm.PeerCount()) or 1)
 		if Count.chance() > math.min(1, 2 / peers) then return false end
 	end

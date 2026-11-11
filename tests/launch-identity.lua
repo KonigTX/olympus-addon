@@ -593,7 +593,9 @@ test("1.5.4 the Horde apart: the code's Horde King is the beta's: on Forever wit
 		eq(ns.KingCharacter(), nil, "no King by code off the beta's group")
 		eq(ns.IsKingCharacter(pin .. "-CAMWOWUS1Realm1PvE"), false)
 		eq(ns.IsKingCharacter(pin), false, "a name without a realm is of this Forever family")
-		eq(ns.KingUnpinned(), true, "no King named and no list here: as the Alliance with none")
+		-- (1.5.5, the dev: "asmon isnt the gm of any guild") On Forever's live realms no guild master stands for
+		-- the King, list or none (ns.KingIsMaster); it was true here, as on any realm with no King and no list.
+		eq(ns.KingUnpinned(), false, "no King named and no list here, and on Forever no guild master stands for him")
 		WithVerify(function(V) eq(V.Trusted(pin .. "-CAMWOWUS1Realm1PvE"), false, "no verifier") end)
 		eq(ns.Moderation.Rank(pin .. "-CAMWOWUS1Realm1PvE"), 0, "no moderation rank"); eq(ns.Moderation.IsKing(pin), false)
 		WithRelay(function(R, cns)
@@ -652,14 +654,17 @@ test("1.5.4 the Horde apart: a Horde client's relays are the signed list's Horde
 		eq((ns.AuthorCharactersOf("Alliance"))[1], ns.AUTHOR .. "-" .. ns.AUTHOR_REALM, "the code's for the Alliance, the beta's (no author here, as before)")
 		eq(ns.KingName(), "?")
 	end)
-	-- No list, on Forever: the launch pins and the code's Treasurer and author are the Alliance's.
+	-- No list, on Forever: the launch pins and the code's author are the Alliance's.
 	WithWorld("CAMWOWUS1Realm1PvE", "Horde", nil, function()
 		WithRelay(function(R)
 			eq(#R.Names(true), 0, "nothing by code on the Horde")
 			ns.faction = "Alliance"
 			local names = table.concat(R.Names(true), ",")
 			assert(names:find("Developus Olympicus", 1, true) and names:find("Asmongold Thereal", 1, true), "the Alliance's launch pins: " .. names)
-			assert(names:find(ns.TREASURER, 1, true) and names:find(ns.AUTHOR, 1, true), "the code's Treasurer and author, as before: " .. names)
+			assert(names:find(ns.AUTHOR, 1, true), "the code's author, as before: " .. names)
+			-- (1.5.5, the dev: "fern's char is the treasurer, pyralis is something else") The code's Treasurer is the
+			-- beta's: on Forever's live realms he is no relay (ns.TreasurerPins: the signed list's alone). It was one here.
+			assert(not names:find(ns.TREASURER, 1, true), "the code's Treasurer is no relay on Forever: " .. names)
 		end)
 		eq(#(ns.AuthorCharactersOf("Horde")), 0); eq((ns.AuthorCharactersOf("Alliance"))[1], ns.AUTHOR .. "-" .. ns.AUTHOR_REALM)
 	end)

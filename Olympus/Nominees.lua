@@ -537,6 +537,24 @@ function Nominees.Parts(guild, rev, entries)
 	return out
 end
 
+-- 1.5.5 (a member's report: the Legate's and the Federal Treasury's shields showed in the guilds he
+-- leads, never in the guild he is a member of). A list shows only where it was heard from its master,
+-- or on his own client. On Forever the channel's copy (below) reaches the master's own guild only if a
+-- relay's trickle passes it to that guild's reporter, which it may never do (the channel itself is
+-- dead there: Relay.lua's head), so the guild the list is for heard nothing of it. Now its parts go to
+-- his own guild over GUILD too, as he sends them, before the channel's copy; every guildmate takes
+-- them from the master our roster proves (Nominees.Handle), and a part heard both ways counts once.
+-- The King's guild's list the same way when its editor is in that guild.
+function Nominees.SendGuild(guild, parts, key)
+	local mine = GetGuildInfo("player")
+	if type(guild) ~= "string" or type(mine) ~= "string" or not (guild == mine or (IsMain(guild) and IsMain(mine))) then return 0 end
+	local sent = 0
+	for i, part in ipairs(parts or {}) do
+		if ns.Comm.Send("GUILD", part, key .. " guild " .. i) ~= false then sent = sent + 1 end
+	end
+	return sent
+end
+
 -- His list goes out (force: now; else once EVERY), from the guild master's client alone. Nobody
 -- named yet, nothing sent; named and then all removed, the empty list (everyone drops it).
 function Nominees.Send(force)
@@ -553,7 +571,9 @@ function Nominees.Send(force)
 	-- trickle one at a time, keyed by their type, and a list in more than one part reached no other
 	-- guild. Where the channel works, each part as before. The parts are the ones Nominees.Handle
 	-- takes, each as it always came.
-	ns.Comm.SendList("NM", Nominees.Parts(s.guild, tonumber(s.rev) or now, entries), nil, "nominees")
+	local parts = Nominees.Parts(s.guild, tonumber(s.rev) or now, entries)
+	Nominees.SendGuild(s.guild, parts, "nominees")
+	ns.Comm.SendList("NM", parts, nil, "nominees")
 	return true
 end
 
@@ -720,8 +740,10 @@ function Nominees.SendMain(force)
 	local entries = MainEntries(s)
 	-- An explicit empty snapshot is a revocation too; keep repeating it for late clients.
 	lastMainSent = now
-	-- (1.5.4) One list, as Nominees.Send's.
-	ns.Comm.SendList("NM", Nominees.Parts(Nominees.MainGuild(), rev, entries), nil, "mainnominees")
+	-- (1.5.4) One list, as Nominees.Send's; (1.5.5) to his own guild over GUILD too, when it is the King's.
+	local parts = Nominees.Parts(Nominees.MainGuild(), rev, entries)
+	Nominees.SendGuild(Nominees.MainGuild(), parts, "mainnominees")
+	ns.Comm.SendList("NM", parts, nil, "mainnominees")
 	return true
 end
 local function SendMainSoon()
@@ -879,13 +901,17 @@ local function TakeMain(sender, guild, rev, entries, set)
 end
 
 -- A part of a list, from the channel: only from that guild's master (Proven), put together with
--- the rest of its parts.
+-- the rest of its parts. (1.5.5) Over GUILD: our own guild's list alone (Nominees.SendGuild).
 function Nominees.Handle(dist, sender, text)
-	if dist ~= "CHANNEL" or type(sender) ~= "string" or type(text) ~= "string" or #text > 255 then return end
+	if (dist ~= "CHANNEL" and dist ~= "GUILD") or type(sender) ~= "string" or type(text) ~= "string" or #text > 255 then return end
 	local wire, guild, rev, i, n, body = text:match("^NM~(%d+)~([^~]*)~(%d+)~(%d+)~(%d+)~([^~]*)$")
 	if wire ~= Nominees.WIRE then return end -- (another version's: not ours to read)
 	guild, rev, i, n = GuildName(guild), Revision(rev), tonumber(i), tonumber(n)
 	if not guild or not rev or not i or not n or i < 1 or n < 1 or i > n or n > Nominees.MAX_PARTS then return end
+	if dist == "GUILD" then
+		local mine = GetGuildInfo("player")
+		if type(mine) ~= "string" or not (guild == mine or (IsMain(guild) and IsMain(mine))) then return end
+	end
 	sender = ns.FullName(sender)
 	if not Proven(sender, guild) then
 		return ns.Log("nominees: <%s>'s list from %s refused: not its guild master here", guild, sender)

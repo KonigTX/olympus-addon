@@ -260,6 +260,23 @@ What version 1.5.5 changes:
 Close and reopen the game after the update.
 
 Long live the King. Long live Olympus.]==]
+L.LETTER_1_5_6_TITLE, L.LETTER_1_5_6_HEAD, L.LETTER_1_5_6_SIGNED, L.LETTER_1_5_6_LINK = "Census delivery and guild tools", "Census delivery and guild tools", L.LETTER_1_5_4_SIGNED, L.LETTER_1_5_4_LINK
+L.LETTER_1_5_6 = [==[Your Majesty. Soldiers of Olympus.
+
+This update improves how guilds exchange census reports and recover missing pieces. The players acting as network relays need this version too for the new connections to work across guilds.
+
+- {guild} Relays find one another and exchange their census snapshots. Large snapshots can be passed through several guild members, with checks and requests for missing pieces.
+- {guild} The saved census gives way to sufficient newer reports even when an extra old guild report remains. Its original observation date stays visible while coverage is incomplete. The highest-average-level guild honour requires at least 950 members and follows the updated census.
+- {watch} The release carries the author's signed lists. The author's signed identity also restores access to the private High Council view. Guild-master verification holds wait where no appointed verifier is available.
+- {crown} Verification notices appear below the guilds on the King's Census screen. The King's identity remains separate from the guild master. The signed Treasurer and Quaestors have their own roles and frames.
+- {news} Olympus chat can show all rulesets or only PvP, PvE, RP or RP-PvP. Other rulesets are labelled in the combined view.
+- {church} Church history from characters on the same account is consolidated, and available recruitment logs help recover supported events.
+- {crown} The King and High Council can publish map names through the map editor. Office shields and the player-menu controls have also been revised.
+- {team} The first Bones lesson survives a roster update while the innkeeper's dialogue closes. The innkeeper starts the lesson and shows scoring groups more slowly. The guide pauses the demonstration until you close it.
+
+Close and reopen WoW after updating so the new network modules load. If census reports still fail to arrive, send an /oly bug report with your guild and ruleset.
+
+Long live the King. Long live Olympus.]==]
 L.LETTER_1_3_3_TITLE = "Your guild on the website"
 L.LETTER_1_3_3 = [==[Version 1.3.3.
 
@@ -427,6 +444,23 @@ O que muda na versão 1.5.5:
 - {news} O Companion Bridge diz de qual grupo de reinos e de qual tipo de reino são os dados de Wanted.
 
 Feche e abra o jogo de novo depois da atualização.
+
+Vida longa ao Rei. Vida longa ao Olympus.]==]
+	L.LETTER_1_5_6_TITLE, L.LETTER_1_5_6_HEAD, L.LETTER_1_5_6_SIGNED, L.LETTER_1_5_6_LINK = "Entrega do censo e ferramentas de guilda", "Entrega do censo e ferramentas de guilda", L.LETTER_1_5_4_SIGNED, L.LETTER_1_5_4_LINK
+	L.LETTER_1_5_6 = [==[Vossa Majestade. Soldados do Olympus.
+
+Esta atualização melhora a troca de relatórios do censo entre guildas e a recuperação de partes perdidas. Os jogadores que atuam como relays da rede também precisam atualizar para que as novas conexões funcionem entre guildas.
+
+- {guild} Os relays encontram uns aos outros e compartilham seus snapshots do censo. Snapshots grandes podem passar por vários membros das guildas, com conferência e pedidos das partes que faltarem.
+- {guild} O censo salvo dá lugar a uma quantidade suficiente de relatórios mais novos mesmo quando sobra um relatório antigo de outra guilda. A data original da observação continua visível enquanto a cobertura estiver incompleta. A honraria da guilda com maior nível médio exige pelo menos 950 membros e acompanha o censo atualizado.
+- {watch} A versão inclui as listas assinadas pelo autor. A identidade assinada do desenvolvedor também permite visualizar o High Council privado. A restrição do guild master por verificação aguarda onde ainda não existe um verificador nomeado disponível.
+- {crown} Os avisos de verificação ficam depois das guildas na tela de censo do Rei. A identidade do Rei permanece separada do guild master. O Tesoureiro e os Quaestors da lista assinada têm seus próprios cargos e molduras.
+- {news} O chat do Olympus pode mostrar todos os rulesets ou apenas PvP, PvE, RP ou RP-PvP. A visualização conjunta identifica as mensagens dos outros rulesets.
+- {church} O histórico da Igreja dos personagens da mesma conta é consolidado, e os registros de recrutamento disponíveis ajudam a recuperar os eventos compatíveis.
+- {crown} O Rei e o High Council podem publicar nomes de lugares pelo editor do mapa. Os escudos de cargos e os controles do menu de jogadores também foram revisados.
+- {team} A primeira lição de Bones continua mesmo se a lista da guilda atualizar durante o fechamento do diálogo do taverneiro. O taverneiro começa a lição e mostra os grupos de pontuação mais devagar. O guia pausa a demonstração até você fechá-lo.
+
+Feche e abra o WoW depois de atualizar para carregar os novos módulos da rede. Se os relatórios do censo continuarem sem chegar, envie um /oly bug com sua guilda e ruleset.
 
 Vida longa ao Rei. Vida longa ao Olympus.]==]
 	L.LETTER_1_3_3_TITLE = "Sua guilda no site"
@@ -672,6 +706,7 @@ L.INACTIVE_7 = "Offline 7+ days"
 L.INACTIVE_30 = "Offline 30+ days"
 L.INACTIVE_LINE = "Inactive: %d for 7+ days, %d for 30+ days"
 L.AVG_LEVEL = "Average level"
+L.GUILD_AVG_HONOUR_MIN = "The highest-average-level honour requires at least %d guild members."
 L.VACANCIES = "Free slots"
 L.CLICK_EXPAND = "Click to open / close"
 -- (1.5.5: the level race is off; the Realm page's census list of the highest levels stays, by this name.)
@@ -931,6 +966,8 @@ L.WORKSHOP_ASK_BTN_TIP = "Asks the players the roll call found on an old version
 L.AUTHOR_ONLINE = "The addon's author (%s) is online: Report a bug reaches him directly."
 L.TREASURER = "Treasurer"
 L.TREASURER_TITLE = "Treasurer of Olympus"
+-- (1.5.5) The Quaestor, the Treasurer's executor (ns.IsQuaestorName): his title on the profile and the tooltip.
+L.QUAESTOR_TITLE = "Quaestor"
 L.THRONE_SUMMON = "Summon Lords"
 L.THRONE_SUMMON_TIP = "Every Lord and Captain online gets a popup: 'The King summons his Lords'. You see who answers 'Present, my King', who is busy and who stays silent."
 L.THRONE_INSPECT = "Royal Inspection"
@@ -1586,7 +1623,7 @@ L.BORDERS_PREVIEW_TIP = "Shows this border round your own portrait, and on your 
 L.BORDERS_PREVIEW_TIP_MEMBER = "Shows the star of any other Olympus member after your name on your own frame and on every friendly player's nameplate (no border has it). On your screen only: nothing is sent, and a /reload forgets it. Click it again, or type /oly borders test off, to end it."
 L.BORDERS_WHO_GOLD_ELITE = "gold wings: the King"
 L.BORDERS_WHO_QUEEN_DRAGON = "the crimson dragon: the Queen"
-L.BORDERS_WHO_TREASURER_DRAGON = "the jewelled dragon: the federal Treasurer"
+L.BORDERS_WHO_TREASURER_DRAGON = "the jewelled dragon: the federal Treasurer and the Quaestor"
 L.BORDERS_WHO_SILVER_ELITE = "silver wings: the High Council"
 L.BORDERS_WHO_BRONZE_ELITE = "bronze wings: guild masters"
 L.BORDERS_WHO_MEMBER = "the star: any other member (a nameplate mark, no border)"
@@ -3134,6 +3171,7 @@ if GetLocale and GetLocale() == "ptBR" then
 	L.INACTIVE_30 = "Offline há 30+ dias"
 	L.INACTIVE_LINE = "Inativos: %d há 7+ dias, %d há 30+ dias"
 	L.AVG_LEVEL = "Nível médio"
+	L.GUILD_AVG_HONOUR_MIN = "A honraria pelo maior nível médio exige uma guilda com pelo menos %d membros."
 	L.VACANCIES = "Vagas"
 	L.CLICK_EXPAND = "Clique para abrir / fechar"
 	L.LEVEL_RACE = "Níveis mais altos"
@@ -3387,6 +3425,7 @@ if GetLocale and GetLocale() == "ptBR" then
 	L.AUTHOR_ONLINE = "O autor do addon (%s) está online: o Reportar bug chega direto nele."
 	L.TREASURER = "Tesoureiro"
 	L.TREASURER_TITLE = "Tesoureiro da Olympus"
+	L.QUAESTOR_TITLE = "Questor"
 	L.THRONE_SUMMON = "Convocar Lordes"
 	L.THRONE_SUMMON_TIP = "Todo Lorde e Capitão online recebe um aviso: 'O Rei convoca seus Lordes'. Você vê quem responde 'Presente, meu Rei', quem está ocupado e quem fica calado."
 	L.THRONE_INSPECT = "Inspeção Real"
@@ -4032,7 +4071,7 @@ if GetLocale and GetLocale() == "ptBR" then
 	L.BORDERS_PREVIEW_TIP_MEMBER = "Mostra a estrela de qualquer outro membro do Olympus depois do seu nome no seu quadro e na placa de identificação de todo jogador aliado (nenhuma borda a tem). Só na sua tela: nada é enviado, e um /reload esquece. Clique de novo, ou digite /oly borders test off, para encerrar."
 	L.BORDERS_WHO_GOLD_ELITE = "dourada com asas: o Rei"
 	L.BORDERS_WHO_QUEEN_DRAGON = "o dragão carmesim: a Rainha"
-	L.BORDERS_WHO_TREASURER_DRAGON = "o dragão de joias: o Tesoureiro federal"
+	L.BORDERS_WHO_TREASURER_DRAGON = "o dragão de joias: o Tesoureiro federal e o Questor"
 	L.BORDERS_WHO_SILVER_ELITE = "prateada com asas: o High Council"
 	L.BORDERS_WHO_BRONZE_ELITE = "bronze com asas: mestres de guilda"
 	L.BORDERS_WHO_MEMBER = "a estrela: qualquer outro membro (uma marca nas placas, sem borda)"
@@ -4936,7 +4975,7 @@ end
 -- chats on or off, and the switches that stay off until answered.
 ---------------------------------------------------------------------------
 L.CONSENT_TITLE = "Olympus: what this addon shares"
-L.CONSENT_INTRO = "Under the Olympus Accord you accepted, three things always go out while you are in an Olympus guild. One member of your guild, elected by the addons, sends your guild's census on the Olympus channel: its size, online count, classes, levels and rank names, its leader and officers (name, online, days away, class, level) and its five highest-level members (name, level, class), online or not. And your addon says hello to your guild: its version, your realm, whether your channel is public or sealed and whether you share your zone. And in game, your BattleTag goes privately to the moderation team alone (/oly accord). If you use the Olympus Companion app, it sends every Olympus and guild chat line your client receives, your own and locally hidden lines included, to Olympus's staff, who keep them to confirm what was said and to moderate. %s"
+L.CONSENT_INTRO = "Under the Olympus Accord you accepted, three things always go out while you are in an Olympus guild. One member of your guild, elected by the addons, sends your guild's census on the Olympus channel: its size, online count, classes, levels and rank names, its leader and officers (name, online, days away, class, level) and its five highest-level members (name, level, class), online or not. And your addon says hello to your guild: its version, your realm, whether your channel is public or sealed and whether you share your zone. And in game, your BattleTag goes privately to the moderation team alone (/oly accord). If you use the Olympus Companion app, it sends every Olympus and guild chat line your client receives, your own and locally hidden lines included, to Olympus's staff, who keep them to confirm what was said and to moderate. On Olympus's server, members of the Olympus Discord signed in to the Companion can see the census, the public rankings (with character names) and the Most Wanted list. %s"
 L.CONSENT_OPTIONAL = "Nothing below goes out, or shows, until you say Yes, and until you answer each one stays off, unless its line says a yes you gave before still stands."
 L.CONSENT_FOOTER = "The window, the census and your own guild's roster work whatever you answer. Change any answer later: /oly privacy opens this page again."
 L.CONSENT_DONE = "Done"
@@ -5020,7 +5059,7 @@ L.INSPECTION_OPT_UNANSWERED = "You don't take part in Royal Inspections until yo
 L.ROLLCALL_UNANSWERED = "The author's roll calls are not answered until you say yes (/oly rollcall on, or the Olympus page: /oly privacy). His update notices still show."
 if GetLocale and GetLocale() == "ptBR" then
 	L.CONSENT_TITLE = "Olympus: o que este addon compartilha"
-	L.CONSENT_INTRO = "Pelo Acordo do Olympus que você aceitou, três coisas sempre saem enquanto você está numa guilda Olympus. Um membro da sua guilda, eleito pelos addons, manda o censo da sua guilda no canal Olympus: tamanho, quantos online, classes, níveis e nomes das patentes, o líder e os oficiais (nome, online, dias ausente, classe, nível) e os cinco membros de nível mais alto (nome, nível, classe), online ou não. E o seu addon dá oi para a sua guilda: a versão dele, o seu reino, se o seu canal é público ou selado e se você compartilha a sua zona. E no jogo a sua BattleTag vai em privado apenas para a equipe de moderação (/oly accord). Se você usa o app Olympus Companion, ele manda cada linha dos chats do Olympus e da guilda recebida pelo seu cliente, incluindo as suas e as ocultas por filtros locais, para a staff do Olympus, que as guarda para confirmar o que foi dito e moderar. %s"
+	L.CONSENT_INTRO = "Pelo Acordo do Olympus que você aceitou, três coisas sempre saem enquanto você está numa guilda Olympus. Um membro da sua guilda, eleito pelos addons, manda o censo da sua guilda no canal Olympus: tamanho, quantos online, classes, níveis e nomes das patentes, o líder e os oficiais (nome, online, dias ausente, classe, nível) e os cinco membros de nível mais alto (nome, nível, classe), online ou não. E o seu addon dá oi para a sua guilda: a versão dele, o seu reino, se o seu canal é público ou selado e se você compartilha a sua zona. E no jogo a sua BattleTag vai em privado apenas para a equipe de moderação (/oly accord). Se você usa o app Olympus Companion, ele manda cada linha dos chats do Olympus e da guilda recebida pelo seu cliente, incluindo as suas e as ocultas por filtros locais, para a staff do Olympus, que as guarda para confirmar o que foi dito e moderar. No servidor do Olympus, membros do Discord do Olympus conectados ao Companion podem ver o censo, os rankings públicos (com nomes de personagens) e a lista de Mais Procurados. %s"
 	L.CONSENT_OPTIONAL = "Nada abaixo sai, nem aparece, até você dizer Sim, e até você responder cada um fica desligado, a menos que a linha diga que um sim que você deu antes ainda vale."
 	L.CONSENT_FOOTER = "A janela, o censo e o rol da sua própria guilda funcionam seja qual for a resposta. Para mudar depois: /oly privacy abre esta página de novo."
 	L.CONSENT_DONE = "Pronto"
@@ -7891,4 +7930,25 @@ if GetLocale and GetLocale() == "ptBR" then
 	L.LETTER_1_5_3_TITLE = "Os lembretes de verificação ficam com os GMs"
 	L.LETTER_1_5_3_HEAD = L.LETTER_1_5_3_TITLE
 	L.LETTER_1_5_3 = "Os lembretes de verificação foram ajustados na versão 1.5.3.\n\n- Os membros deixam de receber o popup, a mensagem de chat e o aviso no Censo quando o prazo vence.\n- Os mestres de guilda continuam recebendo os lembretes. Prazos, validações salvas e acompanhamento do High Council continuam.\n\nAtualize o Olympus e recarregue a interface para parar o aviso no seu cliente. Versões antigas instaladas mantêm o comportamento anterior."
+end
+
+-- Ruleset labels for the Olympus chat view.
+L.CHATWIN_GROUP_ALL = "All"
+L.CHATWIN_GROUP_PVP = "PvP"
+L.CHATWIN_GROUP_PVE = "PvE"
+L.CHATWIN_GROUP_RP = "Roleplay"
+L.CHATWIN_GROUP_RPPVP = "RP-PvP"
+L.CHATWIN_GROUP_TITLE = "Rulesets"
+L.CHATWIN_GROUP_TIP = "Choose which rulesets appear in Olympus chat. All labels messages from other rulesets."
+L.CHATWIN_GROUP_EMPTY = "No messages for this ruleset."
+L.CHATWIN_GROUP_HARDCORE = "Hardcore"
+if GetLocale and GetLocale() == "ptBR" then
+	L.CHATWIN_GROUP_ALL = "Todos"
+	L.CHATWIN_GROUP_PVP = "PvP"
+	L.CHATWIN_GROUP_PVE = "PvE"
+	L.CHATWIN_GROUP_RP = "Roleplay"
+	L.CHATWIN_GROUP_RPPVP = "RP-PvP"
+	L.CHATWIN_GROUP_TITLE = "Conjuntos de regras"
+	L.CHATWIN_GROUP_TIP = "Escolha quais conjuntos de regras aparecem no chat Olympus. Todos identifica as mensagens de outros conjuntos."
+	L.CHATWIN_GROUP_EMPTY = "Nenhuma mensagem deste conjunto de regras."
 end

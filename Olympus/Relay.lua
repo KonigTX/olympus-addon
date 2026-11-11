@@ -83,7 +83,7 @@ Relay.PRESENT_FOR = 1800     -- a presentation is kept this long past its last w
 Relay.PRESENT_GAP = 60       -- a client presents itself to one relay once this long at most
 Relay.MAX_PRESENTED = 4000   -- characters a relay keeps a presentation for: every client that may whisper it, not only reporters
 Relay.MAX_REFUSED = 200      -- refusals a relay notes for /oly relay admitted
-Relay.PUBLISHED = { "1.4.0", "1.4.1", "1.4.3", "1.4.4", "1.4.5", "1.4.6", "1.5.0", "1.5.1", "1.5.2", "1.5.3", "1.5.4", "1.5.5" }
+Relay.PUBLISHED = { "1.4.0", "1.4.1", "1.4.3", "1.4.4", "1.4.5", "1.4.6", "1.5.0", "1.5.1", "1.5.2", "1.5.3", "1.5.4", "1.5.5", "1.5.6" }
 Relay.RULES_EVERY = 1800     -- a relay asks the others for the rules this often; the author's client hands them out this often
 Relay.MAX_RULE_VERSIONS = 40 -- versions one word of rules may name
 Relay.VERIFY_ASK_EVERY = 180 -- one recovery ask across the signed relays, never per reporter
@@ -261,7 +261,8 @@ end
 -- factions, so the name sat DEAD_FOR and the word fell back to the channel, which Forever never
 -- delivers. The council's list names no side (every councillor is Alliance), the code's Treasurer
 -- and the launch pins are Alliance characters: an Alliance client's names are as they were.
-function Relay.Names(withSelf)
+-- (1.5.5) signedOnly: the Treasurer's pins only where the signed list names them (Relay.IsSignedRelay).
+function Relay.Names(withSelf, signedOnly)
 	local out, set = {}, {}
 	local mine = ns.ShortName(ns.me or ""):lower()
 	local horde = ns.faction == "Horde"
@@ -296,8 +297,10 @@ function Relay.Names(withSelf)
 	end
 	if ns.TreasurerPins then
 		local pins, signed = ns.TreasurerPins()
-		if not horde or signed == true then for _, n in ipairs(pins) do Add(n) end end
+		if (not horde and not signedOnly) or signed == true then for _, n in ipairs(pins) do Add(n) end end
 	end
+	-- (1.5.5) The Quaestors the signed list names for our side (ns.QuaestorPins), never by code.
+	if ns.QuaestorPins then for _, n in ipairs((ns.QuaestorPins(horde and "Horde" or "Alliance"))) do Add(n) end end
 	table.sort(out)
 	return out
 end
@@ -313,27 +316,98 @@ local function Hash(text)
 	for i = 1, #text do h = (h * 33 + text:byte(i)) % 2147483647 end
 	return h
 end
--- The relay this client whispers to now, and whether it is sure: among the relays that answered
--- a ping within VERIFIED_FOR (our own client counts, when it is a relay: no whisper needed), the
--- one our guild's name and the window pick, sure; with none answered yet, the same among those
--- not left out, not sure (Out then holds the message and pings them all); nil without any (then
--- the channel, as before).
+-- The relay this client whispers to now, and whether it is sure. A relay's own client, and a
+-- serving provisional relay (RelayFallback.lua), carry their own words: themselves, no whisper
+-- needed. (1.5.5) Anyone else, the first of:
+--   (1) the relay a rebalance pinned (Relay.PinnedRelay), once it answered;
+--   (2) the signed relays that answered a ping within VERIFIED_FOR, those whose answer named
+--       PREFER_VERSION or newer first (the recovered mesh and tree ship in 1.5.6);
+--   (3) the code's unsigned pins that answered, as transport alone (Relay.IsSignedRelay);
+--   (4) the signed relays not left out, none answered yet: not sure (Out holds the word and pings);
+--   (5) the provisional relays this client elected (RelayFallback.Elected), sure: each said yes or
+--       answered our ping within VERIFIED_FOR;
+-- else nil, and Out holds the word for HOLD_FOR: Forever's channel delivers nothing (1.5.4 sent it
+-- there). Within a step our guild's name and the window pick, so the load spreads.
+Relay.PREFER_VERSION = "1.5.6"
+local function Fallback()
+	local F = ns.RelayFallback
+	if type(F) == "table" and not F.missing then return F end
+	return nil
+end
+local function Answered(key, now) return now - (verified[key] or -math.huge) < Relay.VERIFIED_FOR end
+-- (The lanes' hooks, step 0's: asked through these so a hook a merge left out never stops the pick.)
+local function IsSigned(name)
+	local f = Relay.IsSignedRelay
+	if type(f) == "function" then return f(name) == true end
+	return Relay.IsRelay(name)
+end
+local function Pinned()
+	local f = Relay.PinnedRelay
+	return type(f) == "function" and f() or nil
+end
+local function Newer(key)
+	local f = Relay.AtLeast
+	return type(f) == "function" and f(relayVersion[key], Relay.PREFER_VERSION) == true
+end
 function Relay.Pick()
 	if not Relay.On() then return nil end
 	local now = Now()
-	local mine = ns.ShortName(ns.me or ""):lower()
-	local live, answered = {}, {}
-	for _, n in ipairs(Relay.Names(true)) do
+	local F = Fallback()
+	local function Picked(name, sure, why)
+		if F and type(F.NotePick) == "function" then F.NotePick(name, why, now) end
+		return name, sure
+	end
+	local mine = ns.ShortName(ns.me or "")
+	if Relay.IsRelay(ns.me) then return Picked(mine, true, "self") end
+	if F and F.Serving() then return Picked(mine, true, "provisional self") end
+	local seed = Lower(GetGuildInfo and GetGuildInfo("player") or ns.me or "") .. "#" .. tostring(math.floor(now / Relay.PICK_WINDOW))
+	local function From(pool) return pool[(Hash(seed) % #pool) + 1] end
+	local pin = Pinned()
+	if type(pin) == "string" and pin ~= "" then
+		local key = Lower(ns.ShortName(pin))
+		if (offline[key] or 0) <= now and Answered(key, now) then return Picked(ns.ShortName(pin), true, "pinned") end
+	end
+	local newer, signed, pins, live = {}, {}, {}, {}
+	for _, n in ipairs(Relay.Names(false)) do
 		local key = n:lower()
 		if (offline[key] or 0) <= now then
-			live[#live + 1] = n
-			if key == mine or now - (verified[key] or -math.huge) < Relay.VERIFIED_FOR then answered[#answered + 1] = n end
+			local isSigned = IsSigned(n)
+			if not Answered(key, now) then
+				if isSigned then live[#live + 1] = n end
+			elseif not isSigned then pins[#pins + 1] = n
+			elseif Newer(key) then newer[#newer + 1] = n
+			else signed[#signed + 1] = n end
 		end
 	end
-	local pool = #answered > 0 and answered or live
-	if #pool == 0 then return nil end
-	local seed = Lower(GetGuildInfo and GetGuildInfo("player") or ns.me or "") .. "#" .. tostring(math.floor(now / Relay.PICK_WINDOW))
-	return pool[(Hash(seed) % #pool) + 1], #answered > 0
+	if #newer > 0 then return Picked(From(newer), true, "signed " .. Relay.PREFER_VERSION) end
+	if #signed > 0 then return Picked(From(signed), true, "signed") end
+	if #pins > 0 then return Picked(From(pins), true, "unsigned pin") end
+	if #live > 0 then return Picked(From(live), false, "not answered yet") end
+	if F then
+		local elected = F.Elected(now)
+		if #elected > 0 then return Picked(From(elected), true, "provisional") end
+	end
+	return Picked(nil, nil, "none")
+end
+-- (1.5.5, for RelayFallback.lua) When `name` last answered our ping; whether it is left out now; a
+-- signed relay but us that answered within VERIFIED_FOR; how many signed relays are not left out.
+function Relay.AnsweredAt(name) return verified[Lower(ns.ShortName(name or ""))] end
+function Relay.IsLeftOut(name) return (offline[Lower(ns.ShortName(name or ""))] or 0) > Now() end
+function Relay.SignedAnswered(now)
+	now = now or Now()
+	for _, n in ipairs(Relay.Names(false)) do
+		local key = n:lower()
+		if (offline[key] or 0) <= now and Answered(key, now) and IsSigned(n) then return n end
+	end
+	return nil
+end
+function Relay.SignedLive(now)
+	now = now or Now()
+	local k = 0
+	for _, n in ipairs(Relay.Names(false)) do
+		if (offline[n:lower()] or 0) <= now and IsSigned(n) then k = k + 1 end
+	end
+	return k
 end
 
 local function LeaveOut(name, why)
@@ -389,14 +463,34 @@ local function Sweep()
 end
 Relay.Sweep = Sweep
 
+-- (1.5.5) A relay named again (a provisional relay's "no", or its stand-down, named one it reached:
+-- RelayFallback.lua): its left-out mark goes and it is pinged now.
+function Relay.Reconsider(name)
+	local short = ns.ShortName(name or "") or ""
+	if short == "" or not Relay.IsRelay(short) then return false end
+	local key = short:lower()
+	offline[key], pinged[key] = nil, nil
+	Ping(short)
+	return true
+end
+
 -- Held for the first relay to answer. A keyed message takes a waiting one's place, as in Comm's
 -- queue (the newest payload, a supplied callback replaces the old one); past PENDING_MAX the
--- oldest is dropped (its callback told).
-local function Hold(parts, logged, done, key, urgent, options)
+-- oldest is dropped (its callback told, "dropped").
+-- (1.5.5) Held HOLD_FOR at most for a relay picked sure (Daniel: "eu não quero que nenhum dado seja
+-- perdido"): the signed relays are swept once a PING_WAIT at most and the provisional relays elected
+-- meanwhile (RelayFallback.lua), and what waited goes to the first relay picked sure, signed or
+-- provisional. 1.5.4 sent it on after PING_WAIT to a relay that had not answered, or with none to
+-- pick on Forever's channel, which delivers nothing: both lost it. Past HOLD_FOR its callback hears
+-- "norelay" (counted, /oly bug), once.
+Relay.HOLD_FOR = 600
+local lastLook = -math.huge
+local function Hold(parts, logged, done, key, urgent, options, at, copied)
+	at = at or Now()
 	if key then
 		for _, p in ipairs(pending) do
 			if p.key == key then
-				p.parts, p.logged, p.urgent, p.options = parts, logged, urgent, options
+				p.parts, p.logged, p.urgent, p.options, p.at, p.copied = parts, logged, urgent, options, at, copied
 				p.done = done or p.done
 				return
 			end
@@ -404,27 +498,78 @@ local function Hold(parts, logged, done, key, urgent, options)
 	end
 	if #pending >= Relay.PENDING_MAX then
 		local old = table.remove(pending, 1)
-		if old.done then ns.SafeCall("relay done", old.done, false) end
+		stats.holdDropped = (stats.holdDropped or 0) + 1
+		if old.done then ns.SafeCall("relay done", old.done, false, "dropped") end
 	end
-	pending[#pending + 1] = { parts = parts, logged = logged, done = done, key = key, urgent = urgent, options = options }
+	pending[#pending + 1] = { parts = parts, logged = logged, done = done, key = key, urgent = urgent, options = options, at = at, copied = copied }
 end
--- What waited goes out to the relay picked now: once one answered, or anyway after PING_WAIT (to
--- the pick as 1.4.3 did; an older relay may not hear it, and registrations and the census repeat).
+-- What waited HOLD_FOR goes, its callback told "norelay".
+local function Expire(now)
+	local kept, gone = {}, {}
+	for _, p in ipairs(pending) do
+		if now - (p.at or now) >= Relay.HOLD_FOR then gone[#gone + 1] = p else kept[#kept + 1] = p end
+	end
+	if #gone == 0 then return end
+	pending = kept
+	stats.norelay = (stats.norelay or 0) + #gone
+	ns.Log("relay: %d word(s) held %ds with no relay to take them: dropped", #gone, Relay.HOLD_FOR)
+	for _, p in ipairs(gone) do
+		if p.done then ns.SafeCall("relay done", p.done, false, "norelay") end
+	end
+end
+-- A relay to take what waits: the signed relays pinged (once a PING_WAIT at most when none is
+-- live), and the provisional relays' election run where this client elects (RelayFallback.Want).
+local function LookForRelay(none)
+	local now = Now()
+	if not none or now - lastLook >= Relay.PING_WAIT then
+		lastLook = now
+		Sweep()
+	end
+	local F = Fallback()
+	if F and type(F.Want) == "function" then ns.SafeCall("relay fallback", F.Want, now) end
+end
+-- What waited goes out to the relay picked now, once one is picked sure (an answer, or a provisional
+-- relay elected); else, from the hold's timer (anyway), the stale ones go and a relay is looked for.
+-- (1.5.5) A provisional relay hears first that a relay answered us (RelayFallback.Answered): a
+-- signed one ends its service.
 local function Flush(anyway)
+	local F = Fallback()
+	if F and type(F.Answered) == "function" then ns.SafeCall("relay fallback", F.Answered) end
 	if flushing or #pending == 0 then return end
-	local _, sure = Relay.Pick()
-	if not sure and not anyway then return end
+	local relay, sure = Relay.Pick()
+	if not sure then
+		if anyway then
+			Expire(Now())
+			if #pending > 0 then LookForRelay(relay == nil) end
+		end
+		return
+	end
 	flushing = true
 	local list = pending
 	pending = {}
 	for _, p in ipairs(list) do
-		if not Relay.Out(p.parts, p.logged, p.done, p.key, p.urgent, p.options, true) and p.done then
-			ns.SafeCall("relay done", p.done, false)
+		if not Relay.Out(p.parts, p.logged, p.done, p.key, p.urgent, p.options, true, p.at, p.copied) and p.done then
+			ns.SafeCall("relay done", p.done, false, "norelay")
 		end
 	end
 	flushing = false
 end
 Relay.Flush = Flush
+-- While anything waits: looked at again every PING_WAIT (Flush, anyway).
+local function HoldTimer()
+	if holding then return end
+	holding = true
+	ns.After(Relay.PING_WAIT + 1, "relay hold", function()
+		holding = false
+		Flush(true)
+		if #pending > 0 then HoldTimer() end
+	end)
+end
+-- (1.5.5) What waits and what HOLD_FOR dropped, for RelayFallback.Stats (/oly bug); the look's clock (tests).
+function Relay.HoldStats()
+	return { held = #pending, norelay = stats.norelay or 0, dropped = stats.holdDropped or 0, refused = stats.refusedOut or 0 }
+end
+function Relay.ResetHold() lastLook = -math.huge end
 
 -- Hop 1: what a module said "on the channel" goes to our relay. parts: the message's pieces as the
 -- channel would carry them (each one whisper). Returns true when handed to the queue.
@@ -546,57 +691,25 @@ local function CrownToRelays(parts, pick)
 		end
 	end
 end
-function Relay.Out(parts, logged, done, key, urgent, options, anyway)
-	if not anyway and not logged and #parts == 1 and IsInGuild() then
-		local route = GuildRoute(parts[1])
-		if route == "only" then
-			if OwnGuild(parts[1], done, key, urgent, options) ~= nil then return true end
-		elseif route == "too" then
-			OwnGuild(parts[1], nil, key, urgent, options)
-		end
-	end
-	local relay, sure = Relay.Pick()
-	if not relay then return false end
-	if not anyway then CrownToRelays(parts, relay) end
-	-- (1.4.5) A chat line reaches the sender's own guild at once, over GUILD, as hop 3 from himself,
-	-- whatever the relays do (one dead, none answered yet): guildmates take it once (Seen), and
-	-- the relay's copy that comes back later counts once too. The relay still carries it to the
-	-- other guilds. The flush of a held line sends to the guild no second time.
-	if logged and not anyway and IsInGuild() then
-		local valid, why = PermitParts(parts, options)
-		if not valid then
-			if done then ns.SafeCall("relay done", done, false, why) end
-			return true
-		end
-		-- (The review of the 1.5.4 candidate.) Our line is taken here by our plain name as it leaves,
-		-- as Deliver takes a chat line: the copies that come back, our own client the relay (its
-		-- reporter branch) or another relay's RM naming us as its client stamped us, are this line,
-		-- and were handed to the guild a second time, shown to us again under the other stamp.
-		for _, p in ipairs(parts) do
-			if ToGuild("L", ns.me, p) then Seen(ns.ShortName(ns.me), p) end
-		end
-	end
-	if not sure and not anyway then
-		-- A held message is refused now, as its whispers would be later, when the capability
-		-- that guards it refuses it (1.5.2 checked it for the text fallback, gone in 1.5.4).
-		local valid, why = PermitParts(parts, options)
-		if not valid then
-			if done then ns.SafeCall("relay done", done, false, why) end
-			return true
-		end
-		-- (1.4.4) No relay answered yet: all pinged at once, the message held for the first answer.
-		-- (1.5.4: no channel text meanwhile; ChatHall.lua says why.)
-		Sweep()
-		Hold(parts, logged, done, key, urgent, options)
-		if not holding then
-			holding = true
-			ns.After(Relay.PING_WAIT + 1, "relay hold", function()
-				holding = false
-				Flush(true)
-			end)
-		end
-		return true
-	end
+-- (1.5.5) A word our guild has at once while no relay is there (Out): a single one that is no census
+-- report of ours, no registration and no ask only a relay answers (NO_FORWARD; a verifier's decision
+-- goes), nor one GuildRoute gave the guild already. Our own census report is each guildmate's own.
+local function GuildCopy(parts)
+	local p = parts[1]
+	if #parts ~= 1 or type(p) ~= "string" then return false end
+	if p:match("^C%w+:%d+:%d+:") or p:match("^RR~") or GuildRoute(p) then return false end
+	if Relay.NO_FORWARD[p:sub(1, 2)] and not p:match("^GV~1~[ARS]~") then return false end
+	return true
+end
+local function OwnReport(parts) return type(parts[1]) == "string" and parts[1]:match("^C%w+:1:%d+:R[12]~") ~= nil end
+-- A relay that may carry our words: a signed relay (or a code pin), or a provisional relay we elected.
+local function Carrier(name)
+	if Relay.IsRelay(name) then return true end
+	local F = Fallback()
+	return F ~= nil and type(F.IsElected) == "function" and F.IsElected(name) == true
+end
+-- The word to one relay. True always: handed on, or refused with its callback told (once).
+local function SendTo(relay, parts, logged, done, key, urgent, options)
 	local flag = logged and "L" or "P"
 	parts = Identify(parts, relay) -- (1.5.4: a registration names our version to a relay that named its own)
 	-- Our own client the relay: handed to it here, whole (a whisper to oneself is never delivered).
@@ -619,7 +732,13 @@ function Relay.Out(parts, logged, done, key, urgent, options, anyway)
 			pieces[#pieces + 1], originals[e] = e, p
 		end
 	end
-	if #pieces == 0 or #pieces > ns.Codec.MAX_CHUNKS then return false end
+	-- (1.5.5) Too long for one transfer: refused, its callback told once. 1.5.4 returned false and
+	-- Comm put it on the channel, with the same callback to tell a second time.
+	if #pieces == 0 or #pieces > ns.Codec.MAX_CHUNKS then
+		stats.refusedOut = (stats.refusedOut or 0) + 1
+		if done then ns.SafeCall("relay done", done, false, "size") end
+		return true
+	end
 	Ping(relay)
 	Quiet(relay)
 	stats.out = stats.out + 1
@@ -629,21 +748,100 @@ function Relay.Out(parts, logged, done, key, urgent, options, anyway)
 		if options.permit then
 			-- Comm normalized key -> guardKey on the logical CHANNEL job. Restore
 			-- the public capability shape when creating its physical WHISPER job.
-			-- Only these exact envelopes to this still-signed relay may spend it;
+			-- Only these exact envelopes to this still-signed (or still-elected) relay may spend it;
 			-- the owner's permit continues to see its original lane and payload.
 			pass.key = options.guardKey
 			pass.permit = function(owner, guardKey, dist, target, message)
 				local original = originals[message]
 				if owner ~= options.owner or guardKey ~= options.guardKey or dist ~= "WHISPER"
-					or target ~= relay or not Relay.IsRelay(target) or not original then return false, "lane" end
+					or target ~= relay or not Carrier(target) or not original then return false, "lane" end
 				return options.permit(owner, guardKey, "CHANNEL", nil, original)
 			end
 		end
 	end
-	if #pieces == 1 then
-		return ns.Comm.Whisper(relay, pieces[1], key, urgent, logged, done, pass) ~= false
+	if #pieces == 1 then ns.Comm.Whisper(relay, pieces[1], key, urgent, logged, done, pass)
+	else ns.Comm.SendBatch("WHISPER", pieces, key, relay, urgent, done, pass) end
+	return true
+end
+-- (1.5.5) Out takes every word it is handed on Forever and tells its callback once: sent, refused,
+-- dropped, or "norelay" past HOLD_FOR (Comm makes no channel job there any more). False only where
+-- the relay does not run (off Forever). at, copied: a held word's first hold, and whether our guild
+-- had its copy then (Flush hands them back).
+function Relay.Out(parts, logged, done, key, urgent, options, anyway, at, copied)
+	if not Relay.On() then return false end
+	if not anyway and not logged and #parts == 1 and IsInGuild() then
+		local route = GuildRoute(parts[1])
+		if route == "only" then
+			if OwnGuild(parts[1], done, key, urgent, options) ~= nil then return true end
+		elseif route == "too" then
+			OwnGuild(parts[1], nil, key, urgent, options)
+		end
 	end
-	return ns.Comm.SendBatch("WHISPER", pieces, key, relay, urgent, done, pass) ~= false
+	local relay, sure = Relay.Pick()
+	if relay and not anyway then CrownToRelays(parts, relay) end
+	-- (1.4.5) A chat line reaches the sender's own guild at once, over GUILD, as hop 3 from himself,
+	-- whatever the relays do (one dead, none answered yet): guildmates take it once (Seen), and
+	-- the relay's copy that comes back later counts once too. The relay still carries it to the
+	-- other guilds. The flush of a held line sends to the guild no second time.
+	if logged and not anyway and IsInGuild() then
+		local valid, why = PermitParts(parts, options)
+		if not valid then
+			if done then ns.SafeCall("relay done", done, false, why) end
+			return true
+		end
+		-- (The review of the 1.5.4 candidate.) Our line is taken here by our plain name as it leaves,
+		-- as Deliver takes a chat line: the copies that come back, our own client the relay (its
+		-- reporter branch) or another relay's RM naming us as its client stamped us, are this line,
+		-- and were handed to the guild a second time, shown to us again under the other stamp.
+		for _, p in ipairs(parts) do
+			if ToGuild("L", ns.me, p) then Seen(ns.ShortName(ns.me), p) end
+		end
+	end
+	if not sure then
+		if not anyway then
+			-- A held message is refused now, as its whispers would be later, when the capability
+			-- that guards it refuses it (1.5.2 checked it for the text fallback, gone in 1.5.4).
+			local valid, why = PermitParts(parts, options)
+			if not valid then
+				if done then ns.SafeCall("relay done", done, false, why) end
+				return true
+			end
+			-- (1.5.5) No relay at all: our guild has a single word at once, as a relay would hand it
+			-- (RG from ourselves, OwnGuild), whatever becomes of it on the way to the others.
+			if not relay and not logged and IsInGuild() and GuildCopy(parts) then
+				OwnGuild(parts[1], nil, key, urgent, options)
+				copied = true
+			end
+		end
+		-- (1.4.4) No relay answered yet: all pinged at once, the message held for the first answer.
+		-- (1.5.4: no channel text meanwhile; ChatHall.lua says why.) (1.5.5) Held HOLD_FOR at most.
+		LookForRelay(relay == nil)
+		Hold(parts, logged, done, key, urgent, options, at, copied)
+		HoldTimer()
+		return true
+	end
+	-- (1.5.5) While provisional relays carry our words, our census report goes to two of them (its
+	-- guild's hash picks which): a row counts where two provisional snapshots agree (Data's witnesses).
+	local F = Fallback()
+	if OwnReport(parts) and F and not Relay.IsRelay(ns.me) and F.Active() then
+		local targets = F.ReportTargets(GetGuildInfo and GetGuildInfo("player") or ns.me or "")
+		if #targets > 1 then
+			local left, ok = #targets, false
+			local function Each(sent, why)
+				left, ok = left - 1, ok or sent == true
+				if left == 0 and done then ns.SafeCall("relay done", done, ok, (not ok) and (why or "failed") or nil) end
+			end
+			for _, target in ipairs(targets) do SendTo(target, parts, logged, Each, nil, urgent, options) end
+			return true
+		end
+	end
+	-- (1.5.5) A provisional relay hands no other origin's word on: our guild has a single word at once
+	-- (unless it had it when the word was held), as it would from a signed relay's hand-over.
+	if not copied and not logged and IsInGuild() and not Relay.IsRelay(relay)
+		and relay:lower() ~= ns.ShortName(ns.me or ""):lower() and GuildCopy(parts) then
+		OwnGuild(parts[1], nil, key, urgent, options)
+	end
+	return SendTo(relay, parts, logged, done, key, urgent, options)
 end
 
 -- The reporter's registration (Comm.MaybeBroadcast, every REGISTER_EVERY while elected).
@@ -1624,6 +1822,61 @@ local function KingLayer(origin, body, name, now)
 end
 Relay.ResetKingSent = function() wipe(kingSent) end -- (tests)
 
+-- (1.5.5) One census snapshot for each registrant. The relay's own CG set and each set another relay
+-- crossed here went to every registrant under its origin's key: a registrant got every origin's, and the
+-- load grew with the relays. Now a whole CG~1 or CG~2 "S" set goes to a registrant under one key, "census
+-- snapshot", in a waiting one's place, and which origin's set it is the origin preference says
+-- (CensusFor), from the last whole set of each origin held here (MAX_RELAYS origins) with its time; a
+-- registrant is never sent again the set it was handed last.
+local census = { held = {}, sent = {}, sentN = 0 }
+local function ForgetCensus()
+	wipe(census.held); wipe(census.sent)
+	census.sentN, census.set, census.entry = 0, nil, nil
+end
+-- The held entry of a whole census set, held now (its time the snapshot's own); nil for any other set.
+local function CensusSet(origin, set, now)
+	if census.set == set then return census.entry end
+	census.set, census.entry = set, nil
+	local id, head
+	if type(set) == "table" and type(set[1]) == "string" then id, head = set[1]:match("^C(%w+):%d+:%d+:(.*)$") end
+	if not head or not head:match("^CG~[12]~S~") then return nil end
+	local made = tonumber(head:match("^CG~[12]~S~(%d+)~")) or now
+	if made > now then made = now end
+	local okey = Lower(ns.ShortName(origin))
+	local e = { origin = origin, set = set, made = made, key = okey .. "#" .. id .. "#" .. made }
+	census.held[okey] = e
+	local n, oldest = 0, nil
+	for k, x in pairs(census.held) do
+		n = n + 1
+		if not oldest or x.made < census.held[oldest].made then oldest = k end
+	end
+	if n > Relay.MAX_RELAYS and oldest then census.held[oldest] = nil end
+	if census.sentN > 2 * Relay.MAX_REPORTERS then wipe(census.sent); census.sentN = 0 end
+	census.entry = e
+	return e
+end
+-- The set registrant r is handed (the origin preference). One that does not take the tree (1.5.3, 1.5.4,
+-- or 1.5.5 before a restart: its census trusts the Church's ledger relays alone) gets the newest set of a
+-- ledger relay at most Data.FRESH old; else, and one that takes it (its census trusts the author too),
+-- the newest set of an origin the census trusts (Data.CensusTrusted); else the set at hand.
+local function CensusFor(r, e, now)
+	local D, C = ns.Data, ns.Church
+	local fresh = type(D) == "table" and tonumber(D.FRESH) or 15 * 60
+	local keep = type(D) == "table" and tonumber(D.TOTAL_KEEP) or 24 * 60 * 60
+	local best
+	if not Relay.TreeCapable(r.name) and type(C) == "table" and not C.missing and type(C.IsLedgerRelay) == "function" then
+		for _, x in pairs(census.held) do
+			if now - x.made <= fresh and (not best or x.made > best.made) and C.IsLedgerRelay(x.origin) == true then best = x end
+		end
+	end
+	if not best and type(D) == "table" and type(D.CensusTrusted) == "function" then
+		for _, x in pairs(census.held) do
+			if now - x.made <= keep and (not best or x.made > best.made) and D.CensusTrusted(x.origin) == true then best = x end
+		end
+	end
+	return best or e
+end
+
 local function ToReporters(flag, origin, body, sender)
 	local now = Now()
 	if Crown(origin, body) then
@@ -1651,7 +1904,8 @@ local function ToReporters(flag, origin, body, sender)
 	-- fragment against the four-piece ordinary trickle stranded every larger
 	-- snapshot mid-transfer. This admits no new authority and does not bypass
 	-- Comm's queue/throughput limits; malformed or unreserved parts use the trickle.
-	local snapshot = SnapshotPart(origin, body, now)
+	-- (1.5.5) And a signed relay's own staff word (Relay.StaffWord), in one piece: past the trickle.
+	local snapshot = SnapshotPart(origin, body, now) or Relay.StaffWord(origin, body)
 	-- A trickle-exempt word in pieces goes to the other reporters as a whole set (above).
 	-- (1.5.4) And a list of a kind carried whole, from any origin, in one piece too (ListSet); once
 	-- whole, to the reporters ListSend names, in place of a waiting batch alone when it says so.
@@ -1680,6 +1934,7 @@ local function ToReporters(flag, origin, body, sender)
 		end
 	end
 	local pieces
+	local snap = flag ~= "L" and type(set) == "table" and CensusSet(origin, set, now) or nil -- (1.5.5: a census set, held)
 	for g, r in pairs(reporters) do
 		if now - r.t > Relay.REPORTER_FOR or Quarantined(r.name) then
 			reporters[g] = nil
@@ -1694,6 +1949,20 @@ local function ToReporters(flag, origin, body, sender)
 			-- (Some pieces of the set are still on their way: the whole set goes once they are here.)
 		elseif set and listTo and not listTo[g] then
 			-- (A list his guild holds already, or one refused: not to him.)
+		elseif set and type(ns.RelayTree) == "table" and not ns.RelayTree.missing and type(ns.RelayTree.Offer) == "function"
+			and ns.RelayTree.Offer(r, origin, set, flag, own) == true then
+			-- (1.5.5) The tree took this set for this reporter (RelayTree.Offer).
+		elseif set and snap then
+			-- (1.5.5) One census snapshot a registrant, the origin's its census trusts (CensusFor), keyed
+			-- "census snapshot" whatever its origin: a newer one takes a waiting one's place. Never the set
+			-- it was handed last again.
+			local e, who = CensusFor(r, snap, now), Lower(r.name)
+			if census.sent[who] ~= e.key then
+				if census.sent[who] == nil then census.sentN = census.sentN + 1 end
+				census.sent[who] = e.key
+				e.batches = e.batches or SetBatches("P", e.origin, e.set)
+				DripBatches(r.name, "census snapshot", e.batches, waitingOnly)
+			end
 		elseif set then
 			batches = batches or SetBatches(flag, origin, set)
 			-- (review prototype) A newer copy replaces a waiting one only where it supersedes it: the
@@ -1752,36 +2021,87 @@ local function ToReporters(flag, origin, body, sender)
 	if own or snapshot then return set end
 end
 
--- (1.4.6) The same word to every other relay that answered us lately (RX), each to hand to its
--- own reporters. The origin, when it is a relay itself, is not sent its own word.
+-- (1.5.5) The mesh. On Forever every live relay was an island: a relay's own client counts itself as
+-- answered (Pick), so it never pinged another one, none learned that another answered, and Across
+-- reached nobody: a word reached only the guilds registered with the relay that heard it, and the
+-- author's census never left his own relay's guilds (the reports of 2026-11-09 and 11-10). Now each
+-- signed relay pings the other signed relays (Relay.Mesh: 10 s after login, then every MESH_EVERY)
+-- and tells each one that answered that it is of the mesh: RJ~1~<registrants>~<tree-capable ones>,
+-- one whisper. A mesh peer (Relay.MeshPeer) answered within VERIFIED_FOR and said RJ within
+-- MESH_FOR. A 1.5.4 relay answers the ping and never says RJ, so it never becomes one and is never
+-- sent RX: an RX marks its sender answered there, and that relay's Across would then send it every
+-- word its clients say, piece by piece, flooding both queues.
+Relay.MESH_EVERY = 300
+Relay.MESH_FOR = 630         -- (two rounds missed, and the whispers' way)
+Relay.MESH_CROSS_EVERY = 300 -- our own census snapshot to one peer this often at most
+-- The staff words (by RW, HandleIn and HandleVerify below): one piece, said by a signed relay's own
+-- client, of these kinds; T1 but the King's crown and presence (T1~P, T1~Q, T1~o: CrownToRelays).
+Relay.CROSS_KINDS = { T1 = true, D1 = true, O1 = true, O2 = true, MD = true, TF = true, MC = true, HA = true,
+	V4 = true, U2 = true, BQ = true, PS = true, TA = true, WY = true, W5 = true, CX = true, RE = true }
+-- seen: peer (short name, lower) -> when its RJ came; peers: -> { regs, tree } its RJ named; sent: ->
+-- when ours went to it; cg: -> when our census snapshot last went across to it; plain: guild (lower)
+-- -> when a registration came from a client that is not tree-capable; n: counters (/oly bug).
+local mesh = { seen = {}, peers = {}, sent = {}, cg = {}, plain = {}, n = {} }
+-- Whether a signed relay (short name, lower) is a mesh peer now (Relay.MeshPeer asks its signature too).
+function mesh.Fresh(key, now)
+	return now - (verified[key] or -math.huge) < Relay.VERIFIED_FOR and now - (mesh.seen[key] or -math.huge) < Relay.MESH_FOR
+end
+local function StaffKind(body)
+	if type(body) ~= "string" then return false end
+	local word = body:match("^C%w+:1:1:(.*)$") or body -- (a word Comm.SendChunked cut into one piece: a census look)
+	return word:sub(3, 3) == "~" and Relay.CROSS_KINDS[word:sub(1, 2)] == true and not word:match("^T1~[PQo]~")
+end
+-- A staff word of a signed relay's own (its origin is the relay): past the trickle (ToReporters).
+function Relay.StaffWord(origin, body)
+	return StaffKind(body) and type(origin) == "string" and Relay.IsSignedRelay(origin)
+end
+
+-- (1.4.6) The same word to the other relays (RX), each to hand to its own reporters. The origin,
+-- when it is a relay itself, is not sent its own word. (1.5.5) To mesh peers alone, and only: this
+-- relay's own census snapshots (CG, CX and GV "S" words) and lists (LS), whole, its CG snapshot to
+-- each peer once a MESH_CROSS_EVERY at most (a newer copy takes a waiting one's place); and the chat
+-- lines. Every other word stays on its island, as in 1.5.4: the guilds' reports and the members' own
+-- snapshots (the author's relay heard hundreds of 30-piece ones, two whispers a piece to each peer)
+-- travel as rows of each relay's own snapshot, which carries every trusted row it took from its peers.
 local function Across(flag, origin, body, set)
 	if set == false then return end -- the whole transfer follows its last piece
+	local mine, from = Lower(ns.ShortName(ns.me or "")), Lower(ns.ShortName(origin))
+	local kind, cg -- (a chat line: neither; it goes unkeyed, as ever)
+	if flag == "L" then
+		-- (A logged word is a chat line here, as Comm's own lane has it; our own staff word goes as RW.)
+		if set or (ns.FullName(origin) == ns.me and StaffKind(body)) then return end
+	else
+		if ns.FullName(origin) ~= ns.me then return end
+		local first = type(set) == "table" and set[1] or body
+		local head = first:match("^C%w+:%d+:%d+:(.*)$") or first
+		kind = head:match("^(CG~[12]~S)~%d+~") or head:match("^(GV~1~S)~%d+~") or ListKind(head)
+			or (type(set) == "table" and #set > 1 and head:match("^(CX~[123]~S)~")) or nil
+		if not kind then return end
+		cg = kind:sub(1, 2) == "CG"
+	end
 	local now = Now()
-	local mine, from = ns.ShortName(ns.me or ""):lower(), ns.ShortName(origin):lower()
-	-- (1.5.4) The King's presence keyed apart from his crown (both T1): a crown sent after it must not
-	-- take its place in the queue, since only the presence passes the other relay's trickle.
-	local presence = flag ~= "L" and KingPresence(origin, body)
 	local pieces, batches
-	for _, name in ipairs(Relay.Names(false)) do
+	for _, name in ipairs(Relay.Names(false, true)) do
 		local key = name:lower()
-		if key ~= mine and key ~= from and now - (verified[key] or -math.huge) < Relay.VERIFIED_FOR then
-			if set then
+		if key ~= mine and key ~= from and mesh.Fresh(key, now) then
+			local held = cg and now - (mesh.cg[key] or -math.huge) < Relay.MESH_CROSS_EVERY
+			if cg and not held then mesh.cg[key] = now end
+			if held then mesh.n.cgHeld = (mesh.n.cgHeld or 0) + 1 end
+			if type(set) == "table" then
+				-- (Within MESH_CROSS_EVERY a census snapshot only takes a waiting copy's place.)
 				batches = batches or SetBatches(flag, origin, set, "RX")
-				local id, head = set[1]:match("^C(%w+):%d+:%d+:(.*)$")
-				local kind = head:match("^(%u%w~%d+~S)~") or head:match("^(R[12])~")
-					or (mine == from and head:match("^%u%w~") and QueueWord(head))
-				DripBatches(name, "across " .. from .. " " .. (kind or ("#" .. id)), batches, nil, true)
-				stats.across = (stats.across or 0) + #set
-			else
+				DripBatches(name, "across " .. from .. " " .. kind, batches, held, true)
+				if not held then stats.across = (stats.across or 0) + #set end
+			elseif not held then
 				pieces = pieces or Envelope("RX", "RX~" .. flag .. "~" .. origin .. "~" .. body)
 				stats.across = (stats.across or 0) + 1
 				if flag == "L" then
-					ChatTo(name, pieces, body, origin, nil, key) -- (1.5.5: the chat lane)
+					ChatTo(name, pieces, body, origin, nil, key)
 				else
 					Quiet(name)
-					local key = "across " .. name .. " " .. from .. " " .. (presence and "T1~o" or QueueWord(body))
-					if #pieces == 1 then ns.Comm.Whisper(name, pieces[1], key, presence, false)
-					else ns.Comm.SendBatch("WHISPER", pieces, key, name, presence) end
+					local qkey = "across " .. name .. " " .. from .. " " .. kind
+					if #pieces == 1 then ns.Comm.Whisper(name, pieces[1], qkey, false, false)
+					else ns.Comm.SendBatch("WHISPER", pieces, qkey, name, false) end
 				end
 			end
 		end
@@ -1807,16 +2127,18 @@ end
 -- (1.5.4) Verification to every other relay not left out (RW), answered or not (see the top); the
 -- origin, when a relay, is not sent its own word. Never marks a relay as answered. Urgent: a few
 -- short whispers, rare (a decision, a relay's half-hourly ask, one client's ask each
--- VERIFY_ASK_EVERY), never evicted behind the reports.
-local function ToRelays(flag, origin, body)
+-- VERIFY_ASK_EVERY), never evicted behind the reports. (1.5.5) staff: one of this relay's own staff
+-- words (Relay.CROSS_KINDS), to the signed relays alone, the only ones that take it.
+local function ToRelays(flag, origin, body, staff)
 	local now = Now()
 	local mine, from = ns.ShortName(ns.me or ""):lower(), ns.ShortName(origin):lower()
 	local pieces, n = nil, 0
-	for _, name in ipairs(Relay.Names(false)) do
+	for _, name in ipairs(Relay.Names(false, staff == true)) do
 		local key = name:lower()
 		if key ~= mine and key ~= from and (offline[key] or 0) <= now then
 			pieces = pieces or Envelope("RW", "RW~" .. flag .. "~" .. origin .. "~" .. body)
-			stats.verifyAcross = (stats.verifyAcross or 0) + 1
+			if staff then mesh.n.staffOut = (mesh.n.staffOut or 0) + 1
+			else stats.verifyAcross = (stats.verifyAcross or 0) + 1 end
 			n = n + 1
 			Quiet(name)
 			if #pieces == 1 then ns.Comm.Whisper(name, pieces[1], nil, true, false)
@@ -1843,13 +2165,23 @@ function Relay.Direct(target, body, key)
 	return ns.Comm.SendBatch("WHISPER", pieces, key, target, true) ~= false
 end
 
+-- (1.5.5) The hop delivering a word now and its sender (Relay.Hop, before Relay.Reset): declared
+-- here, above the handlers that set it.
+local hop, hopSender, WithHop
+
 -- Hop 1 heard (we are a relay): a ping is answered, a registration kept, anything else forwarded
 -- to every guild's reporter (ours included: delivered here and handed to our guild).
 function Relay.HandleIn(dist, sender, text)
 	if dist ~= "WHISPER" or not Relay.On() then return false end
 	local flag, body = tostring(text):match("^RL~([LP])~(.*)$")
 	if not flag then return false end
-	if not Relay.IsRelay(ns.me) then return false end -- (only a relay's client answers hop 1)
+	if not Relay.IsRelay(ns.me) then -- (only a relay's client answers hop 1; 1.5.5: or a fallback relay)
+		local F = ns.RelayFallback
+		if type(F) == "table" and not F.missing and type(F.HandleIn) == "function" then
+			return F.HandleIn(dist, sender, text) == true
+		end
+		return false
+	end
 	local now = Now()
 	Heard(body == "RP~" and "RP" or (body:sub(1, 3) == "RR~" and "RR") or "RL", sender, body, now) -- (1.5.4)
 	if body == "RP~" then
@@ -1884,6 +2216,15 @@ function Relay.HandleIn(dist, sender, text)
 			return true
 		end
 		local had = reporters[key]
+		-- (1.5.5) A tree-capable registrant (RelayTree: digest-checked delivery from its guildmates) keeps
+		-- its guild while fresh: a registration from a guildmate that is not one (an older version, which
+		-- registers every REGISTER_EVERY whatever its newer guildmates do) does not take its place.
+		local capable = Relay.TreeCapable(who)
+		if not capable then mesh.plain[key] = now end
+		if had and had.name ~= who and now - had.t <= Relay.REPORTER_FOR and not capable and Relay.TreeCapable(had.name) then
+			mesh.n.rrKept = (mesh.n.rrKept or 0) + 1
+			return true
+		end
 		reporters[key] = { name = who, t = now, guild = guild, v = version }
 		stats.registered = stats.registered + 1
 		if not had or had.name ~= ns.FullName(sender) then ns.Log("relay: %s's reporter is %s", guild, tostring(sender)) end
@@ -1906,9 +2247,17 @@ function Relay.HandleIn(dist, sender, text)
 	-- goes once to every other relay too, each handing it to its own reporters; the origin's right to
 	-- say it is checked where it is kept (Builds.HandleShare).
 	if fresh and body:match("^BD~1~") then ToRelays(flag, origin, body) end
-	if localOnly and (origin ~= ns.me or VerificationAsk(body)) then
+	-- (1.5.5) This relay's own staff word (Relay.CROSS_KINDS: the King's and the staff's acts, the
+	-- author's presence and release, the Treasury's ask, a census look, the fallback's candidates) goes
+	-- to every other signed relay (RW), answered or not; each hands it to its own registrants past
+	-- their trickle and sends it on to nobody. Before, it reached this relay's own guilds alone.
+	if fresh and origin == ns.me and StaffKind(body) and Relay.IsSignedRelay(ns.me) then ToRelays(flag, origin, body, true) end
+	-- (1.5.5) This relay's own census claim (CG~n~C~, every GLOBAL_EVERY on a relay the census does not
+	-- trust) and its census ask (CG~n~Q~): heard here alone. Fanned out, each was a whisper to every
+	-- registrant, and none needs either: the guilds' answers come to this relay, which hears them all.
+	if localOnly and (origin ~= ns.me or VerificationAsk(body) or body:match("^CG~%d+~[CQ]~")) then
 		stats.kept = (stats.kept or 0) + 1
-		Deliver(origin, body, flag == "L") -- (heard and answered here, fanned out to nobody)
+		WithHop("L", sender, Deliver, origin, body, flag == "L") -- (heard and answered here, fanned out to nobody)
 		-- (1.5.4) Our own ask always crosses (our client is its own relay: nobody else hears it);
 		-- a client's, one each VERIFY_ASK_EVERY, for a verifier on another relay to answer it.
 		if fresh and VerificationAsk(body) and (origin == ns.me or now - lastVerifyAsk >= Relay.VERIFY_ASK_EVERY) then
@@ -1917,7 +2266,7 @@ function Relay.HandleIn(dist, sender, text)
 		end
 		return true
 	end
-	local set = ToReporters(flag, origin, body, sender)
+	local set = WithHop("L", sender, ToReporters, flag, origin, body, sender)
 	-- (1.4.6) To the other relays that answered our pings too (hop 1b, RX): each hands it to its
 	-- own reporters. Without this every live relay was an island of the guilds registered with it
 	-- (the dev's cousin saw other guilds and other numbers, 2026-11-05). A relay forwards RX no
@@ -1927,18 +2276,19 @@ function Relay.HandleIn(dist, sender, text)
 end
 
 -- (1.4.6) Hop 1b heard (we are a relay): another relay's copy of a word, from a relay alone,
--- handed to our reporters and heard here once; never sent across again.
+-- handed to our reporters and heard here once; never sent across again. (1.5.5) From a signed relay
+-- alone: an unsigned Treasurer code pin is transport, never a relay believed about other origins.
 function Relay.HandleAcross(dist, sender, text)
 	if dist ~= "WHISPER" or not Relay.On() then return false end
 	local flag, origin, body = tostring(text):match("^RX~([LP])~([^~]+)~(.*)$")
 	if not flag then return false end
-	if not Relay.IsRelay(sender) or not Relay.IsRelay(ns.me) then stats.dropped = stats.dropped + 1 return false end
+	if not Relay.IsSignedRelay(sender) or not Relay.IsRelay(ns.me) then stats.dropped = stats.dropped + 1 return false end
 	verified[ns.ShortName(sender):lower()] = Now()
 	if Remembered(origin, body) then return true end
 	-- (1.5.4) A word of a client marked as a modified build (Builds.lua): forwarded to nobody.
 	if Quarantined(origin) then stats.dropped = stats.dropped + 1 return true end
-	if VerificationAsk(body) then Deliver(origin, body, false); return true end
-	ToReporters(flag, origin, body, sender)
+	if VerificationAsk(body) then WithHop("X", sender, Deliver, origin, body, false); return true end
+	WithHop("X", sender, ToReporters, flag, origin, body, sender)
 	return true
 end
 
@@ -1960,6 +2310,22 @@ function Relay.HandleVerify(dist, sender, text)
 	if dist ~= "WHISPER" or not Relay.On() then return false end
 	local flag, origin, body = tostring(text):match("^RW~([LP])~([^~]+)~(.*)$")
 	if not flag then return false end
+	-- (1.5.5) A signed relay's own staff word (Relay.CROSS_KINDS, HandleIn): its origin is its sender,
+	-- whose name the server stamps, so no relay passes another origin's staff word. Taken, handed to our
+	-- registrants past their trickle (ToReporters: Relay.StaffWord), sent on to nobody. Its copies over
+	-- RW count once; a copy that came first by our own guild (a guildmate reports to that relay) does
+	-- not keep our registrants from it.
+	if StaffKind(body) then
+		if not Relay.IsRelay(ns.me) or not Relay.IsSignedRelay(sender) or Lower(ns.ShortName(origin)) ~= Lower(ns.ShortName(sender)) then
+			stats.dropped = stats.dropped + 1
+			return false
+		end
+		if Seen("rw " .. origin, body) then return true end
+		mesh.n.staffIn = (mesh.n.staffIn or 0) + 1
+		ns.Log("relay: RW %s from %s", body:sub(1, 6), tostring(sender))
+		WithHop("W", sender, ToReporters, flag, origin, body, sender)
+		return true
+	end
 	if not Relay.IsRelay(sender) or not Relay.IsRelay(ns.me) or not (body:match("^GV~1~[ARQS]~") or body:match("^BD~1~")) then
 		stats.dropped = stats.dropped + 1
 		return false
@@ -1970,16 +2336,16 @@ function Relay.HandleVerify(dist, sender, text)
 	-- (1.5.4) A modified-build sighting or its clear crossed from another relay (Builds.lua): to our
 	-- reporters, heard here (its origin checked where it is kept), never sent across again.
 	if body:match("^BD~1~") then
-		ToReporters(flag, origin, body, sender)
+		WithHop("W", sender, ToReporters, flag, origin, body, sender)
 		return true
 	end
 	if Decision(body) then
 		if not Signed(origin) then stats.dropped = stats.dropped + 1 return false end
-		ToReporters(flag, origin, body, sender) -- (heard here too)
+		WithHop("W", sender, ToReporters, flag, origin, body, sender) -- (heard here too)
 		return true
 	end
 	acrossFrom = Lower(ns.ShortName(sender))
-	local ok, err = pcall(Deliver, origin, body, false)
+	local ok, err = pcall(WithHop, "W", sender, Deliver, origin, body, false)
 	acrossFrom = nil -- (whatever happened: no later ask may pass for this one)
 	if not ok then error(err, 0) end
 	return true
@@ -1995,7 +2361,7 @@ function Relay.HandleRelayed(dist, sender, text)
 	-- (1.5.4) A word of a client marked as a modified build (Builds.lua): not heard, not handed on.
 	if Quarantined(origin) then stats.dropped = stats.dropped + 1 return true end
 	if not Remembered(origin, body) then ns.Log("relay: %s's word (%s) by %s", tostring(origin), body:sub(1, 2), tostring(sender)) end
-	if Deliver(origin, body, flag == "L") then ToGuild(flag, origin, body) end
+	if Relay.TakeVia("M", sender, origin, body, flag == "L") then ToGuild(flag, origin, body) end
 	return true
 end
 
@@ -2004,7 +2370,7 @@ function Relay.HandleGuild(dist, sender, text)
 	if dist ~= "GUILD" or not Relay.On() then return false end
 	local flag, origin, body = tostring(text):match("^RG~([LP])~([^~]+)~(.*)$")
 	if not flag then return false end
-	Deliver(origin, body, flag == "L")
+	Relay.TakeVia("G", sender, origin, body, flag == "L")
 	return true
 end
 
@@ -2032,7 +2398,8 @@ end
 --                                       form); in Codec's pieces when longer than one whisper
 --   RU~1~Q~<rev>                        a relay's ask: rules newer than this revision
 -- Only the author's client makes a new revision (/oly relay rules; ns.IsAuthorName on the sender the
--- server stamps) and hands it to every relay it knows, at login and every RULES_EVERY. He is rarely
+-- server stamps; 1.5.5: or one of his launch characters, RulesAuthor below) and hands it to every
+-- relay it knows, at login and every RULES_EVERY. He is rarely
 -- online, so the relays carry it among themselves: each keeps the newest it holds in the realm
 -- group's store (ns.rdb.relayRules: a /reload or the next login applies it with nothing arriving),
 -- asks the other relays at login and every RULES_EVERY, answers an ask with its copy when newer, and
@@ -2081,10 +2448,16 @@ local function ForwardRules(r, except)
 		end
 	end
 end
+-- (1.5.5) Who makes the rules: the author's characters, and his launch characters (LAUNCH_AUTHOR) on
+-- their own family. The signed list names none of his PvP characters, so the PvP relays could take
+-- no rules naming a newer version, and from the deadline on would have refused its clients.
+local function RulesAuthor(name)
+	return (type(ns.IsAuthorName) == "function" and ns.IsAuthorName(name) == true) or Relay.IsLaunchAuthor(name)
+end
 -- The author's client hands its rules to every relay it knows: at login and every RULES_EVERY, and
 -- at once when they change (force).
 function Relay.SendRules(force)
-	if not Relay.On() or type(ns.IsAuthorName) ~= "function" or not ns.IsAuthorName(ns.me) then return false end
+	if not Relay.On() or not RulesAuthor(ns.me) then return false end
 	local r = ns.rdb and ns.rdb.relayRules
 	if type(r) ~= "table" or (r.rev or 0) < 1 then return false end
 	local now = Now()
@@ -2115,7 +2488,7 @@ function Relay.HandleRules(dist, sender, text)
 	if dist ~= "WHISPER" or not Relay.On() then return false end
 	local body = tostring(text):match("^RU~1~(.*)$")
 	if not body or not Relay.IsRelay(ns.me) then return false end
-	if not (Relay.IsRelay(sender) or (type(ns.IsAuthorName) == "function" and ns.IsAuthorName(sender) == true)) then
+	if not (Relay.IsRelay(sender) or RulesAuthor(sender)) then
 		stats.dropped = stats.dropped + 1
 		return false
 	end
@@ -2218,7 +2591,7 @@ function Relay.Slash(rest)
 	local cmd = (words[1] or ""):lower()
 	if cmd == "admitted" then return Relay.ShowReport() end
 	if cmd == "rules" and words[2] then
-		if type(ns.IsAuthorName) ~= "function" or not ns.IsAuthorName(ns.me) then
+		if not RulesAuthor(ns.me) then
 			ns.Print(L.RELAY_RULES_AUTHOR)
 			return false
 		end
@@ -2272,6 +2645,7 @@ ns.Comm.Handle("RX", function(...) Relay.HandleAcross(...) end)
 ns.Comm.Handle("RW", function(...) Relay.HandleVerify(...) end)
 ns.Comm.Handle("RI", function(...) Relay.HandlePresent(...) end) -- (1.5.4: a client's presentation)
 ns.Comm.Handle("RU", function(...) Relay.HandleRules(...) end) -- (1.5.4: the relay rules)
+ns.Comm.Handle("RJ", function(...) Relay.HandleMesh(...) end) -- (1.5.5: the mesh between the signed relays)
 ns.Comm.RelayPieces({ RL = true, RM = true, RG = true, RX = true, RW = true, RU = true })
 
 -- (1.4.6, the dev's ask) The server's "No player named X is currently playing" for a relay or a
@@ -2331,6 +2705,10 @@ ns.On("LOGIN", function()
 	pcall(ns.RegisterEvent, "CHAT_MSG_SYSTEM", function(text) ns.SafeCall("relay not found", Relay.NotFound, text) end)
 	QuietLines()
 	if ns.Every then ns.Every(Relay.GLOBAL_EVERY, "relay global census", function() ns.SafeCall("relay global", Relay.SendGlobal) end) end
+	-- (1.5.5) The mesh between the signed relays (Relay.Mesh asks each time whether this client is
+	-- one: the signed list may arrive after the login).
+	if ns.After then ns.After(10, "relay mesh", function() ns.SafeCall("relay mesh", Relay.Mesh) end) end
+	if ns.Every then ns.Every(Relay.MESH_EVERY, "relay mesh", Relay.Mesh) end
 	-- (1.5.4) The relay rules: asked of the other relays, and handed to them by the author's client.
 	if Relay.IsRelay(ns.me) then
 		ns.SafeCall("relay rules", Relay.AskRules, true)
@@ -2343,6 +2721,283 @@ ns.On("LOGIN", function()
 		end
 	end
 end)
+
+-- (1.5.5) What the relay's lanes share (no behaviour of its own): the hop a word came by ("L" RL at a
+-- relay, "M" RM, "X" RX, "W" RW, "G" RG, "T" the tree, "O" a fallback relay), the parts of the relay
+-- the tree and the fallback relays reuse, and the stubs each lane fills.
+function Relay.Hop() return hop, hopSender end
+WithHop = function(h, sender, fn, ...)
+	local ph, ps = hop, hopSender
+	hop, hopSender = h, sender
+	local ok, res = pcall(fn, ...)
+	hop, hopSender = ph, ps
+	if not ok then error(res, 0) end
+	return res
+end
+function Relay.TakeVia(h, sender, origin, text, logged) return WithHop(h, sender, Deliver, origin, text, logged) end
+function Relay.Take(origin, text, logged) return Deliver(origin, text, logged) end
+function Relay.HandOn(flag, origin, text) return ToGuild(flag, origin, text) end
+Relay.Envelope = Envelope
+function Relay.SetBatches(flag, origin, set, kind) return SetBatches(flag, origin, set, kind) end
+-- A whole transfer to `name` through the drip, keyed `word` (a newer one takes a waiting one's place).
+-- opts.across: to a relay; opts.front: right after the transfer in flight and the front ones before it.
+function Relay.DripTo(name, word, batches, opts)
+	if type(name) ~= "string" or name == "" or type(word) ~= "string" or type(batches) ~= "table" or #batches == 0 then return false end
+	opts = type(opts) == "table" and opts or {}
+	if not opts.front then
+		DripBatches(name, word, batches, nil, opts.across)
+		return true
+	end
+	for i, d in ipairs(drip) do
+		if d.name == name and d.word == word and not d.started then table.remove(drip, i) break end
+	end
+	local at = 1
+	while drip[at] and (drip[at].started or drip[at].front) do at = at + 1 end
+	table.insert(drip, at, { name = name, word = word, batches = batches, index = 1, across = opts.across, front = true })
+	Drip()
+	return true
+end
+-- Whether a transfer to `name` keyed `word` is in the drip, waiting or in flight.
+function Relay.Dripping(name, word)
+	for _, d in ipairs(drip) do
+		if d.name == name and d.word == word then return true end
+	end
+	return false
+end
+function Relay.FirstHand() return hop == "L" end
+function Relay.ViaProvisional() return hop == "O" end
+-- (1.5.5) Whether the hop a word comes by vouches for its origin: never a provisional relay's (O); a
+-- relay's (M, X) or the tree's (T) only when the client that whispered it is a signed relay (an
+-- unsigned Treasurer code pin carries words, it proves nothing about who said them); any other hop,
+-- and none (a direct call, off Forever), as before.
+function Relay.HopTrusted()
+	if hop == "O" then return false end
+	if hop == "M" or hop == "X" or hop == "T" then return hopSender ~= nil and Relay.IsSignedRelay(hopSender) end
+	return true
+end
+-- (1.5.5) A signed relay: a name of Relay.Names(true) that the council's list, the author's characters,
+-- the King's, the launch pins or a Treasurer the signed list names give; the code's Treasurer pins
+-- alone make a relay, not a signed one (they are no mesh peer, and no RX is taken from them).
+function Relay.IsSignedRelay(name)
+	local key = Lower(ns.ShortName(name or ""))
+	if key == "" then return false end
+	for _, n in ipairs(Relay.Names(true, true)) do if n:lower() == key then return true end end
+	return false
+end
+function Relay.MeshPeer(name)
+	local key = Lower(ns.ShortName(name or ""))
+	return key ~= "" and mesh.Fresh(key, Now()) and Relay.IsSignedRelay(name)
+end
+function Relay.TreeCapable(name)
+	local T = ns.RelayTree
+	return type(T) == "table" and not T.missing and type(T.Capable) == "function" and T.Capable(name) == true
+end
+function Relay.ServingProvisional()
+	local F = ns.RelayFallback
+	return type(F) == "table" and not F.missing and type(F.Serving) == "function" and F.Serving() == true
+end
+function Relay.InFallback()
+	local F = ns.RelayFallback
+	return type(F) == "table" and not F.missing and type(F.Active) == "function" and F.Active() == true
+end
+-- Whether version v is floor or later, numbers compared ("a.b.c-test.n" as a.b.c); false for no version.
+function Relay.AtLeast(v, floor)
+	local function Parts(s)
+		s = Relay.VersionOf(s)
+		if not s then return nil end
+		local out = {}
+		for d in (s:match("^(%d+%.%d+%.%d+)%-test%.%d+$") or s):gmatch("%d+") do out[#out + 1] = tonumber(d) end
+		return out
+	end
+	local a, b = Parts(v), Parts(floor)
+	if not a or not b then return false end
+	for i = 1, math.max(#a, #b) do
+		local x, y = a[i] or 0, b[i] or 0
+		if x ~= y then return x > y end
+	end
+	return true
+end
+-- Each fresh registration here: { guild, name, v, t }, by name.
+function Relay.Reporters()
+	local now, out = Now(), {}
+	for g, r in pairs(reporters) do
+		if now - r.t <= Relay.REPORTER_FOR then out[#out + 1] = { guild = r.guild or g, name = r.name, v = r.v, t = r.t } end
+	end
+	table.sort(out, function(a, b) return a.name < b.name end)
+	return out
+end
+function Relay.PinnedRelay() return nil end -- (lane mesh fills it, with RB)
+Relay.LAUNCH_AUTHOR = { ForeverPvE = { Relay.LAUNCH_PINS.ForeverPvE[1] }, ForeverPvP = Relay.LAUNCH_PINS.ForeverPvP }
+-- Whether `name` is one of the author's launch characters of its own Forever family.
+function Relay.IsLaunchAuthor(name)
+	if type(name) ~= "string" or name == "" or type(ns.ForeverFamily) ~= "function" then return false end
+	local full = ns.FullName(name)
+	local family = ns.ForeverFamily(ns.RealmOf(full) or "")
+	local list = family and Relay.LAUNCH_AUTHOR[family]
+	if type(list) ~= "table" then return false end
+	local key = Lower(ns.ShortName(full))
+	for _, n in ipairs(list) do
+		if type(n) == "string" and Lower(ns.ShortName(n)) == key then return true end
+	end
+	return false
+end
+Relay.ResetHooks = {} -- (each lane appends its reset: Relay.Reset calls them last)
+Relay.ResetHooks[#Relay.ResetHooks + 1] = ForgetCensus -- (lane tree: the census sets held, ToReporters)
+
+-- (1.5.5) The mesh's round (on a signed relay's client: 10 s after login, then every MESH_EVERY):
+-- every other signed relay not left out is pinged (Ping: one answered within DEAD_FOR is not), and
+-- each one answered is told RJ; those this round's pings reach are told PING_WAIT later.
+function mesh.Join(name, now)
+	local key, regs, tree = name:lower(), 0, 0
+	for _, r in pairs(reporters) do
+		if now - r.t <= Relay.REPORTER_FOR then
+			regs = regs + 1
+			if Relay.TreeCapable(r.name) then tree = tree + 1 end
+		end
+	end
+	mesh.sent[key] = now
+	mesh.n.rjOut = (mesh.n.rjOut or 0) + 1
+	Quiet(name)
+	ns.Comm.Whisper(name, ("RJ~1~%d~%d"):format(regs, tree), "relay rj " .. key, false)
+end
+function mesh.JoinAnswered()
+	if not Relay.On() or not Relay.IsSignedRelay(ns.me) then return end
+	local now, mine = Now(), Lower(ns.ShortName(ns.me or ""))
+	for _, n in ipairs(Relay.Names(false, true)) do
+		local key = n:lower()
+		if key ~= mine and (offline[key] or 0) <= now and now - (verified[key] or -math.huge) < Relay.VERIFIED_FOR
+			and now - (mesh.sent[key] or -math.huge) >= Relay.MESH_EVERY / 2 then
+			mesh.Join(n, now)
+		end
+	end
+end
+function Relay.Mesh()
+	if not Relay.On() or not Relay.IsSignedRelay(ns.me) then return false end
+	local now, mine = Now(), Lower(ns.ShortName(ns.me or ""))
+	mesh.n.rounds = (mesh.n.rounds or 0) + 1
+	for _, n in ipairs(Relay.Names(false, true)) do
+		if n:lower() ~= mine and (offline[n:lower()] or 0) <= now then Ping(n) end
+	end
+	mesh.JoinAnswered()
+	ns.After(Relay.PING_WAIT, "relay mesh", function() ns.SafeCall("relay mesh", mesh.JoinAnswered) end)
+	return true
+end
+-- RJ heard (we are a signed relay): the sender, a signed relay, is of the mesh. It answered (verified)
+-- and joined (seen); it is told RJ in turn when we have not told it within half a round, so two
+-- relays mesh within seconds of the first RJ, not a whole round later.
+function Relay.HandleMesh(dist, sender, text)
+	if dist ~= "WHISPER" or not Relay.On() then return false end
+	local regs, tree = tostring(text):match("^RJ~1~(%d+)~(%d+)")
+	if not regs then return false end
+	local key, now = Lower(ns.ShortName(sender or "")), Now()
+	if key == "" or key == Lower(ns.ShortName(ns.me or "")) or not Relay.IsSignedRelay(ns.me) or not Relay.IsSignedRelay(sender) then
+		stats.dropped = stats.dropped + 1
+		return false
+	end
+	if not mesh.Fresh(key, now) then ns.Log("relay: %s joins the mesh (%s registrants, %s tree-capable)", tostring(sender), regs, tree) end
+	mesh.n.rjIn = (mesh.n.rjIn or 0) + 1
+	mesh.seen[key], verified[key], offline[key], pinged[key] = now, now, nil, nil
+	mesh.peers[key] = { regs = math.min(tonumber(regs) or 0, 99999), tree = math.min(tonumber(tree) or 0, 99999) }
+	if now - (mesh.sent[key] or -math.huge) >= Relay.MESH_EVERY / 2 then mesh.Join(ns.ShortName(sender), now) end
+	return true
+end
+
+-- (1.5.5) /oly bug's relay lines (the debug section asks this alone): the relay, the mesh and the
+-- queue, then the tree's, the census's and the fallback's counters, each asked under pcall (a module
+-- a client lacks, or one that fails, leaves its line saying so), all of it within maxBytes (1500),
+-- the most useful first. A table becomes "key=value" words, sorted, nested ones in braces.
+function mesh.Flat(v, depth)
+	depth = depth or 0
+	if type(v) == "number" then return v == math.floor(v) and tostring(v) or ("%.1f"):format(v) end
+	if type(v) == "string" then return ns.Cut(v:gsub("[\r\n]", " "), 48) end
+	if type(v) ~= "table" then return tostring(v) end
+	if depth >= 3 then return "{...}" end
+	local keys = {}
+	for k in pairs(v) do keys[#keys + 1] = k end
+	table.sort(keys, function(a, b)
+		if type(a) ~= type(b) then return type(a) < type(b) end
+		if type(a) == "number" then return a < b end
+		return tostring(a) < tostring(b)
+	end)
+	local out = {}
+	for _, k in ipairs(keys) do
+		if #out >= 64 then out[#out + 1] = "..." break end
+		local item = mesh.Flat(v[k], depth + 1)
+		out[#out + 1] = type(k) == "number" and item or (tostring(k) .. "=" .. item)
+	end
+	if depth == 0 then return #out > 0 and table.concat(out, " ") or "-" end
+	return "{" .. table.concat(out, ",") .. "}"
+end
+function mesh.Module(M, fn)
+	if type(M) ~= "table" then return "not loaded" end
+	if M.missing then return "not loaded (a new file: the game must restart)" end
+	if type(M[fn]) ~= "function" then return "none" end
+	return mesh.Flat(M[fn]())
+end
+function Relay.BugLines(maxBytes)
+	maxBytes = math.max(0, math.floor(tonumber(maxBytes) or 1500))
+	local out, used, now = {}, 0, Now()
+	local function Age(t) return t and ("%ds"):format(math.max(0, math.floor(now - t))) or "-" end
+	local function Part(label, fn)
+		local ok, text = pcall(fn)
+		local line = (label .. ": " .. (ok and tostring(text) or ("error " .. tostring(text)))):gsub("[\r\n]", " ")
+		local room = maxBytes - used - 1 -- (a line and its newline)
+		if room < #label + 6 then return end
+		if #line > room then line = ns.Cut(line, room - 3) .. "..." end
+		out[#out + 1], used = line, used + #line + 1
+	end
+	Part("relay", function()
+		local s, live, answered, mine = Relay.Stats(), 0, 0, Lower(ns.ShortName(ns.me or ""))
+		for _, n in ipairs(Relay.Names(true)) do
+			local key = n:lower()
+			if key ~= mine and (offline[key] or 0) <= now then
+				live = live + 1
+				if now - (verified[key] or -math.huge) < Relay.VERIFIED_FOR then answered = answered + 1 end
+			end
+		end
+		return ("pick=%s sure=%s live=%d answered=%d signed=%s regs=%d out=%d fwd=%d dlv=%d drop=%d dead=%d trickled=%d kept=%d across=%d verifyAcross=%d"):format(
+			tostring(s.relay or "-"), s.sure and "y" or "n", live, answered, Relay.IsSignedRelay(ns.me) and "y" or "n",
+			s.reporters or 0, s.out or 0, s.forwarded or 0, s.delivered or 0, s.dropped or 0, s.dead or 0, s.trickled or 0,
+			s.kept or 0, s.across or 0, s.verifyAcross or 0)
+	end)
+	Part("mesh", function()
+		local n, regs, tree = mesh.n, 0, 0
+		for _, r in pairs(reporters) do
+			if now - r.t <= Relay.REPORTER_FOR then
+				regs = regs + 1
+				if Relay.TreeCapable(r.name) then tree = tree + 1 end
+			end
+		end
+		local parts = { ("me %d/%d rounds=%d rj=%d/%d staff=%d/%d cgHeld=%d rrKept=%d"):format(regs, tree, n.rounds or 0,
+			n.rjOut or 0, n.rjIn or 0, n.staffOut or 0, n.staffIn or 0, n.cgHeld or 0, n.rrKept or 0) }
+		local mine = Lower(ns.ShortName(ns.me or ""))
+		for _, name in ipairs(Relay.Names(false, true)) do
+			local key = name:lower()
+			if key ~= mine and (verified[key] or mesh.seen[key]) then
+				local p = mesh.peers[key]
+				parts[#parts + 1] = ("%s v=%s j=%s %s%s"):format(name, Age(verified[key]), Age(mesh.seen[key]),
+					p and (p.regs .. "/" .. p.tree) or "-/-", mesh.Fresh(key, now) and "" or " out")
+			end
+		end
+		return table.concat(parts, "; ")
+	end)
+	Part("queue", function()
+		local waiting, across, flight = 0, 0, nil
+		for _, d in ipairs(drip) do
+			if d.started then flight = d else waiting = waiting + 1 end
+			if d.across then across = across + 1 end
+		end
+		return ("size=%d room=%d drip=%d waiting (%d across)%s"):format(ns.Comm.QueueSize(), ns.Comm.QueueRoom(), waiting, across,
+			flight and (" sending %s to %s %d/%d"):format(tostring(flight.word), tostring(flight.name), flight.index, #flight.batches) or "")
+	end)
+	Part("tree", function() return mesh.Module(ns.RelayTree, "Stats") end)
+	Part("census", function() return mesh.Module(ns.Data, "CensusStats") end)
+	Part("fallback", function() return mesh.Module(ns.RelayFallback, "Stats") end)
+	return out
+end
+Relay.ResetHooks[#Relay.ResetHooks + 1] = function() -- (the mesh's)
+	wipe(mesh.seen); wipe(mesh.peers); wipe(mesh.sent); wipe(mesh.cg); wipe(mesh.plain); wipe(mesh.n)
+end
 
 -- Tests: a clean slate.
 function Relay.Reset()
@@ -2360,4 +3015,6 @@ function Relay.Reset()
 	wipe(chatQ); chatFirst, chatLast, chatInflight, chatFeeding = 1, 0, 0, false -- (1.5.5: the chat lane)
 	chatWaitUntil, chatTimer, chatBucket.tokens, chatBucket.at = -math.huge, false, Relay.CHAT_BURST, -math.huge
 	for k in pairs(stats) do stats[k] = 0 end
+	hop, hopSender = nil, nil -- (1.5.5)
+	for _, fn in ipairs(Relay.ResetHooks) do fn() end
 end

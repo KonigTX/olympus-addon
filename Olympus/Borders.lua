@@ -132,9 +132,9 @@ ns.Borders = Borders
 --            Legates are explicitly appointed, not derived from the council; a separate actual
 --            council title still has its own precedence and portrait frame.
 -- The primary federal Treasurer's supplied dragon is portrait-only (TreasurerPin == 1, never
--- the mail alternate). The Queen's head also identifies her in native chat; nameplate marks
+-- the mail alternate; 1.5.5: a signed Quaestor's too, Dragon). The Queen's head also identifies her in native chat; nameplate marks
 -- stay unchanged. The King takes precedence.
--- Portrait order: the King, the Queen, the primary Treasurer, the High Council, the dev, a guild master, a nominee
+-- Portrait order: the King, the Queen, the primary Treasurer and the Quaestors, the High Council, the dev, a guild master, a nominee
 -- (then, on nameplates and in the game's chat, the star).
 -- (1.0.1's Max's second option, ns.BORDERS_COUNCIL_GOLD, the High Council in the King's gold
 -- wings, is gone with 1.1.5: the gold is the King's alone, on the borders, the nameplates and in
@@ -309,6 +309,16 @@ local function IsDev(who)
 end
 Borders.IsDevName = IsDev -- (1.2.3: HonorsNet's The Royal Dev title asks the core, never naming the author)
 
+-- The Treasurer's blue dragon: the Treasurer himself (TreasurerPin 1, never his mail characters) and
+-- (1.5.5, the dev: "give him his old frame") a Quaestor the signed list names (ns.IsQuaestorName), the
+-- Treasurer's executor, who wore it as the beta's Treasurer. The Treasurer's tier, under the King's crown.
+local function Dragon(who)
+	local T = ns.Treasury
+	if type(T) == "table" and type(T.TreasurerPin) == "function" and T.TreasurerPin(who) == 1 then return true end
+	return type(ns.IsQuaestorName) == "function" and ns.IsQuaestorName(who) == true
+end
+Borders.Dragon = Dragon -- (tests)
+
 -- A verified office is presentation metadata, never a rank or an honour.
 local function Nominee(who, guild)
 	local N = ns.Nominees
@@ -318,15 +328,23 @@ end
 
 function Borders.RoleBadgeOfName(who, guild)
 	local N = ns.Nominees
-	if type(who) ~= "string" or type(guild) ~= "string" then return nil end
-	if type(N) == "table" and type(N.RoleOf) == "function" then
+	if type(who) ~= "string" or who == "" then return nil end
+	-- An appointment is its guild master's, for his own guild: only while the server gives the
+	-- unit that guild (guild nil: none of it).
+	if type(guild) == "string" and type(N) == "table" and type(N.RoleOf) == "function" then
 		local role, department = N.RoleOf(who, guild)
 		if role == "centurion" then return "legate" end
-		if role == "correspondent" then return Borders.DEPARTMENT_BADGE[department] end
+		-- (1.5.5: a department with no shield of its own falls to the signed title below.)
+		if role == "correspondent" and Borders.DEPARTMENT_BADGE[department] then return Borders.DEPARTMENT_BADGE[department] end
 	end
 	-- A signed High Councillor keeps the silver rank frame and receives the small badge of the
 	-- department named by the same signed titles list. It is presentation only: a missing title or
-	-- unknown department yields no badge and never invents authority.
+	-- unknown department yields no badge and never invents authority. 1.5.5 (a member's report: his
+	-- shields showed in the guilds he leads, not in the one he is a member of): the signed list names
+	-- the person, not a guild, so its shield is his in any guild or none; never under a moderator's
+	-- cover name on this client (Cover.lua: nothing that says what he is).
+	local C = ns.Cover
+	if type(C) == "table" and type(C.AliasOf) == "function" and C.AliasOf(who) then return nil end
 	if type(ns.CouncilTitle) == "function" then
 		local title = ns.CouncilTitle(who)
 		if type(title) == "table" then return Borders.DEPARTMENT_BADGE[title.dept] end
@@ -369,6 +387,16 @@ local function Uncover(f)
 	f.councillor, f.council, f.dev, f.queen, f.treasurer, f.king = false, false, false, false, false, false
 end
 
+-- (1.3.4) Where no King is named here and no launch list reaches (ns.KingUnpinned), the guild master
+-- of the King's guild wears the King's border. 1.5.5 (the dev's notes: the King's guild's master wore
+-- the gold dragon in the King's place): never where names split (Forever). There the King is the one
+-- the author's signed list names, and a client that holds no list yet shows nobody's crown rather
+-- than a guild master's, as his rank in that guild says nothing of who the King is.
+local function MasterWearsCrown(guild, rank)
+	return ns.splitNames ~= true and ns.IsKingGuild(guild) and ns.KingCharacter() == nil and not ns.LaunchListHeld() and rank == 0
+end
+Borders.MasterWearsCrown = MasterWearsCrown -- (tests)
+
 local function Facts(unit)
 	if not UnitExists(unit) or not UnitIsPlayer(unit) then return nil end
 	local faction = UnitFactionGroup(unit)
@@ -384,8 +412,7 @@ local function Facts(unit)
 	f.council = f.councillor and not ns.CouncilMasked()
 	f.dev = IsDev(who)
 	f.queen = type(ns.IsQueenCharacter) == "function" and ns.IsQueenCharacter(who) == true
-	local T = ns.Treasury
-	f.treasurer = type(T) == "table" and type(T.TreasurerPin) == "function" and T.TreasurerPin(who) == 1
+	f.treasurer = Dragon(who)
 	Uncover(f)
 	if not f.guild or not ns.IsFederation(f.guild) then return f end
 	f.olympus = true
@@ -394,7 +421,7 @@ local function Facts(unit)
 	-- (1.3.4: its guild master stands for the King only where none is named, and no launch list reaches: ns.KingUnpinned.)
 	-- (1.4.3: where names split (Forever: one name, one player), the signed King wears his frame in any
 	-- guild; elsewhere his name in another guild is a namesake, as before.)
-	f.king = not f.covered and ((ns.IsKingCharacter(who) and (ns.IsKingGuild(f.guild) or ns.splitNames == true)) or (ns.IsKingGuild(f.guild) and ns.KingCharacter() == nil and not ns.LaunchListHeld() and rankIndex == 0))
+	f.king = not f.covered and ((ns.IsKingCharacter(who) and (ns.IsKingGuild(f.guild) or ns.splitNames == true)) or MasterWearsCrown(f.guild, rankIndex))
 	local guilds = ns.rdb and ns.rdb.guilds
 	local report = type(guilds) == "table" and guilds[f.guild] or nil
 	f.report = report
@@ -479,7 +506,7 @@ function Borders.Changed(k)
 		or (k.who ~= nil and NetOff(k.who, k.guild) ~= k.off)
 		or k.nominees ~= NomineesVersion()
 		or k.cover ~= CoverVersion()
-		or (k.who ~= nil and k.treasurer ~= (type(ns.Treasury) == "table" and type(ns.Treasury.TreasurerPin) == "function" and ns.Treasury.TreasurerPin(k.who) == 1))
+		or (k.who ~= nil and k.treasurer ~= Dragon(k.who))
 end
 
 local function Compute(unit, guid)
@@ -544,8 +571,7 @@ function Borders.MarkOfName(who, guild)
 	f.dev = IsDev(who) -- (1.2.3: the dev's silver has its mark, before his name in the game's chat)
 	f.queen = type(ns.IsQueenCharacter) == "function" and ns.IsQueenCharacter(who) == true
 	if f.off then return nil, f end
-	local T = ns.Treasury
-	f.treasurer = type(T) == "table" and type(T.TreasurerPin) == "function" and T.TreasurerPin(who) == 1
+	f.treasurer = Dragon(who)
 	Uncover(f)
 	if guild and ns.IsFederation(guild) then
 		f.olympus = true
@@ -565,7 +591,7 @@ function Borders.MarkOfName(who, guild)
 				and ((type(K.IsStewardName) == "function" and K.IsStewardName(who)) or (type(K.IsHandName) == "function" and K.IsHandName(who))))))
 				and true or false
 		end
-		f.king = not f.covered and ((ns.IsKingCharacter(who) and (ns.IsKingGuild(guild) or ns.splitNames == true)) or (ns.IsKingGuild(guild) and ns.KingCharacter() == nil and not ns.LaunchListHeld() and rank == 0))
+		f.king = not f.covered and ((ns.IsKingCharacter(who) and (ns.IsKingGuild(guild) or ns.splitNames == true)) or MasterWearsCrown(guild, rank))
 		f.leader = rank == 0
 	end
 	local t = Match(f, true)
@@ -1195,6 +1221,17 @@ local function IsMe(unit, guid)
 	return ok and not Secret(same) and same == true
 end
 
+-- 1.5.5 (the dev's notes: a party member's dragon came and went): a party member's guild, and his
+-- name, reach the client after the GROUP_ROSTER_UPDATE that put him in his place; worked out before
+-- they came, his border stayed none until something else changed. A member worked out without his
+-- facts, or with another guild than the one the server gives him now, is worked out again.
+local function Late(unit, k)
+	if k.who == nil then return UnitExists(unit) and UnitIsPlayer(unit) end
+	local guild = GetGuildInfo(unit)
+	if Secret(guild) then return false end
+	return (type(guild) == "string" and guild ~= "" and guild or nil) ~= k.guild
+end
+
 -- The unit's border again: the one worked out for it while it is the same unit (fresh: work it
 -- out again), none while the borders are off. On our own portrait, and on the target or focus
 -- while it is us, the author's preview instead while it is on.
@@ -1214,8 +1251,8 @@ function Borders.Refresh(unit, fresh)
 	local guid = UnitGUID and UnitGUID(unit)
 	if Secret(guid) then guid = nil end
 	local k = known[unit]
-	if fresh or not k or guid == nil or k.guid ~= guid then k = Compute(unit, guid) end
-	Borders.ShowRoleBadge(rig, not k.off and k.who and k.guild and Borders.RoleBadgeOfName(k.who, k.guild) or nil)
+	if fresh or not k or guid == nil or k.guid ~= guid or (IN_PARTY[unit] and Late(unit, k)) then k = Compute(unit, guid) end
+	Borders.ShowRoleBadge(rig, not k.off and k.who and Borders.RoleBadgeOfName(k.who, k.guild) or nil)
 	local rolePreview = PreviewRole(preview)
 	if rolePreview then
 		-- The local office preview follows the three native player portraits where this overlay may
@@ -1227,6 +1264,11 @@ function Borders.Refresh(unit, fresh)
 		local chosen = preview and UnitExists(unit) and IsMe(unit, guid) and preview or nil
 		if chosen then return ShowPreview(rig, chosen) end
 	end
+	-- 1.5.5 (the dev's notes): the King's crown wins on the King's own characters, before an
+	-- Apostle's own look, a Most Wanted frame or an honour's, on every frame (target, focus, party,
+	-- your own).
+	local tier = k.tier and TIERS_BY_NAME[k.tier]
+	if tier and tier.king and not k.off then return Show(rig, k.tier) end
 	-- 1.2.1: an Apostle's own look, on his own portrait on his own screen (Borders.OwnLook).
 	if Borders.OwnLook() and UnitExists(unit) and IsMe(unit, guid) and ShowOwnLook(rig) then return end
 	if k.off then return Show(rig, nil) end
@@ -1601,7 +1643,7 @@ local function ChatGuilds(who)
 	local K = ns.King
 	if ns.IsKingCharacter(who) or (type(K) == "table" and ((type(K.IsStewardName) == "function" and K.IsStewardName(who))
 		or (type(K.IsHandName) == "function" and K.IsHandName(who)))) then
-		local king = ns.KING_GUILD[ns.faction or "Alliance"]
+		local king = ns.KingGuildKey() -- (1.5.5: <OLYMPUS PRIME> on Forever's live realms)
 		if king then out[#out + 1] = ns.Data.GuildKey(king) or king end
 	end
 	local claimed = type(ns.Data.ClaimedGuild) == "function" and ns.Data.ClaimedGuild(who) or nil
@@ -1773,8 +1815,25 @@ ns.On("COUNCIL_MASK_CHANGED", function() Borders.CensusChanged() end)
 -- A moderator's cover name heard, ended, or our answer to it (Cover.lua).
 ns.On("COVER_CHANGED", function() Borders.ChatForget(); Borders.CensusChanged() end)
 ns.RegisterEvent("PLAYER_TARGET_CHANGED", function() Borders.Refresh("target") end)
--- Joining, leaving, places swapped: a member new to his place worked out (the frames are the game's to update).
-ns.RegisterEvent("GROUP_ROSTER_UPDATE", function() Borders.RefreshParty() end)
+-- Joining, leaving, places swapped: a member new to his place worked out (the frames are the game's to
+-- update). 1.5.5: and the party looked at again PARTY_RECHECK seconds later, once however many updates
+-- came meanwhile, for a guild or name that reached the client after the update (Late); a member's
+-- portrait coming into view (UNIT_PORTRAIT_UPDATE) or his faction known (UNIT_FACTION) look at him
+-- again too, worked out only if he is Late.
+Borders.PARTY_RECHECK = 2
+local partyRecheck = false
+ns.RegisterEvent("GROUP_ROSTER_UPDATE", function()
+	Borders.RefreshParty()
+	if partyRecheck then return end
+	partyRecheck = true
+	ns.After(Borders.PARTY_RECHECK, "borders party recheck", function()
+		partyRecheck = false
+		Borders.RefreshParty()
+	end)
+end)
+for _, event in ipairs({ "UNIT_PORTRAIT_UPDATE", "UNIT_FACTION" }) do
+	ns.RegisterEvent(event, function(unit) if IN_PARTY[unit] then Borders.Refresh(unit) end end)
+end
 ns.RegisterEvent("UNIT_NAME_UPDATE", function(unit) if TRACKED[unit] then Borders.Refresh(unit, true) end end)
 -- A unit's guild reaching the client (or ours changing: every border again).
 ns.RegisterEvent("PLAYER_GUILD_UPDATE", function(unit)

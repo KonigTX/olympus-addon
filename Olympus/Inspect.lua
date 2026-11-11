@@ -1078,6 +1078,8 @@ function Inspect.TooltipUnit(tooltip) -- gp:tooltip-unit
 	-- The Treasurer of Olympus: his name and the game's own word on his guild.
 	local guild = GetGuildInfo and GetGuildInfo(unit)
 	if not SecretTooltipValue(guild) and not Inspect.CoverOf(name) and ns.IsTreasurer(name, guild) then tooltip:AddLine(ns.COIN .. L.TREASURER_TITLE, 1, 0.82, 0) end
+	-- (1.5.5) The Quaestor, the Treasurer's executor: the signed list's name alone, any guild (ns.IsQuaestorName).
+	if not Inspect.CoverOf(name) and ns.IsQuaestorName(name) then tooltip:AddLine(ns.COIN .. L.QUAESTOR_TITLE, 1, 0.82, 0) end
 	Inspect.CouncilTooltip(tooltip, name, not SecretTooltipValue(guild) and guild or nil)
 	if ns.PlayerTooltip then ns.PlayerTooltip.Apply(tooltip, unit, name, guild) end
 	if patrol then Enqueue(unit) end
