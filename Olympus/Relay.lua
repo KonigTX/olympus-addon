@@ -74,18 +74,24 @@ Relay.MAX_REPORTERS = 400   -- (1.5.4) guilds a relay keeps a reporter for
 -- rarely). From the deadline on, a relay serves only a client that presented itself with a published
 -- version; until then everyone. The deadline, its switch and the published versions are the relay
 -- rules (RU, Relay.Rules): until a word of rules arrives, these constants are the rules.
--- PRESENT_REQUIRED_AT is set at release to the publish time plus seven days (this one:
--- 2026-11-16 00:00 UTC, seven days after 2026-11-09).
-Relay.PRESENT_REQUIRED_AT = 1794787200
+-- PRESENT_REQUIRED_AT is set at release to the publish time plus seven days (this one, 1.5.5's:
+-- 2026-11-17 21:00 UTC, seven days after its publish on 2026-11-10 21:00 UTC). Each release names
+-- itself in PUBLISHED below (tests/relay-admit.lua checks it): a relay that holds no word of rules
+-- goes by that list, and from the deadline on would refuse a release left off it.
+Relay.PRESENT_REQUIRED_AT = 1794949200
 Relay.PRESENT_FOR = 1800     -- a presentation is kept this long past its last word (a client pings its relay every DEAD_FOR)
 Relay.PRESENT_GAP = 60       -- a client presents itself to one relay once this long at most
 Relay.MAX_PRESENTED = 4000   -- characters a relay keeps a presentation for: every client that may whisper it, not only reporters
 Relay.MAX_REFUSED = 200      -- refusals a relay notes for /oly relay admitted
-Relay.PUBLISHED = { "1.4.0", "1.4.1", "1.4.3", "1.4.4", "1.4.5", "1.4.6", "1.5.0", "1.5.1", "1.5.2", "1.5.3", "1.5.4" }
+Relay.PUBLISHED = { "1.4.0", "1.4.1", "1.4.3", "1.4.4", "1.4.5", "1.4.6", "1.5.0", "1.5.1", "1.5.2", "1.5.3", "1.5.4", "1.5.5" }
 Relay.RULES_EVERY = 1800     -- a relay asks the others for the rules this often; the author's client hands them out this often
 Relay.MAX_RULE_VERSIONS = 40 -- versions one word of rules may name
 Relay.VERIFY_ASK_EVERY = 180 -- one recovery ask across the signed relays, never per reporter
 Relay.SNAPSHOT_WINDOW = 60  -- at most one bounded snapshot transfer per signed origin in this window
+Relay.SET_WAIT = 60         -- idle seconds without a new piece
+Relay.SET_MAX_AGE = 300     -- absolute assembly lifetime, even with continuing progress
+Relay.ACROSS_MAX = 8        -- complete cross-relay transfers, including the one in flight
+Relay.ACROSS_PER_PEER = 2   -- one peer cannot occupy the whole cross-relay backlog
 Relay.LAUNCH_PINS = { ForeverPvE = { "Developus Olympicus", "Asmongold Thereal" }, ForeverPvP = { "Twalin Firebraid", "Elrond Oaklance" } }
 -- (1.5.4) The above are Alliance characters: a Horde client's launch pins, by family, go here once
 -- Horde ones exist (a whisper to an Alliance name never arrives on the Horde). None yet.
@@ -222,7 +228,11 @@ function Relay.Stats()
 		presented = shown, refused = stats.refused, unpresented = stats.unpresented, denied = stats.denied, unserved = stats.unserved,
 		rules = Relay.Rules().rev, required = Relay.Required(),
 		-- (The review of the 1.5.4 candidate: counted below, returned for /oly status, Diagnostics.lua.)
-		verifyAcross = stats.verifyAcross or 0, direct = stats.direct or 0 }
+		verifyAcross = stats.verifyAcross or 0, direct = stats.direct or 0,
+		-- (1.5.5) The chat lane: whispers waiting in it, lost (past its bound or its time), and skipped
+		-- (nobody to send to by then: ChatAddressee).
+		chatWaiting = Relay.ChatWaiting and Relay.ChatWaiting() or 0, chatLost = stats.chatLost or 0,
+		chatSkipped = stats.chatSkipped or 0 }
 end
 
 local function Now() return ns.Now() end
@@ -704,12 +714,15 @@ local function Deliver(origin, text, logged)
 	return true
 end
 
--- A reporter hands a message to its guild once (hop 3).
+-- A reporter hands a message to its guild once (hop 3). (1.5.5) A chat line (flag L) goes urgent: a
+-- reporter hands its guild every word its relay sends, at one whisper every 1.2 s, and an ordinary
+-- chat line was the first a full queue pushed out, for its whole guild and for good.
 ToGuild = function(flag, origin, text)
 	if not IsInGuild() then return false end
 	local pieces = Envelope("RG", "RG~" .. flag .. "~" .. origin .. "~" .. text)
-	if #pieces == 1 then return ns.Comm.Send("GUILD", pieces[1], nil, false, false) ~= false end
-	return ns.Comm.SendBatch("GUILD", pieces, nil, nil, false) ~= false
+	local urgent = flag == "L"
+	if #pieces == 1 then return ns.Comm.Send("GUILD", pieces[1], nil, urgent, false) ~= false end
+	return ns.Comm.SendBatch("GUILD", pieces, nil, nil, urgent) ~= false
 end
 
 -- A word to every guild's reporter we hold (ours included: delivered here and handed to our
@@ -724,6 +737,14 @@ local function QueueWord(body)
 	return body:match("^(C[^:]+:%d+):%d+:") or body:match("^(T1~%a)~") or body:match("^(TR~[^~]+)~") or body:sub(1, 2)
 end
 
+local function SetExpired(s, now)
+	return now - (s.last or s.t) > Relay.SET_WAIT or now - s.t > Relay.SET_MAX_AGE
+end
+local function SnapshotExpired(s, now)
+	if s.got == s.total then return now - s.t >= Relay.SNAPSHOT_WINDOW end
+	return SetExpired(s, now)
+end
+
 local function SnapshotPart(origin, body, now)
 	if not Relay.IsRelay(origin) then return false end
 	local id, index, total, part = body:match("^C(%w+):(%d+):(%d+):(.*)$")
@@ -733,22 +754,23 @@ local function SnapshotPart(origin, body, now)
 		or (index < total and #part ~= ns.Codec.CHUNK) then return false end
 	local key = Lower(ns.FullName(origin))
 	local transfer = snapshotTransfers[key]
-	if transfer and now - transfer.at >= Relay.SNAPSHOT_WINDOW then transfer = nil; snapshotTransfers[key] = nil end
+	if transfer and SnapshotExpired(transfer, now) then transfer = nil; snapshotTransfers[key] = nil end
 	if not transfer then
 		if index ~= 1 or not (part:match("^GV~1~S~%d+~")
 			or part:match("^CG~[12]~S~%d+~") or part:match("^CX~[123]~S~")) then return false end
 		local count = 0
 		for who, entry in pairs(snapshotTransfers) do
-			if now - entry.at >= Relay.SNAPSHOT_WINDOW then snapshotTransfers[who] = nil
+			if SnapshotExpired(entry, now) then snapshotTransfers[who] = nil
 			else count = count + 1 end
 		end
 		if count >= Relay.MAX_RELAYS then return false end
-		transfer = { id = id, total = total, at = now, bytes = 0, parts = {} }
+		transfer = { id = id, total = total, t = now, last = now, got = 0, bytes = 0, parts = {} }
 		snapshotTransfers[key] = transfer
 	end
 	if transfer.id ~= id or transfer.total ~= total or transfer.parts[index] then return false end
 	if transfer.bytes + #part > ns.Codec.CHUNK * ns.Codec.MAX_CHUNKS then return false end
 	transfer.parts[index], transfer.bytes = true, transfer.bytes + #part
+	transfer.got, transfer.last = transfer.got + 1, now
 	return true
 end
 -- Whole sets, one reporter at a time (GitHub #76: the census showed only the player's own guild).
@@ -763,10 +785,9 @@ end
 -- has begun is never dropped by the queue and reaches its reporter in seconds, well inside the
 -- 60 seconds a receiver waits for missing pieces. Nothing new is trusted and nothing on the wire
 -- changes: a reporter receives the same whispers as before, only all of them.
-Relay.SET_WAIT = 60 -- seconds the relay waits for a set's missing pieces (as receivers do)
-local sets = {}   -- origin#id -> { n = pieces expected, got = pieces held, pieces = { [i] = body }, t = first piece }
-local drip = {}   -- batches waiting, first in first out: { name = reporter, word = what it is, whispers = { ... } }
-local dripSince   -- when the batch in flight was handed to the queue (nil: none in flight)
+local sets = {}   -- origin#id -> { n = pieces expected, got = pieces held, pieces = { [i] = body }, t = first piece, last = last new piece }
+local drip = {}   -- whole transfers, including the one in flight: { name, word, batches, index, started }
+local dripBusy = false -- a queue callback or a retry timer owns the next turn
 local dripping = false
 
 -- The pieces of a word, in order, once all of them are here; false while some are missing;
@@ -776,7 +797,7 @@ local function CollectSet(origin, body, now)
 	i, n = tonumber(i), tonumber(n)
 	if not id or n < 2 or n > ns.Codec.MAX_CHUNKS or i < 1 or i > n then return nil end
 	for key, s in pairs(sets) do
-		if now - s.t > Relay.SET_WAIT then sets[key] = nil end -- (a set that never completed)
+		if SetExpired(s, now) then sets[key] = nil end -- (a set that never completed)
 	end
 	local key = Lower(origin) .. "#" .. id
 	local s = sets[key]
@@ -784,7 +805,7 @@ local function CollectSet(origin, body, now)
 		s = { n = n, got = 0, pieces = {}, t = now }
 		sets[key] = s
 	end
-	if not s.pieces[i] then s.pieces[i], s.got = body, s.got + 1 end
+	if not s.pieces[i] then s.pieces[i], s.got, s.last = body, s.got + 1, now end
 	if s.got < n then return false end
 	sets[key] = nil
 	return s.pieces
@@ -859,10 +880,10 @@ local function ListKind(text)
 	local kind = text:match("^LS~1~(%u%w)~") or text:match("^C%w+:1:1:LS~1~(%u%w)~")
 	return kind and ("LS~" .. kind) or nil
 end
--- Whether a batch keyed `word` (and its batch number) waits in the drip for `name`.
+-- Whether a complete, replaceable transfer keyed `word` waits in the drip for `name`.
 local function DripWaitingFor(name, word)
 	for _, d in ipairs(drip) do
-		if d.name == name and d.word:sub(1, #word + 1) == word .. " " then return true end
+		if d.name == name and d.word == word and not d.started then return true end
 	end
 	return false
 end
@@ -955,51 +976,55 @@ local function StillReporter(name)
 	return false
 end
 
--- Sends the next waiting batch, unless one is still in flight. Called again when it is done.
+-- One transfer owns all its batches. Eligibility is pinned at the first queue handoff;
+-- capacity eviction can return that first batch only before it sends anything. Later batches
+-- keep their place and eligibility, even when the peer's verification expires between them.
 local function Drip()
-	if dripping then return end
-	if dripSince and Now() - dripSince < Relay.SET_WAIT then return end
-	dripping, dripSince = true, nil
-	while not dripSince and drip[1] do
+	if dripping or dripBusy then return end
+	dripping = true
+	while not dripBusy and drip[1] do
 		local d = drip[1]
-		-- (The review of the 1.5.4 candidate.) A batch for a name that is no guild's reporter here any
-		-- more (his guild registered another while it waited, HandleIn's RR, or his registration lapsed
-		-- and the next word pruned it, ToReporters) is left out and the next one goes: its whispers
-		-- were wasted, and to a reporter logged off they drew the server's "No player named" line,
-		-- which QuietLine hides for current reporters alone, the Accord's window opened here long past.
-		if not StillReporter(d.name) then
-			table.remove(drip, 1)
-		-- A batch waits for room in the queue: forced in, it would push out the words already
-		-- waiting there (a verifier's approval among them). Tried again in a second.
-		elseif ns.Comm.QueueRoom() < #d.whispers then
-			dripSince = Now()
-			ns.After(1, "relay drip", function() dripSince = nil; Drip() end)
-			break
+		local current = d.started
+		if not current then
+			if d.across then
+				current = Relay.IsRelay(d.name) and Now() - (verified[Lower(d.name)] or -math.huge) < Relay.VERIFIED_FOR
+			else current = StillReporter(d.name) end
+		end
+		local batch = d.batches[d.index]
+		if not current then
+			table.remove(drip, 1) -- a complete transfer, before its first batch
+		elseif ns.Comm.QueueRoom() < #batch then
+			dripBusy = true
+			ns.After(1, "relay drip", function() dripBusy = false; Drip() end)
 		else
-			table.remove(drip, 1)
-			Quiet(d.name) -- (a reporter gone offline since: the server's line out of the chat)
-			-- (The review of the 1.5.4 candidate.) Its time counts from its first turn, not from when it
-			-- was queued: a batch waits a whole round of reporters (more than SET_WAIT), so one pushed
-			-- out before it began was never put back and its reporter waited another round. Put back
-			-- for SET_WAIT after its first turn, never longer (a retry keeps this time).
+			Quiet(d.name)
 			if not d.tried then stats.forwarded, d.tried, d.t = stats.forwarded + 1, true, Now() end
-			dripSince = Now()
-			-- done runs once, whatever happens. A batch the queue had no room for, or pushed out for
-			-- newer words, goes back to the front while it is fresh; otherwise the next batch goes.
-			ns.Comm.SendBatch("WHISPER", d.whispers, nil, d.name, false, function(sent, why)
-				if not sent and (why == "full" or why == "dropped") and Now() - d.t < Relay.SET_WAIT then
-					-- (The review of the 1.5.4 candidate.) A newer copy of his word queued while this one
-					-- was in flight (DripSet found no waiting entry to replace and appended it) goes in
-					-- this one's place: he was sent the superseded snapshot now and the newest a whole
-					-- round of reporters later.
-					for i, w in ipairs(drip) do
-						if w.name == d.name and w.word == d.word then d.whispers = w.whispers; table.remove(drip, i); break end
+			d.started, dripBusy = true, true
+			ns.Comm.SendBatch("WHISPER", batch, nil, d.name, false, function(sent, why)
+				if not sent and (why == "full" or why == "dropped") then
+					-- Comm never capacity-evicts a batch once it starts. Only an unsent
+					-- first batch may yield to a newer complete copy or expire on retry.
+					if d.index == 1 then
+						d.started = nil
+						for i = 2, #drip do
+							local w = drip[i]
+							if w.name == d.name and w.word == d.word then
+								d.batches = w.batches; table.remove(drip, i); break
+							end
+						end
 					end
-					table.insert(drip, 1, d)
-					ns.After(1, "relay drip", function() dripSince = nil; Drip() end)
-					return
+					if d.index > 1 or Now() - d.t < Relay.SET_WAIT then
+						ns.After(1, "relay drip", function() dripBusy = false; Drip() end)
+						return
+					end
 				end
-				dripSince = nil
+				if sent and d.index < #d.batches then
+					d.index, d.tried = d.index + 1, nil
+				else
+					-- Terminal transport refusals (privacy, net-off, leaving, etc.) still stop it.
+					table.remove(drip, 1)
+				end
+				dripBusy = false
 				Drip()
 			end)
 		end
@@ -1007,50 +1032,37 @@ local function Drip()
 	dripping = false
 end
 
--- Queues a whole set for one reporter. A newer copy of the same word for him replaces one still
--- waiting, so a busy relay sends the latest snapshot, never a backlog. (1.5.4) waitingOnly: a copy
--- that may only take a waiting one's place (a list within its origin's LIST_EVERY, ListSet above)
--- is not queued where none waits.
-local function DripSet(name, word, whispers, waitingOnly)
-	for _, d in ipairs(drip) do
-		if d.name == name and d.word == word then
-			d.whispers = whispers
-			return Drip()
-		end
-	end
-	if waitingOnly then return end
-	drip[#drip + 1] = { name = name, word = word, whispers = whispers, t = Now() }
-	Drip()
-end
-
 -- The whispers that carry a whole set to a reporter, cut into batches the queue accepts.
 -- The set goes as the one word it carries, wrapped once and cut once, so every whisper is full.
 -- Wrapped piece by piece, a full piece and its RM label overflowed one whisper and each piece went
 -- as two (an 8-piece census snapshot as 16 whispers to every reporter). A reporter takes either
 -- form the same way: it puts the RM together, then the word inside it.
-local function SetWhispers(flag, origin, set)
+local function SetWhispers(flag, origin, set, kind)
+	kind = kind or "RM"
 	local parts = {}
 	for i, body in ipairs(set) do parts[i] = body:match("^C%w+:%d+:%d+:(.*)$") end
 	local word = table.concat(parts)
 	-- (review prototype) Only a word with a type a handler takes whole: a census report (R1, R2)
 	-- is decoded from its pieces alone (Comm's CHANNEL path), so it keeps its pieces.
-	if #parts == #set and word:match("^%u%w~") and not word:match("^R[12]~") then
-		local whispers = Envelope("RM", "RM~" .. flag .. "~" .. origin .. "~" .. word)
+	-- RX keeps the original pieces too: the next relay reserves and collects signed snapshots
+	-- from those pieces (SnapshotPart), before handing a whole set to its reporters.
+	if kind ~= "RX" and #parts == #set and word:match("^%u%w~") and not word:match("^R[12]~") then
+		local whispers = Envelope(kind, kind .. "~" .. flag .. "~" .. origin .. "~" .. word)
 		if #whispers <= ns.Codec.MAX_CHUNKS then return whispers end
 	end
 	local whispers
 	-- (Too long to travel as one word: the pieces as they came, each wrapped on its own.)
 	whispers = {}
 	for _, body in ipairs(set) do
-		for _, e in ipairs(Envelope("RM", "RM~" .. flag .. "~" .. origin .. "~" .. body)) do
+		for _, e in ipairs(Envelope(kind, kind .. "~" .. flag .. "~" .. origin .. "~" .. body)) do
 			whispers[#whispers + 1] = e
 		end
 	end
 	return whispers
 end
 
-local function SetBatches(flag, origin, set)
-	local whispers = SetWhispers(flag, origin, set)
+local function SetBatches(flag, origin, set, kind)
+	local whispers = SetWhispers(flag, origin, set, kind)
 	local batches, size = {}, ns.Codec.MAX_CHUNKS
 	for first = 1, #whispers, size do
 		local batch = {}
@@ -1058,6 +1070,40 @@ local function SetBatches(flag, origin, set)
 		batches[#batches + 1] = batch
 	end
 	return batches
+end
+
+-- Replace only a complete waiting transfer, even when the new copy has fewer batches.
+-- The table is its identity: an in-flight copy and at most one waiting successor stay distinct.
+local function DripBatches(name, word, batches, waitingOnly, across)
+	for _, d in ipairs(drip) do
+		if d.name == name and d.word == word and not d.started then
+			d.batches = batches
+			return Drip()
+		end
+	end
+	if waitingOnly then return end
+	if across then
+		local total, peer, oldest, peerOldest = 0, 0, nil, nil
+		for i, d in ipairs(drip) do
+			if d.across then
+				total = total + 1
+				if not d.started then oldest = oldest or i end
+				if d.name == name then
+					peer = peer + 1
+					if not d.started then peerOldest = peerOldest or i end
+				end
+			end
+		end
+		local evict = peer >= Relay.ACROSS_PER_PEER and peerOldest or oldest
+		if peer >= Relay.ACROSS_PER_PEER or total >= Relay.ACROSS_MAX then
+			-- No room when only an in-flight tail could be removed.
+			if peer >= Relay.ACROSS_PER_PEER and not peerOldest then return end
+			if not evict then return end
+			table.remove(drip, evict)
+		end
+	end
+	drip[#drip + 1] = { name = name, word = word, batches = batches, index = 1, across = across }
+	Drip()
 end
 
 -- (1.5.4) A whole list (ListSet above): the guilds whose reporters it goes to now, and whether only
@@ -1421,6 +1467,136 @@ local function CrownToReporters(flag, origin, body, now)
 	end
 	if not heard then Deliver(origin, body, false) end
 end
+-- (1.5.5, the dev: "only half the chat messages arrive") The chat lane. A chat line is one whisper to
+-- every reporter (and every other relay), unkeyed and ordinary in Comm's queue of MAX_QUEUE: with 46
+-- reporters two lines a few seconds apart overflowed it, and the queue pushed out the oldest waiting
+-- whispers, the first line's, for good (the offline harness: 114 of 184 deliveries of four lines lost).
+-- The author's relay had 92 reporters on 2026-11-10: one line alone is more than the queue holds.
+-- Now a relay's chat whispers wait here, in order, and go to Comm's queue CHAT_INFLIGHT at a time as
+-- urgent ones, which nothing pushes out: a burst arrives later instead of not at all. At most
+-- CHAT_PER_MIN a minute, so the census, the lists and the King's words keep the rest of the relay's
+-- 200 whispers a minute. CHAT_BURST at once, no more: at 60 the lane took every whisper for the first
+-- minute and a half of a burst, the census none (the check of the lane, tests/chat-delivery.lua).
+-- What that carries at 92 reporters: one line in one piece is 92 whispers, about 35 s of the lane, so
+-- some 1.7 lines a minute. Lines typed at once: the 5th reaches its last reporter about 3 minutes
+-- later, and the 9th is the first that waits past CHAT_LANE_TTL. Past CHAT_LANE_MAX waiting the
+-- oldest goes, and one that waited CHAT_LANE_TTL is no longer news (both counted: Stats().chatLost,
+-- "lost" in /oly status). The real cure is several lines in one whisper: a new form, for 1.5.6.
+Relay.CHAT_INFLIGHT = 8
+Relay.CHAT_PER_MIN = 160
+Relay.CHAT_BURST = 8
+Relay.CHAT_LANE_MAX = 1500
+Relay.CHAT_LANE_TTL = 300
+local chatQ, chatFirst, chatLast, chatInflight, chatFeeding = {}, 1, 0, 0, false
+local chatWaitUntil, chatTimer = -math.huge, false
+local chatBucket = { tokens = Relay.CHAT_BURST, at = -math.huge }
+local function ChatWaiting() return chatLast - chatFirst + 1 end
+local FeedChat
+-- Fed again after `seconds` (one timer at a time); meanwhile a word that arrives feeds it once it is due.
+local function ChatLater(seconds)
+	chatWaitUntil = math.max(chatWaitUntil, Now() + seconds)
+	if chatTimer then return end
+	chatTimer = true
+	ns.After(seconds, "relay chat", function()
+		chatTimer = false
+		if Now() < chatWaitUntil then return ChatLater(chatWaitUntil - Now()) end
+		FeedChat()
+	end)
+end
+local function ChatSend(e)
+	Quiet(e.name)
+	chatInflight = chatInflight + 1
+	local settled = false
+	local function done(sent, why)
+		if settled then return end
+		settled = true
+		chatInflight = math.max(0, chatInflight - 1)
+		if not sent and why == "full" and Now() - e.t < Relay.CHAT_LANE_TTL then
+			-- (No room even for an urgent whisper: back at the front, tried again in a second.)
+			chatFirst = chatFirst - 1
+			chatQ[chatFirst] = e
+			ChatLater(1)
+			return
+		end
+		if not sent then stats.chatLost = (stats.chatLost or 0) + 1 end
+		FeedChat()
+	end
+	-- (The check of the lane: a send that throws is that whisper lost, its place in flight given back.)
+	local ok = ns.SafeCall("relay chat send", function()
+		if #e.pieces == 1 then ns.Comm.Whisper(e.name, e.pieces[1], nil, true, false, done)
+		else ns.Comm.SendBatch("WHISPER", e.pieces, nil, e.name, true, done) end
+	end)
+	if not ok then done(false, "error") end
+end
+-- (The check of the lane: a whisper waits up to CHAT_LANE_TTL, so whom it goes to is asked again when
+-- it goes, by the rule it was queued under.) Its guild's reporter as the relay holds him then:
+-- registered within REPORTER_FOR, not quarantined, served (a guildmate who took the place of the one
+-- it was queued for takes it, so the guild still gets the line). Or the relay it named, while that
+-- relay still answers and was not left out. nil: nobody (not sent, counted apart from the lost).
+local function ChatAddressee(e, now)
+	if e.across then
+		if (offline[e.across] or 0) > now or now - (verified[e.across] or -math.huge) >= Relay.VERIFIED_FOR then return nil end
+		return e.name
+	end
+	local r = reporters[e.guild]
+	if not r or now - r.t > Relay.REPORTER_FOR or Quarantined(r.name) or not Served(r, e.body, now) then return nil end
+	return r.name
+end
+local function ChatPop()
+	chatQ[chatFirst] = nil
+	chatFirst = chatFirst + 1
+end
+local function FeedChatNow(now)
+	local b = chatBucket
+	if now > b.at then b.tokens = math.min(Relay.CHAT_BURST, b.tokens + (now - b.at) * Relay.CHAT_PER_MIN / 60) end
+	b.at = math.max(b.at, now)
+	while chatInflight < Relay.CHAT_INFLIGHT and chatFirst <= chatLast and now >= chatWaitUntil do
+		local e = chatQ[chatFirst]
+		if now - e.t >= Relay.CHAT_LANE_TTL then
+			ChatPop()
+			stats.chatLost = (stats.chatLost or 0) + 1
+		elseif b.tokens < #e.pieces then
+			ChatLater(math.max(1, (#e.pieces - b.tokens) * 60 / Relay.CHAT_PER_MIN))
+		else
+			ChatPop()
+			local to = ChatAddressee(e, now)
+			if not to then
+				stats.chatSkipped = (stats.chatSkipped or 0) + 1
+			elseif to == ns.me then
+				-- (Our own client is its guild's reporter now: handed to the guild here, as ToReporters does.)
+				ToGuild("L", e.wire, e.body)
+			else
+				b.tokens = b.tokens - #e.pieces
+				e.name = to
+				ChatSend(e)
+			end
+		end
+	end
+end
+FeedChat = function()
+	if chatFeeding then return end
+	local now = Now()
+	if now < chatWaitUntil then return end
+	chatFeeding = true
+	-- (The check of the lane.) Whatever throws in there is captured, and the lane goes on: it was left
+	-- feeding for good, every later word stopped at its first line until a /reload.
+	local ok = ns.SafeCall("relay chat", FeedChatNow, now)
+	chatFeeding = false
+	if not ok and chatFirst <= chatLast then ChatLater(1) end
+end
+-- A chat line's whisper in the lane: to `guild`'s reporter (`name` when queued; `wire` and `body` the
+-- line as ToReporters has it), or, `across` (the relay's key), to that other relay.
+local function ChatTo(name, pieces, body, wire, guild, across)
+	while ChatWaiting() >= Relay.CHAT_LANE_MAX do
+		ChatPop()
+		stats.chatLost = (stats.chatLost or 0) + 1
+	end
+	chatLast = chatLast + 1
+	chatQ[chatLast] = { name = name, pieces = pieces, body = body, wire = wire, guild = guild, across = across, t = Now() }
+	FeedChat()
+end
+function Relay.ChatWaiting() return ChatWaiting() end -- (/oly status, tests)
+
 -- (1.5.4) The King's presence (T1~o, King.SendPresence: one piece from his signed character every
 -- King.PRESENCE_EVERY) goes to every reporter as the relay's own words do, ahead of the queue and keyed
 -- per reporter: a busy relay holds at most one per reporter, the latest. 60 reporters, every five
@@ -1542,21 +1718,16 @@ local function ToReporters(flag, origin, body, sender)
 			-- and the census snapshots waited behind it, hours stale. A copy takes the waiting one's
 			-- place while every batch of that one still waits; with one in flight it takes the one
 			-- "next" place, which the copy after it takes in turn: at most two copies a reporter, whole.
-			if kind and #batches > 1 then
-				local waiting = 0
-				for _, d in ipairs(drip) do
-					if d.name == r.name and not d.tried then
-						for k = 1, #batches do if d.word == word .. " " .. k then waiting = waiting + 1 end end
-					end
-				end
-				if waiting > 0 and waiting ~= #batches then word = word .. " next" end
-			end
-			for k, batch in ipairs(batches) do DripSet(r.name, word .. " " .. k, batch, waitingOnly) end
+			DripBatches(r.name, word, batches, waitingOnly)
 		else
 			pieces = pieces or Envelope("RM", "RM~" .. flag .. "~" .. wire .. "~" .. body)
 			-- (1.5.0) Another client's word that is not a chat line: within the reporter's trickle
 			-- (REPORTER_RATE) or not sent to him; the relay's own words and chat lines always.
-			if flag == "L" or own or snapshot or presence or KingLayer(origin, body, r.name, now) or Afford(r.name, #pieces, now, need, wordKey, first) then
+			if flag == "L" then
+				-- (1.5.5) A chat line: by the chat lane (above), never pushed out of the queue.
+				stats.forwarded = stats.forwarded + 1
+				ChatTo(r.name, pieces, body, wire, g)
+			elseif own or snapshot or presence or KingLayer(origin, body, r.name, now) or Afford(r.name, #pieces, now, need, wordKey, first) then
 				stats.forwarded = stats.forwarded + 1
 				Quiet(r.name) -- (a reporter gone offline since: the server's line out of the chat)
 				-- A word that is not a chat line is keyed by its origin, kind and reporter: a newer
@@ -1576,26 +1747,43 @@ local function ToReporters(flag, origin, body, sender)
 	for _ in pairs(reporters) do n = n + 1 end
 	if not Remembered(origin, body) then ns.Log("relay: %s's word (%s) to %d reporters", tostring(sender), body:sub(1, 2), n) end
 	Deliver(origin, body, flag == "L")
+	-- The same complete snapshot must cross to the other relays. Separately wrapping each
+	-- piece with a Forever sender's long realm can exceed the queue before it starts sending.
+	if own or snapshot then return set end
 end
 
 -- (1.4.6) The same word to every other relay that answered us lately (RX), each to hand to its
 -- own reporters. The origin, when it is a relay itself, is not sent its own word.
-local function Across(flag, origin, body)
+local function Across(flag, origin, body, set)
+	if set == false then return end -- the whole transfer follows its last piece
 	local now = Now()
 	local mine, from = ns.ShortName(ns.me or ""):lower(), ns.ShortName(origin):lower()
 	-- (1.5.4) The King's presence keyed apart from his crown (both T1): a crown sent after it must not
 	-- take its place in the queue, since only the presence passes the other relay's trickle.
 	local presence = flag ~= "L" and KingPresence(origin, body)
-	local pieces
+	local pieces, batches
 	for _, name in ipairs(Relay.Names(false)) do
 		local key = name:lower()
 		if key ~= mine and key ~= from and now - (verified[key] or -math.huge) < Relay.VERIFIED_FOR then
-			pieces = pieces or Envelope("RX", "RX~" .. flag .. "~" .. origin .. "~" .. body)
-			stats.across = (stats.across or 0) + 1
-			Quiet(name)
-			local key = flag ~= "L" and ("across " .. name .. " " .. from .. " " .. (presence and "T1~o" or QueueWord(body))) or nil
-			if #pieces == 1 then ns.Comm.Whisper(name, pieces[1], key, presence, false)
-			else ns.Comm.SendBatch("WHISPER", pieces, key, name, presence) end
+			if set then
+				batches = batches or SetBatches(flag, origin, set, "RX")
+				local id, head = set[1]:match("^C(%w+):%d+:%d+:(.*)$")
+				local kind = head:match("^(%u%w~%d+~S)~") or head:match("^(R[12])~")
+					or (mine == from and head:match("^%u%w~") and QueueWord(head))
+				DripBatches(name, "across " .. from .. " " .. (kind or ("#" .. id)), batches, nil, true)
+				stats.across = (stats.across or 0) + #set
+			else
+				pieces = pieces or Envelope("RX", "RX~" .. flag .. "~" .. origin .. "~" .. body)
+				stats.across = (stats.across or 0) + 1
+				if flag == "L" then
+					ChatTo(name, pieces, body, origin, nil, key) -- (1.5.5: the chat lane)
+				else
+					Quiet(name)
+					local key = "across " .. name .. " " .. from .. " " .. (presence and "T1~o" or QueueWord(body))
+					if #pieces == 1 then ns.Comm.Whisper(name, pieces[1], key, presence, false)
+					else ns.Comm.SendBatch("WHISPER", pieces, key, name, presence) end
+				end
+			end
 		end
 	end
 end
@@ -1729,12 +1917,12 @@ function Relay.HandleIn(dist, sender, text)
 		end
 		return true
 	end
-	ToReporters(flag, origin, body, sender)
+	local set = ToReporters(flag, origin, body, sender)
 	-- (1.4.6) To the other relays that answered our pings too (hop 1b, RX): each hands it to its
 	-- own reporters. Without this every live relay was an island of the guilds registered with it
 	-- (the dev's cousin saw other guilds and other numbers, 2026-11-05). A relay forwards RX no
 	-- further, and a word already taken is not sent across again.
-	if fresh then Across(flag, origin, body) end
+	if fresh then Across(flag, origin, body, set) end
 	return true
 end
 
@@ -2063,6 +2251,9 @@ end
 
 -- The server's "No player named X is currently playing": a relay named is offline now.
 function Relay.NotFound(text)
+	-- (1.5.5) A secret line (a chat lockdown) is never read: 96 errors at Relay.lua:455 in a player's
+	-- /oly bug of 11-09, 33 at Relay.lua:619 in another's.
+	if type(text) ~= "string" or ns.Secret("relay not found", text) then return false end
 	local T = ns.Treasury
 	local pattern = type(T) == "table" and type(T.NotFoundPattern) == "function" and T.NotFoundPattern()
 	local who = type(pattern) == "string" and type(text) == "string" and text:match(pattern)
@@ -2087,6 +2278,9 @@ ns.Comm.RelayPieces({ RL = true, RM = true, RG = true, RX = true, RW = true, RU 
 -- reporter the relay whispered: out of the chat for good, not for a window (Accord.Quiet's ten
 -- seconds left the login's first sweep in sight). Read all the same (NotFound, the event).
 local function NotFoundName(text)
+	-- (1.5.5) A secret line (Forever's chat locked down) goes on unread: the chat frame calls this
+	-- filter itself, in the game's chat code, outside the event guard in Core.lua.
+	if type(text) ~= "string" or ns.Secret("relay quiet line", text) then return nil end
 	local T = ns.Treasury
 	local pattern = type(T) == "table" and type(T.NotFoundPattern) == "function" and T.NotFoundPattern()
 	local who = type(pattern) == "string" and type(text) == "string" and text:match(pattern)
@@ -2162,6 +2356,8 @@ function Relay.Reset()
 	crownBucket.tokens, crownBucket.at = 0, -math.huge
 	wipe(sets); wipe(drip)
 	wipe(listOrigins); wipe(Origins()); wipe(listShares); wipe(listSets)
-	dripSince, dripping = nil, false
+	dripBusy, dripping = false, false
+	wipe(chatQ); chatFirst, chatLast, chatInflight, chatFeeding = 1, 0, 0, false -- (1.5.5: the chat lane)
+	chatWaitUntil, chatTimer, chatBucket.tokens, chatBucket.at = -math.huge, false, Relay.CHAT_BURST, -math.huge
 	for k in pairs(stats) do stats[k] = 0 end
 end

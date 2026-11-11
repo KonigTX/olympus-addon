@@ -1221,6 +1221,23 @@ local function Evidence(sender, kind, source)
 	if type(TF) == "table" and not TF.missing and type(TF.Evidence) == "function" then ns.SafeCall("tag follow evidence", TF.Evidence, sender, kind, source) end
 end
 
+-- (1.5.5) One player, one key, however the server stamped him. Where names split (Forever) a name
+-- is one across its realm family, and one line comes stamped two ways: the channel's text with one
+-- sub-realm, the relay's copy with the sub-realm of the client that heard it (a player's /oly bug of
+-- 2026-11-10: one guildmate's lines under two stamps a minute apart). Keyed as stamped, the second copy
+-- was a new line (shown twice, our own coming back shown again) and took a rate token of a second
+-- bucket. A name of another family, or anywhere names do not split, stays as it is.
+local function Person(sender)
+	if not ns.splitNames or type(sender) ~= "string" then return sender end
+	local base, realm = sender:match("^(.+)%-([^%-]+)$")
+	if not realm then return sender end
+	if realm == ns.realm then return base end
+	local family = ns.ForeverFamily and ns.ForeverFamily(realm)
+	if family and family == ns.ForeverFamily(ns.realm) then return base end
+	return sender
+end
+Channels.Person = Person
+
 -- 1.2: the checks a line from another player passes before it may show, in Receive's order, one
 -- code shared with the Blood Arena's fight rooms (ArenaChat.lua, EC) rather than a copy:
 --   Channels.Admit(sender, guild, text, now, o) -> ok, reason
@@ -1243,6 +1260,7 @@ function Channels.Admit(sender, guild, text, now, o)
 	o = o or {}
 	now = now or GetTime()
 	sender = ns.FullName(sender)
+	local who = Person(sender)
 	local st = o.stats or stats
 	local m = { tier = o.where or o.tier or "?", guild = guild }
 	-- 1.1: a name the moderators took off (net-off, Moderation.lua): not shown, not kept.
@@ -1288,7 +1306,7 @@ function Channels.Admit(sender, guild, text, now, o)
 		-- The server stamps the sender, so this key can't be forged. The text is part of it: ids
 		-- start again at random after a /reload, and a reused id must not hide a new line.
 		local heard, own = o.seen or seen, o.mine or mine
-		local key = sender .. "#" .. o.id .. "#" .. text
+		local key = who .. "#" .. o.id .. "#" .. text
 		-- Our own line coming back (already shown when sent): the same id and text, from a name
 		-- that is ours however it is written ("First-Surname", "First Surname", with a realm or not).
 		local was = own[o.id .. "#" .. text]
@@ -1310,10 +1328,10 @@ function Channels.Admit(sender, guild, text, now, o)
 		return false, "deleted"
 	end
 	local list = o.buckets or buckets
-	local b = list[sender]
+	local b = list[who]
 	if not b then
 		b = { tokens = BUCKET_SIZE, t = now }
-		list[sender] = b
+		list[who] = b
 	end
 	b.tokens = math.min(BUCKET_SIZE, b.tokens + (now - b.t) / BUCKET_REFILL)
 	b.t = now
@@ -1388,7 +1406,10 @@ end
 local function Letters(name)
 	name = tostring(name or "")
 	local base, realm = name:match("^(.+)%-([^%-]+)$")
-	if realm and (realm == ns.realm or realm == ns.CurrentRealm()) then name = base end
+	if realm and (realm == ns.realm or realm == ns.CurrentRealm()) then name = base
+	-- (1.5.5) Where names split, our own line comes back stamped with another sub-realm of our family
+	-- too (the relay's copy): still ours (Person, above).
+	elseif realm and Person(name) == base then name = base end
 	name = name:lower():gsub("'", ""):gsub("[%s%-]+", " ")
 	return (name:match("^%s*(.-)%s*$"))
 end

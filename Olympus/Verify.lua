@@ -960,6 +960,11 @@ end
 
 -- The guilds still to verify (the census's and our own; overdue first, then the least time left,
 -- then the biggest) and the verified ones (by name), each { guild, status, info, total }.
+-- (1.5.5) And every guild with a valid start: the starts cross the relays with the approvals (a
+-- verifier's answer, GV~S), while the census reaches a verifier only from the guilds on his own relay,
+-- so the verifiers' page missed the other relays' guilds before the hold began (the audit of 11-10:
+-- more starts than census guilds on both realm groups). A guild the census never brought here shows
+-- with its start, no guild master and no member count until it does.
 function Verify.Pending(now)
 	now = now or Verify.Clock()
 	local pending, verified, done = {}, {}, {}
@@ -978,6 +983,7 @@ function Verify.Pending(now)
 	if IsInGuild() then Add((GetGuildInfo("player"))) end
 	local s = Store()
 	for _, e in pairs(s and s.list or {}) do if Valid(e) and e.k == "A" then Add(e.guild) end end
+	for _, e in pairs(s and s.start or {}) do if ValidStart(e) then Add(e.guild) end end
 	table.sort(pending, function(a, b)
 		if a.info.left ~= b.info.left then return a.info.left < b.info.left end
 		if (a.total or 0) ~= (b.total or 0) then return (a.total or 0) > (b.total or 0) end

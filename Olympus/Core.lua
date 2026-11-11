@@ -2,7 +2,7 @@ local ADDON, ns = ...
 local L = ns.L
 
 ns.NAME = "Olympus"
-ns.VERSION = "1.5.4"
+ns.VERSION = "1.5.5"
 ns.PREFIX = "OLYMPUS"        -- addon message prefix (max 16 chars)
 ns.CHANNEL = "OlympusNet"    -- hidden chat channel shared by every Olympus guild (Alliance)
 ns.CHANNEL_HORDE = "OlympusNetH" -- the Horde's: the two factions never see each other's guilds
@@ -258,17 +258,31 @@ end
 -- What kind of realm each known realm is, "pvp" or "pve", by its name in "Name-Realm" form (the
 -- Companion shows a PvP realm group's Wanted list to the PvE realms' players with a line saying it
 -- comes from PvP: BridgeSections.lua's membership and wanted). Olympus reads no realm type from the
--- game, so a realm is known only when it is named here. The launch realms are not known yet (the
--- author fills them in once they are), so it ships empty: every realm is unknown (ns.RealmPvP nil)
--- and the Companion's relay falls back to its own list of PvP realm groups.
+-- game, so a realm is known only when it is named here, or by its own name on Forever (below). It
+-- ships empty; the Companion's relay falls back to its own list of PvP realm groups for a realm
+-- nothing names.
 ns.REALM_KIND = {}
 
--- Whether a realm is a PvP realm: true or false for a realm ns.REALM_KIND names, nil for any other.
+-- Whether a realm is a PvP realm: true or false for a realm ns.REALM_KIND names; else (1.5.5) by its
+-- ruleset. ns.REALM_KIND was never filled, so every Forever realm was unknown and the Companion could
+-- not keep the PvP group's Wanted list apart from the PvE group's. A Forever realm names its ruleset
+-- in its own name (ForeverFamily: "CAMWOWUS2Realm7PvP"): PvP and RP-PvP realms are PvP realms, PvE
+-- and RP realms are not. Any other realm by the author's signed realm table (ns.RealmInfo). nil for
+-- a Hardcore realm and for a realm nothing names.
+local REALM_PVP = { pvp = true, rppvp = true, pve = false, rp = false }
 function ns.RealmPvP(realm)
 	local kinds = ns.REALM_KIND
 	local kind = type(realm) == "string" and type(kinds) == "table" and kinds[realm] or nil
 	if kind == "pvp" then return true end
 	if kind == "pve" then return false end
+	if type(realm) ~= "string" or realm == "" then return nil end
+	local family = ForeverFamily(realm)
+	local rules = family and family:match("^Forever(%a+)$")
+	if rules then return REALM_PVP[rules:lower()] end
+	if type(ns.RealmInfo) == "function" then
+		local ok, info = pcall(ns.RealmInfo, realm)
+		if ok and type(info) == "table" and type(info.kind) == "string" then return REALM_PVP[info.kind] end
+	end
 	return nil
 end
 
@@ -1074,6 +1088,28 @@ function ns.IsAuthorName(name)
 	end
 	return false
 end
+-- (1.5.5) The Olympus Speedrunner (a name heard, or ours): the character the signed list we hold names in a
+-- ^speedrunner^ entry, either side's (a name is one per realm group whatever its side), by its name on
+-- its realm group, whatever its case. The code names nobody; no list, or a newer one without him: nobody.
+function ns.IsSpeedrunnerName(name)
+	if type(name) ~= "string" or name == "" then return false end
+	local p = ns.SignedPins and ns.SignedPins()
+	local s = p and p.speedrunner
+	if type(s) ~= "table" or not (s.Alliance or s.Horde) then return false end
+	local full = ns.FullName(name)
+	local realm = ns.RealmOf(full)
+	if realm == nil then return false end
+	local short, group = ns.ShortName(full):lower(), nil
+	for _, side in ipairs({ "Alliance", "Horde" }) do
+		for _, n in ipairs(s[side] or NO_PINS) do
+			if short == ns.ShortName(n):lower() then
+				group = group or ns.GroupOf(realm)
+				if group == ns.GroupOf(ns.RealmOf(n)) then return true end
+			end
+		end
+	end
+	return false
+end
 -- The Treasurer of Olympus, chosen by Asmongold's chat on September 23, 2026: exactly this
 -- character, in the guild named Olympus. Look-alikes in other guilds exist: both must match,
 -- and his realm group (Forever's PvP realms), where only he carries that name.
@@ -1527,7 +1563,10 @@ end
 -- a namesake on another group is someone else. A side the list names a King, Queen or Treasurer for has
 -- that one alone; a side it names none for keeps the code's (on the beta's group alone). Nobody else
 -- ever is one: no census vote counts, and a newer signed list without him ends it at once.
-ns.PINS_MAX = { king = 1, queen = 1, treasurer = 4, author = 8 } -- names a side, each kind
+-- (1.5.5, the owner's call) ^speedrunner^<Alliance|Horde>^<First Surname-Realm>: the Olympus Speedrunner, who
+-- holds the level race's gold comet (Honors.Holdings) whatever the race does: a title and a frame alone, no
+-- authority of any kind (ns.IsSpeedrunnerName). Clients before 1.5.5 leave the entry out unread, as above.
+ns.PINS_MAX = { king = 1, queen = 1, treasurer = 4, author = 8, speedrunner = 1 } -- names a side, each kind
 ns.REALM_KINDS = { pvp = true, pve = true, rp = true, rppvp = true, hardcore = true }
 ns.REALM_REGIONS = { NA = true, EU = true }
 ns.REALMS_MAX = 40 -- realms a region
@@ -1548,7 +1587,7 @@ end
 -- where it names nobody valid. Anything PinName, ns.PINS_MAX, the kinds or the regions leave out is
 -- left out.
 function ns.ReadPins(text)
-	local out = { king = {}, queen = {}, treasurer = {}, author = {}, realms = {} }
+	local out = { king = {}, queen = {}, treasurer = {}, author = {}, speedrunner = {}, realms = {} }
 	local regions = {}
 	for entry in tostring(text or ""):gmatch("[^;]+") do
 		local kind, slot, list = entry:match("^%^(%l+)%^(%a+)%^([^%^]*)$")
@@ -2155,6 +2194,41 @@ function ns.SafeCall(where, fn, ...)
 	return ok
 end
 
+-- (1.5.5) A value Forever's client keeps secret from addons: a chat line, its sender or a channel's
+-- name while chat is locked down (an instance, an encounter, a battleground). Its Lua type is still
+-- "string", but indexing it (text:match), measuring it (#text) or comparing it raises while our code
+-- runs ("attempt to index local 'text' (a secret string value, while execution tainted by
+-- 'Olympus')": Relay.lua and ChatHall.lua in the players' /oly bug of 11-08 and 11-09). True when any
+-- of the values is one, or when the check itself fails: nothing of it is read. Counted by `where`
+-- (a fixed name of ours) for /oly bug (ns.SecretSkips); nil `where`, not counted (a value that may be
+-- another addon's: an addon message's prefix); a client without issecretvalue keeps none.
+local secretSkips, secretWheres = {}, 0
+ns.SECRET_WHERE_MAX = 16
+function ns.Secret(where, ...)
+	local check = issecretvalue
+	if type(check) ~= "function" then return false end
+	for i = 1, select("#", ...) do
+		local ok, secret = pcall(check, (select(i, ...)))
+		if not ok or secret == true then
+			if type(where) == "string" then
+				if secretSkips[where] == nil then
+					if secretWheres >= ns.SECRET_WHERE_MAX then where = "other" else secretWheres = secretWheres + 1 end
+				end
+				secretSkips[where] = (secretSkips[where] or 0) + 1
+			end
+			return true
+		end
+	end
+	return false
+end
+-- { [where] = lines left unread } this session (a copy).
+function ns.SecretSkips()
+	local out = {}
+	for k, v in pairs(secretSkips) do out[k] = v end
+	return out
+end
+function ns.ResetSecretSkips() wipe(secretSkips); secretWheres = 0 end -- (tests)
+
 local listeners = {}
 function ns.On(name, fn)
 	listeners[name] = listeners[name] or {}
@@ -2166,18 +2240,44 @@ function ns.Fire(name, ...)
 	for i = 1, #l do ns.SafeCall("callback " .. name, l[i], ...) end
 end
 
+-- Whether any of the values is a secret one (Forever's client hands an addon chat text, names and
+-- GUIDs as secrets where its chat is locked down: an instance, an encounter). A secret may be
+-- passed on and nothing else: no length, no compare, no index. A check that fails counts as secret.
+function ns.IsSecret(...)
+	if type(issecretvalue) ~= "function" then return false end
+	for i = 1, select("#", ...) do
+		local ok, secret = pcall(issecretvalue, (select(i, ...)))
+		if not ok or secret then return true end
+	end
+	return false
+end
+
 local eventFrame = CreateFrame("Frame")
 local handlers = {}
+local chatEvent = {} -- event -> true for the game's chat events (CHAT_MSG_*)
 function ns.RegisterEvent(event, fn)
 	if not handlers[event] then
 		handlers[event] = {}
+		chatEvent[event] = type(event) == "string" and event:find("^CHAT_MSG_") ~= nil
 		eventFrame:RegisterEvent(event)
 	end
 	table.insert(handlers[event], fn)
 end
+-- (1.5.5, the players' /oly bug reports of 2026-11-08: "attempt to get length of local 'text' (a
+-- secret string value, while execution tainted by 'Olympus')", 3 at ChatHall.lua and 33 at
+-- Relay.lua in one session, 96 in another.) A chat event with any secret field reaches no handler
+-- of ours, counted for /oly status. Not even its other fields: a secret one handed on as nil reads
+-- as "not given", and a check can pass on that. CHAT_MSG_ADDON's channel number (field 7) is how
+-- Comm's OnAddonMessage drops an outsider's word from another channel, and a client that gives no
+-- number passes it. One guard here for every chat handler, present and future.
+ns.secretChatSkipped = 0
 eventFrame:SetScript("OnEvent", function(_, event, ...)
 	local h = handlers[event]
 	if not h then return end
+	if chatEvent[event] and ns.IsSecret(...) then
+		ns.secretChatSkipped = ns.secretChatSkipped + 1
+		return
+	end
 	for i = 1, #h do ns.SafeCall("event " .. event, h[i], ...) end
 end)
 

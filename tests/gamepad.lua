@@ -3351,6 +3351,36 @@ test("gamepad pass: a link in the Chat tab: a left click opens the game's link w
 	GP.Covers("item-ref")
 end)
 
+test("gamepad pass: named item colours in the Chat tab use the client's RGB without changing its table, at either login and across both switches", function()
+	for _, loginPad in ipairs({ false, true }) do
+		local C, ns = Session(loginPad)
+		-- Blizzard_Colors/Mainline/ColorManager.lua: UpdateColorsForItemQuality stores r, g, b
+		-- in ITEM_QUALITY_COLORS[quality] (the table is present in the Forever API fixture).
+		local colour = { r = 30 / 255, g = 1, b = 0, hex = "|cnIQ2:" }
+		local colours = { [2] = colour }
+		C.env.ITEM_QUALITY_COLORS = colours
+		C.env.C_Item.GetItemInfo = function() return "Mooncloth", "|cnIQ2:|H" .. ITEM_LINK .. "|h[Mooncloth]|h|r", 2 end
+		local b = LinkBubble(C, ns)
+		for _, pad in ipairs({ loginPad, not loginPad, loginPad }) do
+			C.Switch(pad); C.Advance(1)
+			-- Re-read the client's colour table in each mode, rather than using the cached look.
+			ns.ChatWindow.itemLooks = {}
+			ns.ChatWindow.Changed(); ns.ChatWindow.Render()
+			eq(b.body:GetText(), "look " .. ITEM_TEXT .. " cheap", "hex colour in either input mode")
+			eq((ClickLink(C, b)), pad and 0 or 1, "the game's link window still follows the gate")
+			C.RunScript(b, "OnHyperlinkEnter", ITEM_LINK, ITEM_TEXT)
+			eq(C.env.GameTooltip:IsShown(), true); eq(C.env.GameTooltip.hyperlink, ITEM_LINK)
+			C.RunScript(b, "OnHyperlinkLeave")
+			eq(C.env.ITEM_QUALITY_COLORS, colours); eq(colours[2], colour)
+			eq(colour.r, 30 / 255); eq(colour.g, 1); eq(colour.b, 0); eq(colour.hex, "|cnIQ2:")
+		end
+		eq(#(C.itemsRequested or {}), 0, "the item is cached")
+		Check(C.ledger, "named item colours, both input modes")
+		NoErrors(C, "named item colours, both input modes")
+	end
+	GP.Covers("lookups"); GP.Covers("item-ref")
+end)
+
 -- A moderator's cover name (Cover.lua) on a name the game updates (a nameplate's, a raid frame's):
 -- the target "Someone" a councillor under a cover, this player's Yes to moderator protection.
 local function CoverScene(ns)

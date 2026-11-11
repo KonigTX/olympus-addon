@@ -77,9 +77,10 @@ test("1.2 the fights part: the level race (the design: the first to 20, 40, 60):
 	eq(#(s.levels[20] or {}), 0, "vouched, still waiting CONFIRM_AFTER")
 	w:Run(viewer.ns.Honors.CONFIRM_AFTER + 2)
 	eq(s.levels[20][1].name, young.name, "first to 20")
-	-- Held by her on every viewer that holds the same facts: the bronze comet.
+	-- Held by her on every viewer that holds the same facts: the bronze comet. (1.5.5, the owner's call:
+	-- retired: the book keeps her place, no comet is held for it.)
 	local held = HN(w, viewer).Holdings(young.name, young.guid)
-	eq(held[1].key, "level-race-20"); eq(held[1].art, "comet-bronze")
+	eq(#held, 0, "the bronze comet is retired")
 	-- A later claimant: vouched too, never the place.
 	w:Fire(cast.late, "PLAYER_LEVEL_UP", 20)
 	w:Run(61)
@@ -568,7 +569,8 @@ test("1.2 the fights part: a newly earned honour switches on by itself and the K
 	eq(letter ~= nil and letter:IsShown(), true, "the King's letter")
 	eq(letter.body:GetText():find("Arena Champion", 1, true) ~= nil, true)
 	eq(A.ns.HonorsNet.LetterFamily("arena-champion"), "arena")
-	for _, key in ipairs({ "arena-class-mage-2", "arena-race-orc-3", "donor-top-1", "donor-month-2", "level-race-40", "oracle-1", "guild-top-leader" }) do
+	-- (1.5.5: the gold comet's, the Olympus Speedrunner's; bronze and silver are retired.)
+	for _, key in ipairs({ "arena-class-mage-2", "arena-race-orc-3", "donor-top-1", "donor-month-2", "level-race-60", "oracle-1", "guild-top-leader" }) do
 		local text = w:As(A, A.ns.HonorsNet.LetterText, key)
 		assert(text and text:find(A.ns.HonorsNet.TitleText(key), 1, true), key)
 		for _, n in ipairs({ World.NAMES.king, World.NAMES.author }) do assert(not text:find(n:match("^%S+"), 1, true), "no real name") end
