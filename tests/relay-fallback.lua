@@ -387,7 +387,7 @@ test("1.5.5 fallback: a provisional relay keeps 40 registrations at most, and se
 	end)
 end)
 
-test("1.5.5 fallback: Pick prefers the pinned relay, then an answered signed relay that named 1.5.5, then any answered signed one, then an unsigned code pin", function()
+test("1.5.5 fallback: Pick prefers the pinned relay, then an answered signed relay that named the preferred release, then any answered signed one, then an unsigned code pin", function()
 	World(function(W)
 		local m = W.Node("Picky Member", "Olympus Pick")
 		local R = m.c.Relay
@@ -398,8 +398,8 @@ test("1.5.5 fallback: Pick prefers the pinned relay, then an answered signed rel
 		eq(W.As(m, R.Pick), "Pin Gamma", "the only answer: the pin, as transport")
 		W.As(m, m.deliver, "WHISPER", SIG1 .. "-Realm", "RY~1.5.4")
 		eq(W.As(m, R.Pick), SIG1, "an answered signed relay over the unsigned pin")
-		W.As(m, m.deliver, "WHISPER", SIG2 .. "-Realm", "RY~1.5.5")
-		eq(W.As(m, R.Pick), SIG2, "one that named 1.5.5 over one that named 1.5.4")
+		W.As(m, m.deliver, "WHISPER", SIG2 .. "-Realm", "RY~" .. R.PREFER_VERSION)
+		eq(W.As(m, R.Pick), SIG2, "one that named the preferred release over one that named 1.5.4")
 		R.PinnedRelay = function() return SIG1 end
 		eq(W.As(m, R.Pick), SIG1, "the pinned relay first, once it answered")
 		R.PinnedRelay = function() return "Not Answered" end

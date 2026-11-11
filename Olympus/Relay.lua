@@ -83,7 +83,7 @@ Relay.PRESENT_FOR = 1800     -- a presentation is kept this long past its last w
 Relay.PRESENT_GAP = 60       -- a client presents itself to one relay once this long at most
 Relay.MAX_PRESENTED = 4000   -- characters a relay keeps a presentation for: every client that may whisper it, not only reporters
 Relay.MAX_REFUSED = 200      -- refusals a relay notes for /oly relay admitted
-Relay.PUBLISHED = { "1.4.0", "1.4.1", "1.4.3", "1.4.4", "1.4.5", "1.4.6", "1.5.0", "1.5.1", "1.5.2", "1.5.3", "1.5.4", "1.5.5" }
+Relay.PUBLISHED = { "1.4.0", "1.4.1", "1.4.3", "1.4.4", "1.4.5", "1.4.6", "1.5.0", "1.5.1", "1.5.2", "1.5.3", "1.5.4", "1.5.5", "1.5.6" }
 Relay.RULES_EVERY = 1800     -- a relay asks the others for the rules this often; the author's client hands them out this often
 Relay.MAX_RULE_VERSIONS = 40 -- versions one word of rules may name
 Relay.VERIFY_ASK_EVERY = 180 -- one recovery ask across the signed relays, never per reporter
@@ -321,14 +321,14 @@ end
 -- needed. (1.5.5) Anyone else, the first of:
 --   (1) the relay a rebalance pinned (Relay.PinnedRelay), once it answered;
 --   (2) the signed relays that answered a ping within VERIFIED_FOR, those whose answer named
---       PREFER_VERSION or newer first (they carry what 1.5.5 adds);
+--       PREFER_VERSION or newer first (the recovered mesh and tree ship in 1.5.6);
 --   (3) the code's unsigned pins that answered, as transport alone (Relay.IsSignedRelay);
 --   (4) the signed relays not left out, none answered yet: not sure (Out holds the word and pings);
 --   (5) the provisional relays this client elected (RelayFallback.Elected), sure: each said yes or
 --       answered our ping within VERIFIED_FOR;
 -- else nil, and Out holds the word for HOLD_FOR: Forever's channel delivers nothing (1.5.4 sent it
 -- there). Within a step our guild's name and the window pick, so the load spreads.
-Relay.PREFER_VERSION = "1.5.5"
+Relay.PREFER_VERSION = "1.5.6"
 local function Fallback()
 	local F = ns.RelayFallback
 	if type(F) == "table" and not F.missing then return F end

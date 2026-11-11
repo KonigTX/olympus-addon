@@ -99,6 +99,36 @@ end
 local function Register(relay, As, member, guild) As(relay, relay.deliver, "WHISPER", member, "RL~P~RR~" .. guild) end
 local function Mesh(n, As) if n.c.Relay.Mesh then return As(n, n.c.Relay.Mesh) end end
 
+test("relay mesh (1.5.6): answered mesh-capable bridges are preferred to public 1.5.5, which remains a fallback", function()
+	World(function(Node, As)
+		local m = Node("Bridge Picker-Realm", "Olympus Pick")
+		local R = m.c.Relay
+		As(m, m.deliver, "WHISPER", A_NAME, "RY~1.5.5")
+		eq(As(m, R.Pick), ns.ShortName(A_NAME), "the older bridge still carries words when it is the only answer")
+		As(m, m.deliver, "WHISPER", B_NAME, "RY~1.5.6")
+		for i = 1, 64 do
+			m.guild = "Olympus Mixed Bridge " .. i
+			eq(As(m, R.Pick), ns.ShortName(B_NAME), "guild " .. i .. " uses the bridge with the recovered mesh")
+		end
+		As(m, R.LeaveOut, B_NAME, "offline in the mixed-version simulation")
+		eq(As(m, R.Pick), ns.ShortName(A_NAME), "losing the new bridge restores the answered older fallback")
+	end)
+end)
+
+test("relay mesh (1.5.6): default published versions admit the release and its test builds while explicit relay rules retain their authority", function()
+	World(function(Node)
+		local m = Node("Release Member-Realm", "Olympus Release")
+		local R = m.c.Relay
+		eq(R.Published("1.5.6"), true)
+		eq(R.Published("1.5.6-test.1"), true)
+		eq(R.Published("1.5.5"), true, "the previous public release remains admitted")
+		eq(R.Published("1.5.7"), false, "a future unpublished release is not admitted")
+		m.c.rdb.relayRules = { rev = 1, on = true, at = T0, versions = { "1.5.5" } }
+		eq(R.Published("1.5.6"), false, "a retained author-issued version list still takes precedence")
+		eq(R.Published("1.5.5"), true)
+	end)
+end)
+
 test("relay mesh (1.5.5): two signed relays mesh after Relay.Mesh(): each is the other's mesh peer, and one relay's own census snapshot reaches the other relay's registrant whole", function()
 	World(function(Node, As, Flush, Advance)
 		local a, b = Node(A_NAME, "Olympus Alpha"), Node(B_NAME, "Olympus Beta")
