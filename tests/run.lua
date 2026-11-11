@@ -63853,7 +63853,7 @@ end)()
 	end
 
 	test("1.4.0 version letters: release identity agrees across both TOCs and localized letters; reading the old release does not hide the new letter", function()
-		eq(ns.VERSION, "1.5.5")
+		eq(ns.VERSION, "1.5.6")
 		for _, path in ipairs({ "Olympus/Olympus.toc", "Olympus_Arena/Olympus_Arena.toc" }) do
 			local toc = assert(ReadFile(ROOT .. path))
 			eq(toc:match("## Version:%s*(%S+)"), ns.VERSION, path)
@@ -63866,8 +63866,9 @@ end)()
 				assert(loadfile(ADDON_DIR .. "Locales.lua"))("Olympus", lns)
 				assert(loadfile(ADDON_DIR .. "Letters.lua"))("Olympus", lns)
 				local title, body = lns.Letters.Text(ns.VERSION)
-				assert(type(title) == "string" and title ~= "", code .. ": current letter title")
-				assert(type(body) == "string" and body:find(ns.VERSION, 1, true), code .. ": current letter version")
+				local key = "LETTER_" .. ns.VERSION:gsub("%.", "_")
+				eq(title, lns.Letters.DrawMarks(rawget(lns.L, key .. "_TITLE")), code .. ": current localized letter title")
+				eq(body, lns.Letters.DrawMarks(rawget(lns.L, key)), code .. ": current localized letter body")
 				eq(body:find("1.1.6", 1, true), nil, code .. ": no old build label")
 				eq(lns.Letters.Versions()[1], ns.VERSION, code .. ": current letter first")
 				assert(lns.Letters.Has("1.1.5"), code .. ": published letter retained")
@@ -63892,7 +63893,7 @@ end)()
 			if not ok then error(err, 0) end
 		end
 		WithLetters(function(w)
-			ns.db.lettersRead = { ["1.1.6"] = true, ["1.2.0"] = true, ["1.2.2"] = true }
+			ns.db.lettersRead = { ["1.1.6"] = true, ["1.2.0"] = true, ["1.2.2"] = true, ["1.5.5"] = true }
 			ns.Consent.Show():Hide()
 			eq(w.Letters.Ask("update"), true)
 			eq(w.Letters.Frame().version, ns.VERSION)
@@ -63901,7 +63902,8 @@ end)()
 		end)
 		-- A reader of all previous published letters gets the new candidate's alone.
 		WithLetters(function(w)
-			ns.db.lettersRead = { ["1.2.0"] = true, ["1.2.1"] = true, ["1.2.2"] = true, ["1.2.3"] = true, ["1.2.4"] = true, ["1.2.5"] = true, ["1.2.5.1"] = true, ["1.3.0"] = true, ["1.3.2"] = true }
+			ns.db.lettersRead = {}
+			for _, version in ipairs(w.Letters.Versions()) do if version ~= ns.VERSION then ns.db.lettersRead[version] = true end end
 			ns.Consent.Show():Hide()
 			eq(w.Letters.Ask("update"), true, "a reader of the previous published letter gets the new one's")
 			eq(w.Letters.Frame().version, ns.VERSION)
@@ -64352,7 +64354,7 @@ end)()
 			eq(f.title:IsShown(), false); eq(f.body:IsShown(), false); eq(f.all:IsShown(), false)
 			local versions = Lt.Versions()
 			eq(#versions, #Lt.LIST, "a letter for every version listed")
-			eq(table.concat(versions, " "), "1.5.5 1.5.4 1.5.3 1.5.2 1.5.1 1.5.0 1.4.6 1.4.5 1.4.4 1.4.3 1.4.2 1.4.1 1.4.0 1.3.3 1.3.2 1.3.0 1.2.5.1 1.2.5 1.2.4 1.2.3 1.2.2 1.2.1 1.2.0 1.1.5 1.1.4 1.1.3 1.1.2 1.1.1 1.1.0", "newest first")
+			eq(table.concat(versions, " "), "1.5.6 1.5.5 1.5.4 1.5.3 1.5.2 1.5.1 1.5.0 1.4.6 1.4.5 1.4.4 1.4.3 1.4.2 1.4.1 1.4.0 1.3.3 1.3.2 1.3.0 1.2.5.1 1.2.5 1.2.4 1.2.3 1.2.2 1.2.1 1.2.0 1.1.5 1.1.4 1.1.3 1.1.2 1.1.1 1.1.0", "newest first")
 			for i, v in ipairs(versions) do
 				local r = f.rows[i]
 				eq(r:IsShown(), true); eq(r.version, v)
