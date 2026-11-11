@@ -17,7 +17,7 @@ local function WithCensus(fn)
 				{ name = "Olympus III", fresh = true, g = { total = 10, online = 1 } },
 			}, seen = { { name = "Olympus IV", online = 4 } } }
 		local ok, err = pcall(function()
-			ns.Verify = { Mark = function() return "" end, Lines = function() return { notice, summary } end }
+			ns.Verify = { Mark = function() return "" end, Lines = function() return { notice, summary } end, Tooltip = function() end }
 			ns.Recruit = { RequestLines = function() return { recruit } end }
 			ns.PartyGuard, ns.Court, ns.Hop, ns.CensusStats = nil, nil, nil, nil
 			ns.Record = { Line = function() return record end }
@@ -61,6 +61,38 @@ test("King Census verification: the actual King's notices follow every guild and
 		eq(K.IsKing(), true); eq(K.Preview(), false)
 		AssertBottom(s, notice, summary, recruit, footer, record)
 		eq(K.IsKing(), true, "building the Census preserves his actual authority")
+	end)
+end)
+
+test("King Census verification: a guild tooltip explains the current highest-average-level honour minimum", function()
+	WithCensus(function(_, s)
+		local path = debug.getinfo(1, "S").source:sub(2)
+		local root = path:match("^(.*)tests[/\\]king%-census%-layout%.lua$") or "./"
+		local hns, saved = {}, ns.Honors
+		assert(loadfile(root .. "Olympus/Honors.lua"))("Olympus", hns)
+		ns.Honors = hns.Honors
+		local ok, err = pcall(function()
+			local g = s.guilds[1].g
+			g.avgLevel, g.t = 21.6, ns.Now()
+			local tooltip
+			for _, line in ipairs(ns.Views.Build("census", s)) do
+				if line.cols and line.cols[2] == ns.FormatNumber(g.total) then tooltip = line.tooltip end
+			end
+			assert(tooltip, "the actual Census guild tooltip")
+			local text, wrapped = {}, {}
+			local tt = { AddDoubleLine = function() end, AddLine = function(_, value, _, _, _, wrap)
+				text[#text + 1], wrapped[value] = value, wrap
+			end }
+			tooltip(tt)
+			local rule = ns.L.GUILD_AVG_HONOUR_MIN:format(hns.Honors.GUILD_MIN_MEMBERS)
+			assert(table.concat(text, "\n"):find(rule, 1, true), "the tooltip names the canonical membership minimum")
+			eq(wrapped[rule], true, "the eligibility explanation wraps in the existing tooltip")
+			ns.Honors, text = nil, {}
+			tooltip(tt)
+			eq(table.concat(text, "\n"):find(rule, 1, true), nil, "the tooltip still works before honours are loaded")
+		end)
+		ns.Honors = saved
+		if not ok then error(err, 0) end
 	end)
 end)
 

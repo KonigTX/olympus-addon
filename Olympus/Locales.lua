@@ -266,7 +266,7 @@ L.LETTER_1_5_6 = [==[Your Majesty. Soldiers of Olympus.
 This update improves how guilds exchange census reports and recover missing pieces. The players acting as network relays need this version too for the new connections to work across guilds.
 
 - {guild} Relays find one another and exchange their census snapshots. Large snapshots can be passed through several guild members, with checks and requests for missing pieces.
-- {guild} The saved census gives way to sufficient newer reports even when an extra old guild report remains. Its original observation date stays visible while coverage is incomplete.
+- {guild} The saved census gives way to sufficient newer reports even when an extra old guild report remains. Its original observation date stays visible while coverage is incomplete. The highest-average-level guild honour requires at least 950 members and follows the updated census.
 - {watch} The release carries the author's signed lists. The author's signed identity also restores access to the private High Council view. Guild-master verification holds wait where no appointed verifier is available.
 - {crown} Verification notices appear below the guilds on the King's Census screen. The King's identity remains separate from the guild master. The signed Treasurer and Quaestors have their own roles and frames.
 - {news} Olympus chat can show all rulesets or only PvP, PvE, RP or RP-PvP. Other rulesets are labelled in the combined view.
@@ -452,7 +452,7 @@ Vida longa ao Rei. Vida longa ao Olympus.]==]
 Esta atualização melhora a troca de relatórios do censo entre guildas e a recuperação de partes perdidas. Os jogadores que atuam como relays da rede também precisam atualizar para que as novas conexões funcionem entre guildas.
 
 - {guild} Os relays encontram uns aos outros e compartilham seus snapshots do censo. Snapshots grandes podem passar por vários membros das guildas, com conferência e pedidos das partes que faltarem.
-- {guild} O censo salvo dá lugar a uma quantidade suficiente de relatórios mais novos mesmo quando sobra um relatório antigo de outra guilda. A data original da observação continua visível enquanto a cobertura estiver incompleta.
+- {guild} O censo salvo dá lugar a uma quantidade suficiente de relatórios mais novos mesmo quando sobra um relatório antigo de outra guilda. A data original da observação continua visível enquanto a cobertura estiver incompleta. A honraria da guilda com maior nível médio exige pelo menos 950 membros e acompanha o censo atualizado.
 - {watch} A versão inclui as listas assinadas pelo autor. A identidade assinada do desenvolvedor também permite visualizar o High Council privado. A restrição do guild master por verificação aguarda onde ainda não existe um verificador nomeado disponível.
 - {crown} Os avisos de verificação ficam depois das guildas na tela de censo do Rei. A identidade do Rei permanece separada do guild master. O Tesoureiro e os Quaestors da lista assinada têm seus próprios cargos e molduras.
 - {news} O chat do Olympus pode mostrar todos os rulesets ou apenas PvP, PvE, RP ou RP-PvP. A visualização conjunta identifica as mensagens dos outros rulesets.
@@ -706,6 +706,7 @@ L.INACTIVE_7 = "Offline 7+ days"
 L.INACTIVE_30 = "Offline 30+ days"
 L.INACTIVE_LINE = "Inactive: %d for 7+ days, %d for 30+ days"
 L.AVG_LEVEL = "Average level"
+L.GUILD_AVG_HONOUR_MIN = "The highest-average-level honour requires at least %d guild members."
 L.VACANCIES = "Free slots"
 L.CLICK_EXPAND = "Click to open / close"
 -- (1.5.5: the level race is off; the Realm page's census list of the highest levels stays, by this name.)
@@ -3170,6 +3171,7 @@ if GetLocale and GetLocale() == "ptBR" then
 	L.INACTIVE_30 = "Offline há 30+ dias"
 	L.INACTIVE_LINE = "Inativos: %d há 7+ dias, %d há 30+ dias"
 	L.AVG_LEVEL = "Nível médio"
+	L.GUILD_AVG_HONOUR_MIN = "A honraria pelo maior nível médio exige uma guilda com pelo menos %d membros."
 	L.VACANCIES = "Vagas"
 	L.CLICK_EXPAND = "Clique para abrir / fechar"
 	L.LEVEL_RACE = "Níveis mais altos"

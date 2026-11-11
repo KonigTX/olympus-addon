@@ -478,16 +478,28 @@ end)
 -- The best guild
 ---------------------------------------------------------------------------
 
+test("1.5.6 best guild: eligibility starts at 950 and an unknown leader cannot promote a lower contest row", function()
+	eq(Honors.GUILD_MIN_MEMBERS, 950)
+	eq(Honors.GuildTop({ { guild = "Olympus Small", leader = "Ann", members = 949, avgLevel = 60 } }), nil)
+	eq(Honors.GuildTop({ { guild = "Olympus Full", leader = "Bea", members = 950, avgLevel = 30 } }).guild, "Olympus Full")
+	local rows = { { guild = "Olympus Higher", members = 1000, avgLevel = 50 },
+		{ guild = "Olympus Lower", leader = "Cam", members = 1000, avgLevel = 40 } }
+	eq(Honors.GuildTop(rows).guild, "Olympus Lower", "the default public API still requires a leader")
+	local winner = Honors.GuildTop(rows, { allowUnknownLeader = true })
+	eq(winner.guild, "Olympus Higher", "contest selection ranks counts before proving its winner's leader")
+	eq(winner.leader, nil, "no leader is invented")
+end)
+
 test("honours: the best guild is the highest average level; ties go to more members, then the name; small guilds can't win", function()
 	local rows = {
-		{ guild = "Olympus Aurora", leader = "Maelis", members = 120, avgLevel = 45.3 },
-		{ guild = "Olympus Dawn", leader = "Quill", members = 200, avgLevel = 45.34 },   -- 45.3 to the tenth
-		{ guild = "Olympus Borealis", leader = "Tovan", members = 200, avgLevel = 45.3 },
+		{ guild = "Olympus Aurora", leader = "Maelis", members = 960, avgLevel = 45.3 },
+		{ guild = "Olympus Dawn", leader = "Quill", members = 980, avgLevel = 45.34 },   -- 45.3 to the tenth
+		{ guild = "Olympus Borealis", leader = "Tovan", members = 980, avgLevel = 45.3 },
 		{ guild = "Olympus Cinder", leader = "Rook", members = 2, avgLevel = 60 },         -- two players
-		{ guild = "Olympus Ember", leader = "Sable", members = 300, avgLevel = 44.9 },
-		{ guild = "Olympus Forged", leader = "Wren", members = 300, avgLevel = 75 },       -- impossible
-		{ guild = "Olympus Gale", leader = "Ione", members = 300, avgLevel = 59, off = true }, -- net-off
-		{ guild = "Olympus Hollow", members = 300, avgLevel = 58 },                       -- no leader known
+		{ guild = "Olympus Ember", leader = "Sable", members = 1000, avgLevel = 44.9 },
+		{ guild = "Olympus Forged", leader = "Wren", members = 1000, avgLevel = 75 },       -- impossible
+		{ guild = "Olympus Gale", leader = "Ione", members = 1000, avgLevel = 59, off = true }, -- net-off
+		{ guild = "Olympus Hollow", members = 1000, avgLevel = 58 },                       -- no leader known
 		{ guild = "Olympus Iron", leader = "Pax", members = 30.5, avgLevel = 58 },
 	}
 	local list = Honors.GuildRanking(rows)
@@ -495,7 +507,7 @@ test("honours: the best guild is the highest average level; ties go to more memb
 	eq(list[1].place, 1)
 	local top = Honors.GuildTop(rows)
 	eq(top.leader, "Tovan")
-	eq(top.members, 200)
+	eq(top.members, 980)
 	-- A guild at the minimum can win; one under it can't.
 	eq(Honors.GuildTop({ { guild = "Olympus Jade", leader = "Lark", members = Honors.GUILD_MIN_MEMBERS, avgLevel = 30 } }).leader, "Lark")
 	eq(Honors.GuildTop({ { guild = "Olympus Jade", leader = "Lark", members = Honors.GUILD_MIN_MEMBERS - 1, avgLevel = 30 } }), nil)
@@ -509,30 +521,30 @@ end)
 -- so his client alone could give him the owl, its title and its letter at a near tie.
 test("honours: 1.2.4 the best guild's average level is cut down to the tenth as the census carries it, our own unrounded one too", function()
 	local rows = {
-		{ guild = "Olympus Zeta", leader = "Zed", members = 100, avgLevel = 47.96 }, -- (ours, from our roster)
-		{ guild = "Olympus Alpha", leader = "Ann", members = 100, avgLevel = 47.9 },  -- (theirs, from their report)
+		{ guild = "Olympus Zeta", leader = "Zed", members = 950, avgLevel = 47.96 }, -- (ours, from our roster)
+		{ guild = "Olympus Alpha", leader = "Ann", members = 950, avgLevel = 47.9 },  -- (theirs, from their report)
 	}
 	local list = Honors.GuildRanking(rows)
 	eq(Keys(list, "guild"), "Olympus Alpha,Olympus Zeta", "a tie at 47.9: by the name, as on every client")
 	eq(list[2].avgLevel, 47.9)
-	eq(Honors.GuildTop({ { guild = "Olympus Zeta", leader = "Zed", members = 100, avgLevel = 59.99 },
-		{ guild = "Olympus Alpha", leader = "Ann", members = 101, avgLevel = 59.9 } }).guild, "Olympus Alpha", "59.9 each: the more members")
-	eq(Honors.GuildTop({ { guild = "Olympus Zeta", leader = "Zed", members = 100, avgLevel = 59.99 } }).avgLevel, 59.9, "never 60.0")
+	eq(Honors.GuildTop({ { guild = "Olympus Zeta", leader = "Zed", members = 950, avgLevel = 59.99 },
+		{ guild = "Olympus Alpha", leader = "Ann", members = 951, avgLevel = 59.9 } }).guild, "Olympus Alpha", "59.9 each: the more members")
+	eq(Honors.GuildTop({ { guild = "Olympus Zeta", leader = "Zed", members = 950, avgLevel = 59.99 } }).avgLevel, 59.9, "never 60.0")
 end)
 
 test("honours: the best guild from the census as it is kept: one faction, the guilds the caller leaves out, and only fresh reports", function()
 	local now = 1790000000
 	local guilds = {
-		["Olympus Aurora"] = { total = 400, leader = "Maelis", avgLevel = 31.2, faction = "Alliance", t = now - HOUR },
-		["Olympus Kiln"] = { total = 400, leader = "Grom", avgLevel = 40.1, faction = "Horde", t = now - HOUR },
-		["Olympus Nameless"] = { total = 400, leader = "Nox", avgLevel = 50, t = now - HOUR },  -- no faction said
+		["Olympus Aurora"] = { total = 970, leader = "Maelis", avgLevel = 31.2, faction = "Alliance", t = now - HOUR },
+		["Olympus Kiln"] = { total = 970, leader = "Grom", avgLevel = 40.1, faction = "Horde", t = now - HOUR },
+		["Olympus Nameless"] = { total = 970, leader = "Nox", avgLevel = 50, t = now - HOUR },  -- no faction said
 	}
 	eq(Honors.GuildTop(guilds, { faction = "Alliance" }).guild, "Olympus Aurora", "a row with no faction is no Alliance row")
 	eq(Honors.GuildTop(guilds, { faction = "Horde" }).guild, "Olympus Kiln")
 	eq(Honors.GuildTop(guilds).guild, "Olympus Nameless", "no faction asked: every row")
 	-- The census's rows don't say net-off (Data.NetOff) or no longer Olympus (ns.IsFederation): skip.
-	guilds["Olympus Gale"] = { total = 300, leader = "Ione", avgLevel = 59, faction = "Alliance", t = now - HOUR }
-	guilds["Gale Remnant"] = { total = 300, leader = "Ilse", avgLevel = 58, faction = "Alliance", t = now - HOUR }
+	guilds["Olympus Gale"] = { total = 1000, leader = "Ione", avgLevel = 59, faction = "Alliance", t = now - HOUR }
+	guilds["Gale Remnant"] = { total = 1000, leader = "Ilse", avgLevel = 58, faction = "Alliance", t = now - HOUR }
 	local asked = {}
 	local top = Honors.GuildTop(guilds, { faction = "Alliance", skip = function(guild, row)
 		asked[guild] = row.leader
@@ -543,9 +555,9 @@ test("honours: the best guild from the census as it is kept: one faction, the gu
 	eq(Honors.GuildTop(guilds, { faction = "Alliance" }).guild, "Olympus Gale", "not skipped: it wins")
 	-- With now: a report older than GUILD_MAX_AGE (kept 7 days by the census), or with no time, can't win.
 	local rows = {
-		{ guild = "Olympus Aurora", leader = "Maelis", members = 100, avgLevel = 31.2, t = now - Honors.GUILD_MAX_AGE },
-		{ guild = "Olympus Quiet", leader = "Hush", members = 100, avgLevel = 55, t = now - Honors.GUILD_MAX_AGE - 1 },
-		{ guild = "Olympus Timeless", leader = "Ever", members = 100, avgLevel = 58 },
+		{ guild = "Olympus Aurora", leader = "Maelis", members = 950, avgLevel = 31.2, t = now - Honors.GUILD_MAX_AGE },
+		{ guild = "Olympus Quiet", leader = "Hush", members = 950, avgLevel = 55, t = now - Honors.GUILD_MAX_AGE - 1 },
+		{ guild = "Olympus Timeless", leader = "Ever", members = 950, avgLevel = 58 },
 	}
 	eq(Honors.GuildTop(rows, { now = now }).guild, "Olympus Aurora")
 	eq(Honors.GuildTop(rows, { now = now, maxAge = 7 * DAY }).guild, "Olympus Quiet")
@@ -582,7 +594,7 @@ local function Everything()
 		tiers = { ["Player-1-A"] = "gold" },
 		donors = donors,
 		levels = Honors.LevelRace({}, claims, 100000),
-		guild = Honors.GuildTop({ { guild = "Olympus Aurora", leader = "Aldric", members = 100, avgLevel = 40 } }),
+		guild = Honors.GuildTop({ { guild = "Olympus Aurora", leader = "Aldric", members = 950, avgLevel = 40 } }),
 	}
 end
 
@@ -1394,7 +1406,7 @@ end)
 -- (the design: no members' title for the best guild, only its leader's owl. This test was the
 -- members' title's and now expects nothing for them.)
 test("honours: the best guild's leader holds its owl (frame and title); its members and another guild's hold nothing", function()
-	local inputs = { guild = Honors.GuildTop({ { guild = "Olympus Aurora", leader = "Maelis", members = 100, avgLevel = 40 } }) }
+	local inputs = { guild = Honors.GuildTop({ { guild = "Olympus Aurora", leader = "Maelis", members = 950, avgLevel = 40 } }) }
 	eq(#Honors.Holdings({ name = "Lida Fenn", guild = "Olympus Aurora" }, inputs), 0, "a member: nothing")
 	eq(#Honors.Holdings({ name = "Lida Fenn", guild = "  olympus AURORA " }, inputs), 0)
 	eq(#Honors.Holdings({ name = "Lida Fenn", guild = "Olympus Dawn" }, inputs), 0)
@@ -1407,7 +1419,7 @@ test("honours: the best guild's leader holds its owl (frame and title); its memb
 	local q = Honors.Update(nil, lead, true)
 	eq(q.frame, "guild-top-leader")
 	local held = Honors.Holdings({ name = "Maelis", guild = "Olympus Aurora" },
-		{ guild = Honors.GuildTop({ { guild = "Olympus Aurora", leader = "Tovan", members = 100, avgLevel = 40 } }) })
+		{ guild = Honors.GuildTop({ { guild = "Olympus Aurora", leader = "Tovan", members = 950, avgLevel = 40 } }) })
 	local earned, lost
 	q, earned, lost = Honors.Update(q, held, true)
 	eq(#earned, 0) eq(Keys(lost, "family"), "guild")

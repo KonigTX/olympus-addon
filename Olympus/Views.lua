@@ -1313,7 +1313,13 @@ local function GuildTooltip(e)
 		tt:AddDoubleLine(L.VACANCIES, ns.FormatNumber(math.max(0, 1000 - (g.total or 0))), 1, 0.82, 0, 1, 1, 1)
 		-- (1.2.4: to the tenth as every client has it, Data.AvgLevelText: the Census's column too.)
 		local avg = ns.Data.AvgLevelText(g)
-		if avg then tt:AddDoubleLine(L.AVG_LEVEL, avg, 1, 0.82, 0, 1, 1, 1) end
+		if avg then
+			tt:AddDoubleLine(L.AVG_LEVEL, avg, 1, 0.82, 0, 1, 1, 1)
+			local honors = ns.Honors
+			if type(honors) == "table" and type(honors.GUILD_MIN_MEMBERS) == "number" then
+				tt:AddLine(L.GUILD_AVG_HONOUR_MIN:format(honors.GUILD_MIN_MEMBERS), 0.6, 0.6, 0.6, true)
+			end
+		end
 		tt:AddDoubleLine(L.INACTIVE_30, ns.FormatNumber(g.inactive30 or 0), 1, 0.82, 0, 1, 1, 1)
 		local classes = {}
 		for code, n in pairs(g.classes or {}) do classes[#classes + 1] = { code, n } end
