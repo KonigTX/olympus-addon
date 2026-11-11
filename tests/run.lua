@@ -65188,6 +65188,9 @@ assert(loadfile(ROOT .. "tests/army-export.lua"))(ns, test, eq, ADDON_DIR, WithU
 print("tests/census-header.lua")
 assert(loadfile(ROOT .. "tests/census-header.lua"))(ns, test, eq, { WithUI = WithUI, LoadUI = LoadUI })
 
+print("tests/king-census-layout.lua")
+assert(loadfile(ROOT .. "tests/king-census-layout.lua"))(ns, test, eq, { WithThrone = WithThrone, AsKing = AsKing, AsSoldier = AsSoldier })
+
 -- 1.1.5: the gamepad pass (tests/gamepad.lua): whole sessions with Blizzard's gamepad UI simulated, in
 -- a model of Forever's client of their own, from a gamepad login and across switches both ways.
 do

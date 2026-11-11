@@ -1769,7 +1769,8 @@ local function CensusLines(s, q)
 	-- Our guild's verification (Verify.lua): its guild master's "GM verification pending", or its
 	-- members' notice once it is overdue; a click opens it.
 	local V = VerifyModule()
-	for _, l in ipairs(V and V.Lines and V.Lines() or {}) do lines[#lines + 1] = l end
+	local verification, verificationAt = V and V.Lines and V.Lines() or {}, #lines + 1
+	for _, l in ipairs(verification) do lines[#lines + 1] = l end
 	-- Recruits asking to join our guild (1.1, Recruit.lua): an officer's Invite and Decline.
 	for _, l in ipairs(ns.Recruit and ns.Recruit.RequestLines and ns.Recruit.RequestLines() or {}) do lines[#lines + 1] = l end
 	-- Clear party-invite whispers while the King is online (1.2.5.1): local, short-lived and
@@ -1816,6 +1817,12 @@ local function CensusLines(s, q)
 	if behind then
 		lines[#lines].gapAfter = true
 		lines[#lines + 1] = behind
+	end
+	-- On the King's screen (including the author's preview), his verification desk follows the
+	-- guilds and status lines. Build it above first to retain the existing empty-state counting.
+	if ns.KingsScreen() then
+		for _ = 1, #verification do table.remove(lines, verificationAt) end
+		for _, l in ipairs(verification) do lines[#lines + 1] = l end
 	end
 	-- Record mode on (Record.lua, the Guinness attempt's witnesses): its line first; a click opens its
 	-- status. Put in last, so the lines above count as before ("No reports yet").
