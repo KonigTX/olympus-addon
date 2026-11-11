@@ -684,9 +684,19 @@ end
 -- 1.5.4: an item link in a line as this client's item data has the item: its name and its
 -- quality's colour (C_Item.GetItemInfo on Forever, the global on an older client), in place of
 -- the sender's, which a modified client could write as it liked; the link's own data stays (the
--- item the tooltip and the click open). An item the client holds no data of yet shows as sent,
+-- item the tooltip and the click open). An item the client holds no data of yet keeps its name,
 -- the data is asked for once (RequestLoadItemDataByID), and its arrival (GET_ITEM_INFO_RECEIVED,
 -- below) redraws the tab. Worked out once an era for each line that shows (ChatWindow.ViewOf).
+-- Forever can return |cnIQ3:, which this FontString prints literally. Use the client's quality
+-- RGB as hex instead; without usable RGB, Relink keeps a hex colour or leaves the link uncoloured.
+local function ItemColour(quality) -- gp:lookups
+	if not ns.Gate.Allowed("lookups") then return end
+	if not Finite(quality) or quality < 0 or quality % 1 ~= 0 then return end
+	local colours = ITEM_QUALITY_COLORS
+	local c = type(colours) == "table" and colours[quality]
+	if type(c) ~= "table" or not Finite(c.r) or not Finite(c.g) or not Finite(c.b) then return end
+	return "|c" .. Hex({ c.r, c.g, c.b })
+end
 ChatWindow.itemLooks = {} -- item id -> { name, colour } as the client has it, false for none to be had
 ChatWindow.itemsAsked = {} -- item id -> asked the client for its data
 function ChatWindow.ItemLook(id)
@@ -700,9 +710,9 @@ function ChatWindow.ItemLook(id)
 		itemLooks[id] = false
 		return nil
 	end
-	local ok, name, link = pcall(get, id)
+	local ok, name, link, quality = pcall(get, id)
 	if ok and type(name) == "string" and name ~= "" and #name <= 100 and not name:find("[%[%]|%c]") then
-		local colour = type(link) == "string" and (link:match("^|c%x%x%x%x%x%x%x%x") or link:match("^|cn[%w_]+:")) or nil
+		local colour = (type(link) == "string" and link:match("^|c%x%x%x%x%x%x%x%x")) or ItemColour(quality)
 		look = { name = name, colour = colour }
 		itemLooks[id] = look
 		return look
@@ -732,6 +742,11 @@ function ChatWindow.Relink(text)
 			local link = text:sub(j, j + len - 1)
 			local colour, data = link:match("^(|c[^|]*)|Hitem:([^|]*)|h%["), nil
 			if colour then data = link:match("^|c[^|]*|Hitem:([^|]*)|h%[") else data = link:match("^|Hitem:([^|]*)|h%[") end
+			if data and colour and colour:sub(1, 3) == "|cn" then
+				-- A validated item link only: drop its unsupported colour and matching reset, even
+				-- while the item is unknown. Its payload and name stay available to hover and click.
+				link, colour = link:sub(#colour + 1, -3), nil
+			end
 			local look = data and ChatWindow.ItemLook(tonumber(data:match("^(%d+)")))
 			if look then
 				colour = look.colour or colour

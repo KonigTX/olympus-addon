@@ -202,7 +202,7 @@ ns.GAMEPAD = {
 	-- Found by the audit (scripts/gamepad-audit.lua), registered with it.
 	{ id = "lookups", kind = "reads", files = { "ArmyExport.lua", "ArenaMatch.lua", "ArenaParse.lua", "Borders.lua", "Channels.lua", "ChatWindow.lua", "Dialog.lua", "GuildFrame.lua", "Treasury.lua", "UI.lua", "Views.lua", "Who.lua", "Workshop.lua" },
 		guard = "own", toPad = "stays", toMouse = "nothing", safe = "keep",
-		why = "Looked up by name and only read: Olympus's own frames' parts, the game's fonts and strings, where the game's popups and main chat tab are (Olympus's own windows go under or point at them), whether the who windows are open, the client's icon lists." },
+		why = "Looked up by name and only read: Olympus's own frames' parts, the game's fonts and strings, where the game's popups and main chat tab are (Olympus's own windows go under or point at them), whether the who windows are open, the client's icon lists. Chat item quality RGB is read for Olympus's text at either login and across both switches; nothing is written or left on the game's side." },
 	{ id = "own-templates", kind = "frame-helper", files = { "UI.lua" },
 		guard = "own", toPad = "stays", toMouse = "nothing", safe = "keep",
 		why = "The who list's column helper (WhoFrameColumn_SetWidth) sizing Olympus's own column headers, made from the game's template in the old guild window's look: nothing of the game's own frames." },

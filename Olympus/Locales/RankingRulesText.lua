@@ -49,7 +49,7 @@ L.RANK_RULE_BONES_ORDER = "More wins comes first; ties use fewer games, then the
 L.RANK_RULE_BONES_EVIDENCE = "Only matching signed game halves retained by this client count. Missing halves stay unknown."
 L.RANK_RULE_BONES_VISIBILITY = "Games staff always see it. Members see it only while an authorized publisher's Bones switch is open."
 
-L.RANK_RULE_LEVEL_TITLE = "Level race"
+L.RANK_RULE_LEVEL_TITLE = "Top levels"
 L.RANK_RULE_LEVEL_SCORE = "There are no points: characters are ordered by their latest reported level."
 L.RANK_RULE_LEVEL_ORDER = "Higher level comes first; equal levels are ordered by character name. The page shows at most %d characters, %d at a time."
 L.RANK_RULE_LEVEL_EVIDENCE = "Only the top-character lists in fresh guild reports held by this client are included. This is a local census view, not server certification."
@@ -118,7 +118,7 @@ if GetLocale and GetLocale() == "ptBR" then
 	L.RANK_RULE_BONES_EVIDENCE = "Somente metades assinadas e coincidentes guardadas neste cliente contam. Metades ausentes permanecem desconhecidas."
 	L.RANK_RULE_BONES_VISIBILITY = "A equipe dos Jogos sempre ve. Membros veem apenas enquanto a chave autorizada de Bones estiver aberta."
 
-	L.RANK_RULE_LEVEL_TITLE = "Corrida de nivel"
+	L.RANK_RULE_LEVEL_TITLE = "Niveis mais altos"
 	L.RANK_RULE_LEVEL_SCORE = "Nao ha pontos: os personagens sao ordenados pelo ultimo nivel informado."
 	L.RANK_RULE_LEVEL_ORDER = "Maior nivel vem primeiro; niveis iguais sao ordenados pelo nome do personagem. A pagina mostra no maximo %d personagens, %d por vez."
 	L.RANK_RULE_LEVEL_EVIDENCE = "Somente as listas de personagens de maior nivel dos relatorios recentes de guilda guardados neste cliente entram. E uma visao do censo local, nao certificacao do servidor."

@@ -22,6 +22,9 @@ test("relay fan-out (#76): with 46 guilds registered, the relay's own snapshot i
 		local snapshot = "CG~2~S~1~ForeverPvE~Alliance~" .. ("Olympus Dawn,640,40,300,1;"):rep(66)
 		for _, p in ipairs(R.Codec.Chunk(snapshot, "77")) do R.Relay.HandleIn("WHISPER", R.me, "RL~P~" .. p) end
 		for _ = 1, 2000 do
+			-- (1.5.5) One pump each SEND_INTERVAL, as in the game: the approval is a logged word (L), which
+			-- the relay's chat lane hands on at CHAT_PER_MIN, so it waits for time to pass.
+			R.clock = R.clock + 1.2
 			R.Comm.Pump()
 			local due = timers; timers = {}
 			for _, fn in ipairs(due) do fn() end

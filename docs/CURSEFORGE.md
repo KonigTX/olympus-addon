@@ -187,7 +187,7 @@ versions before 1.1 just get the whisper, as before.
   invitations, removals or native promotions happen automatically. An online member of the group
   has **Invite online member to raid**: one party invite on the Legate's click, only while
   the guild roster still lists that member.
-- **Level race**: the highest level players of the realm.
+- **Top levels**: the highest level players of the realm.
 - **Recruiting**: the guilds that still have free slots, so new players go where there is room
   (the five with the most, then every one on a click).
   When the King opens **the gates** of a guild, it tops the list: send new recruits there.
@@ -1118,8 +1118,8 @@ alone until that happens).
   (`/oly location`; the King: his crown on the map), and one line in the [Olympus] chat when he
   turns it on (not with that chat muted or the Olympus chats off, nor for a late login; in the
   Olympus tab without "[Olympus]"). His addon repeats it every 2 minutes and when his zone
-  changes; it is never saved, so it is off when he logs out (his addon says so as it leaves;
-  otherwise it drops off every screen 5 minutes after his last word), and `/oly donations off`
+  changes; it is never saved, so it is off when he logs out (his addon says so as it leaves, on
+  Forever to his own guild alone; otherwise it drops off every screen 5 minutes after his last word), and `/oly donations off`
   turns it off before.
 - **Requests to the treasury**: a Lord or a Captain of any Olympus guild asks the treasury
   for an item and a count ("need 10 Ironwood"): a click on the item in the bank's grid (when he

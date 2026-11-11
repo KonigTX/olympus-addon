@@ -71,9 +71,15 @@ test("1.2.4 honour letter previews: every family uses the real framed letter wit
 			eq(f.wear:IsEnabled(), false, "sample cannot be worn")
 			w:As(author, hn.CloseLetter, true) -- even a direct caller cannot award the sample
 		end
-		for _, family in ipairs({ "arena", "class", "race", "donor-top", "donor-month", "oracle", "level", "guild", "missionary", "apostle", "bones", "wanted-slayer", "wanted" }) do
+		for _, family in ipairs({ "arena", "class", "race", "donor-top", "donor-month", "oracle", "level", "guild", "missionary", "apostle", "bones", "wanted-slayer", "wanted",
+			"apology" }) do
 			assert(families[family], "preview family: " .. family)
 		end
+		-- (1.5.5) The retired comets have no sample; the gold one's and the apology's do.
+		local listed = {}
+		for _, key in ipairs(keys) do listed[key] = true end
+		eq(listed["level-race-20"], nil); eq(listed["level-race-40"], nil)
+		eq(listed["level-race-60"], true); eq(listed["apology@level-race"], true)
 		eq(#w.sent, before); eq(#hn.QueuedLetters(), queued); eq(#hn.Letters(), saved)
 		eq(author.ns.ArenaProfile.Pick().frame, picked); eq(author.ns.db.arenaProfile, profile, "an idle read must not create saved profiles")
 		eq(w:As(author, hn.PreviewLetter, "unapproved-key"), false)
@@ -378,7 +384,10 @@ test("1.2.1 the King's letter: its window is Olympus's own metal with the parchm
 	-- (One client a language: the letter's window is made once a session, in the game's language.)
 	local CLIENTS = { enUS = cast.A, ptBR = cast.B }
 	local L = cast.A.ns.L
-	local KEYS = { "arena-champion", "arena-class-mage-2", "arena-race-orc-3", "donor-top-1", "donor-month-2", "level-race-40", "oracle-1", "guild-top-leader" }
+	-- (1.5.5: the gold comet's letter, the Olympus Speedrunner's, and the level race's apology; bronze and
+	-- silver are retired.)
+	local KEYS = { "arena-champion", "arena-class-mage-2", "arena-race-orc-3", "donor-top-1", "donor-month-2", "level-race-60", "oracle-1", "guild-top-leader",
+		"apology@level-race" }
 	local WORDS = { "HONOR_LETTER", "HONOR_LETTER_HEAD", "HONOR_LETTER_SIGN", "HONOR_LETTER_WEAR", "HONOR_LETTER_LATER", "HONOR_TITLES",
 		"HONOR_CLASS_TITLE", "HONOR_RACE_TITLE", "HONOR_CLASS_NAMES", "HONOR_RACE_NAMES", "HONOR_METAL_GOLD", "HONOR_METAL_SILVER", "HONOR_METAL_BRONZE" }
 	local pt = {}

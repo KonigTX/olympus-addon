@@ -1251,8 +1251,11 @@ local function Send(id, text)
 		Settle()
 	end
 	local accepted = true
+	-- (1.5.5) Urgent: an ordinary whisper here was pushed out of the queue by the words queued after
+	-- it (the census, the lists) once it filled, and its member never saw the line. The room was
+	-- checked above (QueueRoom), and the line is one a player typed, at most PER_MINUTE a minute.
 	for _, recipient in ipairs(recipients) do
-		local ok = ns.Comm.Whisper(recipient, msg, nil, false, true, Done,
+		local ok = ns.Comm.Whisper(recipient, msg, nil, true, true, Done,
 			{ owner = Rooms, key = guardKey, permit = Permit(id, recipient) })
 		if not ok then accepted = false end
 	end

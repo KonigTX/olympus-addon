@@ -350,7 +350,7 @@ channels; the same charter and Join controls work for each side.
   invitations, removals or native promotions happen automatically. An online member of the group
   has **Invite online member to raid**: one party invite on the Legate's click, only while
   the guild roster still lists that member.
-- **Level race**: the highest level players of the realm.
+- **Top levels**: the highest level players of the realm.
 - **Recruiting**: the guilds that still have free slots, so new players go where there is room
   (the five with the most, then every one on a click).
   When the King opens **the gates** of a guild, it tops the list: send new recruits there.
@@ -1658,8 +1658,8 @@ the Treasurer's realms, with the dues' button alone until that happens).
   (`/oly location`; the King: his crown on the map), and one line in the [Olympus] chat when he
   turns it on (not with that chat muted or the Olympus chats off, nor for a late login; in the
   Olympus tab without "[Olympus]"). His addon repeats it every 2 minutes and when his zone
-  changes; it is never saved, so it is off when he logs out (his addon says so as it leaves;
-  otherwise it drops off every screen 5 minutes after his last word), and `/oly donations off`
+  changes; it is never saved, so it is off when he logs out (his addon says so as it leaves, on
+  Forever to his own guild alone; otherwise it drops off every screen 5 minutes after his last word), and `/oly donations off`
   turns it off before.
 - **Requests to the treasury**: a Lord or a Captain of any Olympus guild asks the treasury
   for an item and a count ("need 10 Ironwood"): a click on the item in the bank's grid (when he
@@ -3267,6 +3267,18 @@ the exact text first, in a window of its own, and sends nothing without your **S
 
 Type `/oly bug` (or press **Report a bug**), copy the text and open an issue. Errors are
 also saved in `WTF/Account/<ACCOUNT>/SavedVariables/Olympus.lua`.
+
+Since 1.5.5 the report has a short debug section after the status lines. It shows which game
+and which Olympus files the addon runs on, and, for each kind of message that comes in pieces,
+how many arrived, were put together, were dropped incomplete or were refused, and why. It also
+shows the relay and the reporter, the census's sources per realm group with their ages, the
+signed lists held, and the chat values the game kept secret. It holds counts, not other players'
+names or BattleTags. If your copy of Olympus does not fit the game, the report's first line says
+so, and the chat tells you at login. That happens with a copy made for another game, with files
+of two versions, or with a version older than the one the author marked as released. The chat
+then names the CurseForge app's installation to pick for your game (WoW: Forever, Classic Era or
+TBC Anniversary). A patch of your game newer than the ones Olympus lists is only a note in the
+debug section, and the versions your guildmates run are shown there but never warned about.
 
 ## Integrating with Olympus
 

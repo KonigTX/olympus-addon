@@ -211,6 +211,35 @@ test("relay admission (1.5.4): from the deadline on a bare registration is refus
 	end)
 end)
 
+-- 1.5.5 (the release's preparation): a release names itself in Relay.PUBLISHED. A relay that holds no
+-- word of rules (a new realm group's store, the author not online yet) goes by that list, and from
+-- PRESENT_REQUIRED_AT on it refuses a version left off it: every client of a release that forgot
+-- itself would lose its relays, its reporters with it. The running version (Core.lua's) is on the
+-- list, and a relay holding no rules serves a reporter and a client that present it past the deadline.
+test("relay admission (1.5.5): this release is on the code's own list: Relay.PUBLISHED names ns.VERSION once, and past the deadline a relay holding no rules keeps a reporter and serves a client that present it", function()
+	Scene(function()
+		local R = World("Hildryn Payne-Realm", "Olympus II")
+		local Relay = R.ns.Relay
+		local listed = 0
+		for _, v in ipairs(Relay.PUBLISHED) do if v == V then listed = listed + 1 end end
+		eq(listed, 1, "Relay.PUBLISHED names " .. V .. " once")
+		eq(Relay.Rules().rev, 0, "no word of rules: the code's own")
+		Relay.PRESENT_REQUIRED_AT = R.ns.clock - 1
+		eq(Relay.Required(), true, "past the deadline")
+		eq(Relay.Published(V), true, "this release admitted")
+		R.Deliver("WHISPER", "New Rep-Realm", "RL~P~RR~Olympus New~" .. V)
+		eq(Relay.Stats().reporters, 1, "its reporter kept")
+		eq(Relay.Presented("New Rep-Realm"), V)
+		R.Deliver("WHISPER", "Pres Ent-Realm", "RI~" .. V)
+		R.Deliver("WHISPER", "Pres Ent-Realm", "RL~P~X1~hello")
+		R.Pump()
+		eq(#R.heard, 1, "its client's word heard")
+		local rm = R.Sent("RM~")
+		eq(#rm, 1, "and handed to the reporter"); eq(rm[1].target, "New Rep")
+		eq(Relay.Stats().refused, 0, "nobody refused")
+	end)
+end)
+
 test("relay admission (1.5.4): the relay's own words, the King's (his crown too) and a signed relay's are never refused, deadline or not; none reaches a reporter that did not present", function()
 	Scene(function()
 		local R = World("Hildryn Payne-Realm", "Olympus II")

@@ -399,10 +399,287 @@ local function RelayLine()
 	local s = R.Stats()
 	local v = type(V) == "table" and type(V.Stats) == "function" and V.Stats() or {}
 	local function N(x) return tonumber(x) or 0 end
-	return ("%s  |  out %d  forwarded %d  delivered %d  dropped %d  dead %d  kept %d  trickled %d  reporters %d  pending %d  |  verify across %d  direct %d  asked %d  answered %d  unsent %d  untrusted %d  bad %d"):format(
+	-- (1.5.5) The relay's chat lane (Relay.lua): chat whispers waiting, lost (past its bound or its time),
+	-- and skipped (their reporter quarantined, no longer served or registered, a relay left out, by then).
+	return ("%s  |  out %d  forwarded %d  delivered %d  dropped %d  dead %d  kept %d  trickled %d  reporters %d  pending %d  |  verify across %d  direct %d  asked %d  answered %d  unsent %d  untrusted %d  bad %d  |  chat lane %d waiting, %d lost, %d skipped"):format(
 		not s.on and "off" or (tostring(s.relay or "none") .. (s.sure and "" or " (unanswered)")),
 		N(s.out), N(s.forwarded), N(s.delivered), N(s.dropped), N(s.dead), N(s.kept), N(s.trickled), N(s.reporters), N(s.pending),
-		N(s.verifyAcross), N(s.direct), N(v.asked), N(v.answered), N(v.unsent), N(v.refused), N(v.bad))
+		N(s.verifyAcross), N(s.direct), N(v.asked), N(v.answered), N(v.unsent), N(v.refused), N(v.bad), N(s.chatWaiting), N(s.chatLost), N(s.chatSkipped))
+end
+
+---------------------------------------------------------------------------
+-- (1.5.5) The game this client is, and whether this copy of Olympus fits it. A player said an install
+-- in the wrong flavor folder changed his counts: the CurseForge app's installation for Forever's
+-- folder left on "Classic" installs the last file listed for Classic, an old Olympus, whose census
+-- and relay no longer meet the others' (about a thousand soldiers instead of thirty thousand), and no
+-- update ever comes. What this client can tell, and /oly bug shows: which game it is by its interface
+-- number (Forever 1.60, Era 1.15, Anniversary 2.5, as Workshop.Client reads it), its realm's family
+-- (a WoW: Forever realm, ns.ForeverFamily), whether this copy's TOC lists that interface
+-- (ns.TOC_INTERFACES, the Interface line of Olympus.toc: a test keeps them one), whether its files are
+-- of one version (the TOC's, Olympus_Arena's and the site reporter's against ns.VERSION), and whether
+-- a newer Olympus is out (the author's released version, Workshop.Behind).
+-- Said at login, once a session, only when something is really wrong ("problems"): a game this copy
+-- was not made for (no interface of that game in its TOC), files of two versions, or the author's
+-- released version newer than ours. A patch of a game it was made for whose number its TOC does not
+-- list (Forever's next interface, 16006, before an Olympus lists it) is a note in /oly bug alone: no
+-- Olympus for it exists yet, and every player on that patch would be told to update. Guildmates'
+-- hellos are never trusted for it: they are unsigned (two testers on a test build, or two forged
+-- hellos, name any version); /oly bug shows the newest they named, marked so, and nothing else.
+-- The author's version comes only from his presence (V4) under a name pinned as his
+-- (Workshop.HandlePresence, ns.IsAuthorName).
+---------------------------------------------------------------------------
+ns.TOC_INTERFACES = { 11509, 11510, 16001, 16002, 16003, 16004, 16005, 16010, 16100, 20506, 20507 }
+ns.INSTALL_PEERS = 2 -- guildmates on one newer release before /oly bug shows it (shown only: never a problem)
+
+local function ClientOf(toc)
+	if toc >= 16000 and toc < 20000 then return "Forever" end
+	if toc >= 20000 and toc < 30000 then return "Anniversary" end
+	if toc >= 10000 and toc < 16000 then return "Era" end
+	return "?"
+end
+-- The CurseForge app's installation to pick, per game: the hint names the player's own game (none
+-- for a game Olympus is not made for).
+local FLAVOR = { Forever = "INSTALL_FLAVOR", Era = "INSTALL_FLAVOR_ERA", Anniversary = "INSTALL_FLAVOR_ANNIVERSARY" }
+local function Meta(addon, field)
+	local AO = C_AddOns
+	local get = type(AO) == "table" and AO.GetAddOnMetadata or nil
+	local v = Try(get, addon, field)
+	return type(v) == "string" and v ~= "" and v or nil
+end
+-- The newest release INSTALL_PEERS guildmates or more ran by their hellos (Comm.PeerVersions), and
+-- how many: only one newer than ours, else nil. Shown in /oly bug as unsigned; never a problem.
+local function PeersNewer()
+	local C, W = ns.Comm, ns.Workshop
+	local counts = type(C) == "table" and type(C.PeerVersions) == "function" and Try(C.PeerVersions) or nil
+	if type(counts) ~= "table" or type(W) ~= "table" or type(W.Newer) ~= "function" then return nil end
+	local best, n = nil, 0
+	for v, count in pairs(counts) do
+		if type(v) == "string" and v:match("^%d+%.%d+%.%d+$") and tonumber(count) and count >= ns.INSTALL_PEERS
+			and W.Newer(v, ns.VERSION) and (not best or W.Newer(v, best)) then best, n = v, count end
+	end
+	return best, n
+end
+
+-- { client, toc, game, build, project, realm, family, group, version, tocVersion, arena, site,
+--   declared, note ("newer" | "older" | "unlisted": a patch of this game the TOC does not list;
+--   "unread": no interface from the client),
+--   author, behind, peers, peersCount (unsigned: shown only), problems = { "toc" | "mixed" | "behind" ... } }
+function ns.Install()
+	local okB, game, build, _, toc = pcall(GetBuildInfo)
+	toc = okB and tonumber(toc) or 0
+	local W = ns.Workshop
+	local s = {
+		client = ClientOf(toc), toc = toc, game = okB and tostring(game) or "?", build = okB and tostring(build) or "?",
+		project = tonumber(rawget(_G, "WOW_PROJECT_ID")), realm = ns.realm, group = ns.group,
+		family = type(ns.ForeverFamily) == "function" and ns.ForeverFamily(ns.realm or "") or nil,
+		version = ns.VERSION, tocVersion = Meta(ADDON, "Version"), arena = Meta("Olympus_Arena", "Version"),
+		site = Meta("OlympusSiteAggregate", "Version"), problems = {},
+	}
+	s.declared = false
+	local lowest, highest -- this game's interfaces in the TOC
+	for _, n in ipairs(ns.TOC_INTERFACES) do
+		if n == toc then s.declared = true end
+		if ClientOf(n) == s.client then lowest, highest = math.min(lowest or n, n), math.max(highest or n, n) end
+	end
+	s.author = type(W) == "table" and type(W.AuthorVersion) == "function" and Try(W.AuthorVersion) or nil
+	s.peers, s.peersCount = PeersNewer()
+	if not s.declared then
+		-- A patch of a game this copy is made for: a note (the game loads it as out of date). Another
+		-- game's interface: a problem. An interface the client did not give: nothing to judge, a note.
+		if toc <= 0 then s.note = "unread"
+		elseif highest then s.note = toc > highest and "newer" or (toc < lowest and "older" or "unlisted")
+		else s.problems[#s.problems + 1] = "toc" end
+	end
+	-- (Ours, or ours and a build of it: an arena test build's TOC says "1.5.5-test.3", the site
+	-- reporter's "1.5.5-site.1", scripts/package.sh; the arena module's is ours alone.)
+	local function Ours(v) return v == s.version or v:sub(1, #s.version + 1) == s.version .. "-" end
+	if s.tocVersion and not Ours(s.tocVersion) then s.odd = s.tocVersion
+	elseif s.arena and s.arena ~= s.version then s.odd = s.arena
+	elseif s.site and not Ours(s.site) then s.odd = s.site end
+	if s.odd then s.problems[#s.problems + 1] = "mixed" end
+	-- Behind the author's released version alone (his presence, under a name pinned as his).
+	s.behind = type(W) == "table" and type(W.Behind) == "function" and Try(W.Behind) or nil
+	if s.behind then s.problems[#s.problems + 1] = "behind" end
+	return s
+end
+
+-- The install's lines for /oly bug: the problems and the game (the problems first: a line cut at
+-- DEBUG_LINE keeps them), then the files and the versions heard.
+function ns.InstallLine()
+	local s = ns.Install()
+	local listed = s.declared and "yes" or (s.note == "unread" and "interface not read: a note, not told")
+		or (s.note and ("no, %s %s patch: a note, not told"):format(s.note, s.client)) or "NO"
+	return ("install: problems %s  |  client %s (toc %s, in Olympus.toc: %s; game %s build %s, project %s)  |  realm family %s, group %s"):format(
+		#s.problems > 0 and table.concat(s.problems, ", ") or "none", s.client, tostring(s.toc), listed, s.game, s.build,
+		tostring(s.project or "?"), tostring(s.family or "none"), tostring(s.group or "?"))
+end
+function ns.InstallFilesLine()
+	local s = ns.Install()
+	return ("install files: Olympus %s (toc %s, arena %s, site %s)  |  released: author %s, guild hellos %s"):format(
+		s.version, tostring(s.tocVersion or "?"), tostring(s.arena or "not installed"), tostring(s.site or "not installed"),
+		tostring(s.author or "none"), s.peers and (s.peers .. " x" .. tostring(s.peersCount) .. " (unsigned)") or "none newer")
+end
+
+-- What the player is told (once a session for each problem): the lines, or an empty list. "behind"
+-- has its own line already (Workshop.HeardVersion: BEHIND_CHAT); the CurseForge app's installation
+-- for this game follows any of them.
+local installTold = {}
+function ns.InstallWarnings()
+	local s, out = ns.Install(), {}
+	for _, p in ipairs(s.problems) do
+		if not installTold[p] then
+			installTold[p] = true
+			if p == "toc" then out[#out + 1] = L.INSTALL_TOC:format(s.version, tostring(s.toc))
+			elseif p == "mixed" then out[#out + 1] = L.INSTALL_MIXED:format(s.version, tostring(s.odd)) end
+		end
+	end
+	local flavor = FLAVOR[s.client]
+	if #s.problems > 0 and flavor and not installTold.flavor then
+		installTold.flavor = true
+		out[#out + 1] = L[flavor]
+	end
+	return out
+end
+function ns.ResetInstallWarnings() wipe(installTold) end -- (tests)
+local function WarnInstall()
+	for _, line in ipairs(ns.InstallWarnings()) do ns.Print("|cffff8040" .. line .. "|r") end
+end
+ns.On("LOGIN", function()
+	-- (After the guildmates' first hellos, and again once the author's presence had time to come.)
+	ns.After(45, "install check", WarnInstall)
+	ns.After(300, "install check", WarnInstall)
+end)
+
+---------------------------------------------------------------------------
+-- (1.5.5) /oly bug's debug section: short, bounded lines (DEBUG_LINE bytes each, DEBUG_MAX in all), no
+-- other player's name or data and no BattleTag: counts, ages, this client's own state, realm names.
+---------------------------------------------------------------------------
+ns.DEBUG_LINE, ns.DEBUG_MAX = 320, 2400
+local function Age(t)
+	t = tonumber(t)
+	if not t then return "?" end
+	local d = math.max(0, (ns.Now and ns.Now() or time()) - t)
+	if d < 120 then return ("%ds"):format(d) end
+	if d < 7200 then return ("%dm"):format(math.floor(d / 60)) end
+	if d < 172800 then return ("%dh"):format(math.floor(d / 3600)) end
+	return ("%dd"):format(math.floor(d / 86400))
+end
+local function Cap(line) return #line > ns.DEBUG_LINE and (line:sub(1, ns.DEBUG_LINE - 3) .. "...") or line end
+
+-- Per kind of message in pieces (Codec.PieceStats): the ten with the most pieces, then the reasons.
+local function PiecesLine()
+	local C = ns.Codec
+	local st = type(C) == "table" and type(C.PieceStats) == "function" and Try(C.PieceStats) or nil
+	if type(st) ~= "table" then return "pieces: not counted" end
+	local list = {}
+	for kind, k in pairs(st.kinds or {}) do list[#list + 1] = { kind = kind, k = k } end
+	table.sort(list, function(a, b)
+		if a.k.p ~= b.k.p then return a.k.p > b.k.p end
+		return a.kind < b.kind
+	end)
+	local parts = {}
+	for i = 1, math.min(10, #list) do
+		local e = list[i]
+		parts[#parts + 1] = ("%s p%d a%d i%d d%d"):format(e.kind, e.k.p, e.k.a, e.k.i, e.k.d)
+	end
+	if #list > 10 then parts[#parts + 1] = "+" .. (#list - 10) .. " kinds" end
+	return ("pieces: in %d  |  %s  |  why: %s"):format(tonumber(st.pieces) or 0, #parts > 0 and table.concat(parts, ", ") or "none",
+		CountList(st.why))
+end
+
+-- The relay and the reporter: this client's side, no name.
+local function RelayReporterLine()
+	local R, C = ns.Relay, ns.Comm
+	local s = type(R) == "table" and type(R.Stats) == "function" and Try(R.Stats) or nil
+	local c = type(C) == "table" and type(C.Stats) == "function" and Try(C.Stats) or {}
+	local relay = "not loaded"
+	if type(s) == "table" then
+		relay = not s.on and "off" or ("%s, relay here: %s, reporters %d, pending %d, out %d delivered %d dead %d dropped %d trickled %d"):format(
+			s.relay and (s.sure and "picked, answered" or "picked, unanswered") or "none picked",
+			R.IsRelay and Try(R.IsRelay, ns.me) and "yes" or "no", tonumber(s.reporters) or 0, tonumber(s.pending) or 0,
+			tonumber(s.out) or 0, tonumber(s.delivered) or 0, tonumber(s.dead) or 0, tonumber(s.dropped) or 0, tonumber(s.trickled) or 0)
+	end
+	return ("relay: %s  |  reporter: this client %s, guild's known %s, guild peers %s, reports heard %s, bad %s, incomplete %s"):format(
+		relay, c.isReporter and "yes" or "no", c.reporter and "yes" or "no", tostring(c.peers or 0), tostring(c.reports or 0),
+		tostring(c.bad or 0), tostring(c.partial or 0))
+end
+
+-- The census's sources: our realm group's guild reports (how many, how fresh, from which realms), and
+-- each other realm group's numbers this account looked at or heard, newest first (six at most).
+local function CensusLines()
+	local out = {}
+	local guilds = ns.rdb and ns.rdb.guilds
+	local n, newest, oldest, from = 0, nil, nil, {}
+	for _, g in pairs(type(guilds) == "table" and guilds or {}) do
+		if type(g) == "table" then
+			n = n + 1
+			local t = tonumber(g.t)
+			if t then
+				if not newest or t > newest then newest = t end
+				if not oldest or t < oldest then oldest = t end
+			end
+			local realm = type(g.from) == "string" and g.from or "old"
+			from[realm] = (from[realm] or 0) + 1
+		end
+	end
+	out[#out + 1] = Cap(("census: group %s: %d guild reports, newest %s, oldest %s  |  by realm %s"):format(tostring(ns.group or "?"), n,
+		newest and Age(newest) or "-", oldest and Age(oldest) or "-", CountList(from)))
+	local rows = {}
+	for _, which in ipairs({ "groupCensus", "groupHeard" }) do
+		local store = ns.db and ns.db[which]
+		for key, e in pairs(type(store) == "table" and store or {}) do
+			if type(e) == "table" and type(key) == "string" then
+				rows[#rows + 1] = { key = key, how = which == "groupCensus" and "look" or "heard", t = tonumber(e.observed or e.t) or 0,
+					people = tonumber(e.people or e.total) }
+			end
+		end
+	end
+	table.sort(rows, function(a, b) if a.t ~= b.t then return a.t > b.t end return a.key < b.key end)
+	local parts = {}
+	for i = 1, math.min(6, #rows) do
+		local r = rows[i]
+		parts[#parts + 1] = ("%s %s %s (%s)"):format(r.key, r.how, Age(r.t), r.people and tostring(r.people) or "?")
+	end
+	if #rows > 6 then parts[#parts + 1] = "+" .. (#rows - 6) end
+	out[#out + 1] = Cap("census: other groups " .. (#parts > 0 and table.concat(parts, ", ") or "none"))
+	return out
+end
+
+-- The signed lists held here, by kind and age (no names: ns.PinsStatus says signed, code or none).
+local function SignedLine()
+	local t = type(ns.CouncilTitles) == "function" and Try(ns.CouncilTitles) or (ns.rdb and ns.rdb.councilTitles)
+	local titles = "none"
+	if type(t) == "table" and type(t.blob) == "string" then
+		local Ch = ns.Church
+		local apostles = type(Ch) == "table" and type(Ch.SignedApostles) == "function" and Try(Ch.SignedApostles) or nil
+		local arbiters = type(ns.SignedArbiters) == "function" and Try(ns.SignedArbiters) or nil
+		titles = ("v%s %s (apostles %s, arbiters %s)"):format(t.blob:match("^HT1~(%d+)~") or "?", t.at and Age(t.at) or "?",
+			type(apostles) == "table" and tostring(#apostles) or "?", type(arbiters) == "table" and tostring(#arbiters) or "?")
+	end
+	local R = ns.Relay
+	local rules = type(R) == "table" and type(R.Rules) == "function" and Try(R.Rules) or nil
+	return ("signed: titles %s  |  relay rules rev %s  |  %s"):format(titles, type(rules) == "table" and tostring(rules.rev) or "?",
+		tostring(ns.PinsStatus and Try(ns.PinsStatus) or "?"))
+end
+
+function ns.DebugLines()
+	local lines = { "debug (1.5.5):" }
+	local function add(line) lines[#lines + 1] = Cap(tostring(line)) end
+	add(Try(ns.InstallLine) or "install: ?")
+	add(Try(ns.InstallFilesLine) or "install files: ?")
+	add(Try(PiecesLine) or "pieces: ?")
+	add(Try(RelayReporterLine) or "relay: ?")
+	for _, line in ipairs(Try(CensusLines) or { "census: ?" }) do add(line) end
+	add(Try(SignedLine) or "signed: ?")
+	add("secret values left unread: " .. CountList(ns.SecretSkips and ns.SecretSkips() or nil))
+	-- Bounded in all: the lines past DEBUG_MAX are left out, said so.
+	local size, out = 0, {}
+	for _, line in ipairs(lines) do
+		if size + #line + 1 > ns.DEBUG_MAX then out[#out + 1] = "(debug cut)" break end
+		out[#out + 1] = line
+		size = size + #line + 1
+	end
+	return out
 end
 
 function ns.StatusText()
@@ -474,10 +751,19 @@ function ns.StatusText()
 		local ch = ns.Channels and ns.Channels.Stats()
 		if ch then
 			-- (moved, 1.1.1: lines not sent because the channel changed before they left, GitHub #34.)
-			add("chat: sent=%d shown=%d hidden=%d lane=%d moved=%d muted=%s drops bad=%d dup=%d rate=%d flood=%d forged=%d unverified=%d rank=%d",
+			-- (secret, 1.5.5: chat events with a field that came as a secret value, skipped unread, Core.lua.)
+			add("chat: sent=%d shown=%d hidden=%d lane=%d moved=%d muted=%s drops bad=%d dup=%d rate=%d flood=%d forged=%d unverified=%d rank=%d secret=%d",
 				ch.sent, ch.shown, ch.hidden, c.chatQueue or 0, ch.moved or 0, #ch.muted > 0 and table.concat(ch.muted, ",") or "none",
-				ch.bad, ch.dup, ch.rate, ch.flood, ch.forged, ch.unverified, ch.rank)
-			if ns.Channels.WindowStatus then add("chat windows: %s", ns.Channels.WindowStatus()) end
+				ch.bad, ch.dup, ch.rate, ch.flood, ch.forged, ch.unverified, ch.rank, tonumber(ns.secretChatSkipped) or 0)
+			if ns.Channels.WindowStatus then
+				-- (1.5.5: a player's /oly bug said "gone: main window for now" for all three channels, and
+				-- nothing said which chat windows his game had open: they are listed now, by name.)
+				local open = {}
+				if ns.Channels.OpenWindows then
+					for _, w in ipairs(ns.Channels.OpenWindows()) do open[#open + 1] = '"' .. tostring(w.name):gsub("|", "||") .. '"' end
+				end
+				add("chat windows: %s  |  open: %s", ns.Channels.WindowStatus(), #open > 0 and table.concat(open, ", ") or "the main one alone")
+			end
 			-- (1.1) The pinned line this client holds: whose, of what rank, and how long it has left.
 			if ns.Channels.PinStatus then add("pinned line: %s", ns.Channels.PinStatus()) end
 		end
@@ -598,6 +884,12 @@ end
 
 function ns.BuildBugReport()
 	local out = { "```" }
+	-- (1.5.5) An install that does not fit this game, first: it explains every count below.
+	local okI, install = pcall(ns.Install)
+	if okI and type(install) == "table" and #install.problems > 0 then
+		out[#out + 1] = ("INSTALL PROBLEM: %s (Olympus %s, client %s toc %s; the debug section's install line says more)"):format(
+			table.concat(install.problems, ", "), tostring(install.version), tostring(install.client), tostring(install.toc))
+	end
 	-- The calls the game refused Olympus ("blocked from an action"), newest first. First in the
 	-- report: a report sent in game stops at Workshop.BUG_MAX bytes, and this is the part that
 	-- names what to fix.
@@ -629,6 +921,16 @@ function ns.BuildBugReport()
 		out[#out + 1] = ""
 	end
 	out[#out + 1] = ns.StatusText()
+	out[#out + 1] = ""
+	-- (1.5.5) The debug section, bounded (ns.DebugLines), after the status: a report sent in game
+	-- stops at Workshop.BUG_MAX bytes, and the status it carried before 1.5.5 still comes first,
+	-- whole (the section's DEBUG_MAX bytes before it cut as much of the status off).
+	local okD, debug = pcall(ns.DebugLines)
+	if okD and type(debug) == "table" then
+		for _, line in ipairs(debug) do out[#out + 1] = line end
+	else
+		out[#out + 1] = "debug (1.5.5): failed: " .. tostring(debug)
+	end
 	out[#out + 1] = ""
 	local errors = ns.db.errors
 	if #errors == 0 then

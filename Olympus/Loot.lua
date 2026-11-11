@@ -727,7 +727,8 @@ end
 -- A loot line of the group's: the item (rare and better, or not yet known to the client) and who got
 -- it, kept for the officers to write its note with a click. Nothing else is done with it.
 function Loot.OnLootMessage(text)
-	if type(text) ~= "string" or not (IsInGroup and IsInGroup()) or not Loot.IsOfficer() then return end
+	-- (1.5.5) A loot line in a dungeon or a raid may be secret (a chat lockdown): never read.
+	if type(text) ~= "string" or ns.Secret("loot line", text) or not (IsInGroup and IsInGroup()) or not Loot.IsOfficer() then return end
 	local link = text:match("|c%x+|Hitem:[^|]+|h%[[^%]]*%]|h|r") or text:match("|Hitem:[^|]+|h%[[^%]]*%]|h")
 	local id = link and tonumber(link:match("|Hitem:(%d+)"))
 	if not id then return end
