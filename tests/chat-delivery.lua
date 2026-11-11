@@ -374,7 +374,7 @@ local function ForeverGuild(fn)
 	if not ok then error(err, 0) end
 end
 
-test("chat delivery (1.5.5, Forever): guildmates on other sub-realms and under their plain names are shown, one line once under any stamp, our own line once; a stranger claiming our guild is still forged", function()
+test("chat delivery (1.5.5, Forever): guildmates on other sub-realms and under their plain names are shown, one line once under any stamp, our own line once; a same-family stranger claiming our guild is still forged", function()
 	ForeverGuild(function()
 		local C, Codec = ns.Channels, ns.Codec
 		local function Line(id, text) return Codec.EncodeChat("A", "OLYMPUS GODS", id, "WA", text) end
@@ -393,12 +393,17 @@ test("chat delivery (1.5.5, Forever): guildmates on other sub-realms and under t
 		_, why = C.Receive("CHANNEL", "Quiet Member-CAMWOWUS1Realm7PvE", Line(4103, "next line"), 7004)
 		eq(why, "muted", "his next line under a sub-realm stamp: taken")
 		eq(Stat("forged") - forged, 0, "none of them forged")
-		-- Not one of us: still forged, on our family's sub-realms and on another family's.
+		-- A same-family impostor still fails our own roster check.
 		_, why = C.Receive("CHANNEL", "Fake Officer-CAMWOWUS1Realm5PvE", Line(4104, "I speak for your guild"), 7005)
 		eq(why, "forged", "a name our roster does not hold")
-		_, why = C.Receive("CHANNEL", "Hater Fistinator-CAMWOWUS1Realm8PvP", Line(4105, "from the PvP family"), 7006)
-		eq(why, "forged", "the same name on another realm family is another player")
-		eq(Stat("forged") - forged, 2)
+		-- Another ruleset's public chat is admitted as an unverified member. Our officer's
+		-- name on that family keeps its own identity and inherits none of our roster's rank.
+		local foreign = "Hater Fistinator-CAMWOWUS1Realm8PvP"
+		local level, verified = C.VerifiedLevel(foreign, "OLYMPUS GODS")
+		eq(level, 1); eq(verified, false)
+		_, why = C.Receive("CHANNEL", foreign, Line(4105, "from the PvP family"), 7006)
+		eq(why, "muted", "another ruleset's public line is admitted and follows this window's mute choice")
+		eq(Stat("forged") - forged, 1, "the same-family impostor alone is forged")
 		eq(Stat("dup") - dup, 2)
 		-- Our own line coming back by the relay under another sub-realm's stamp: shown once, when sent.
 		local mine = { ["4106#my own words"] = 7007 }
